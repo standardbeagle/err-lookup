@@ -1,0 +1,30 @@
+{
+  "name": "err-lookup",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Error documentation generator using Claude Code CLI",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "db:migrate": "pnpm --filter orchestrator db:migrate",
+    "db:push": "pnpm --filter orchestrator db:push",
+    "analyze": "pnpm --filter orchestrator analyze",
+    "generate": "pnpm --filter site-generator generate",
+    "serve": "pnpm --filter site-generator serve"
+  },
+  "keywords": [
+    "error",
+    "documentation",
+    "claude",
+    "docusaurus"
+  ],
+  "author": "",
+  "license": "MIT",
+  "packageManager": "pnpm@10.24.0",
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.7.2"
+  }
+}

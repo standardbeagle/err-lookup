@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Repository name" },
+        "owner": { "type": "string", "description": "Repository owner/organization" },
+        "language": { "type": "string", "description": "Primary programming language" },
+        "version": { "type": "string", "description": "Version analyzed (tag or commit)" }
+      },
+      "required": ["name", "language"]
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Error code or identifier (e.g., ENOENT, E001, HTTP_404)"
+          },
+          "message": {
+            "type": "string",
+            "description": "The error message users will see"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["exception", "error_code", "console", "panic", "assert", "custom_class"],
+            "description": "Category of error"
+          },
+          "file": {
+            "type": "string",
+            "description": "Source file path relative to repo root"
+          },
+          "line": {
+            "type": "integer",
+            "description": "Line number where error is defined"
+          },
+          "context": {
+            "type": "string",
+            "description": "Code snippet showing the error (max 15 lines)"
+          },
+          "cause": {
+            "type": "string",
+            "description": "What conditions trigger this error (1-2 sentences)"
+          },
+          "resolution": {
+            "type": "string",
+            "description": "How to fix or handle this error (1-3 sentences)"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "error", "warning", "info"],
+            "description": "Error severity level"
+          },
+          "httpStatus": {
+            "type": "integer",
+            "description": "HTTP status code if applicable"
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Keywords for search/categorization"
+          }
+        },
+        "required": ["message", "type", "file"]
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "filesScanned": { "type": "integer" },
+        "analysisVersion": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "required": ["repo", "errors"]
+}
