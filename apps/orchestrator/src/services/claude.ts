@@ -189,7 +189,7 @@ export async function analyzeRepository(
   language: string,
   options: ClaudeAnalysisOptions = {}
 ): Promise<AnalysisResult> {
-  const { timeoutMs = 600000, maxRetries = 2 } = options; // 10 min timeout
+  const { timeoutMs = 180000, maxRetries = 1 } = options; // 3 min timeout
 
   const prompt = getPromptForLanguage(language);
   const schema = await loadSchema();
@@ -213,12 +213,15 @@ export async function analyzeRepository(
           "--output-format",
           "json",
           "--print",
+          "--permission-mode",
+          "bypassPermissions",
         ],
         {
           cwd: repoPath,
           timeout: timeoutMs,
           maxBuffer: 100 * 1024 * 1024, // 100MB buffer
           reject: true,
+          stdin: "ignore", // Ensure no TTY waiting
         }
       );
 

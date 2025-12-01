@@ -16,6 +16,7 @@ export const repositories = pgTable(
     id: serial("id").primaryKey(),
     githubId: bigint("github_id", { mode: "number" }).unique().notNull(),
     fullName: varchar("full_name", { length: 255 }).notNull(),
+    description: text("description"),
     language: varchar("language", { length: 50 }),
     stars: integer("stars").default(0),
     lastReleaseAt: timestamp("last_release_at", { withTimezone: true }),
@@ -45,11 +46,28 @@ export const errors = pgTable(
     filePath: varchar("file_path", { length: 500 }),
     lineNumber: integer("line_number"),
     context: text("context"),
+    // Source code for SEO and debugging
+    sourceCode: text("source_code"),           // The actual code that throws
+    sourceCodeStart: integer("source_code_start"), // Start line of region
+    sourceCodeEnd: integer("source_code_end"),     // End line of region
+    githubUrl: text("github_url"),                 // Direct link to GitHub
     documentation: text("documentation"),
     solutions: text("solutions").array(),
+    triggerScenarios: text("trigger_scenarios"),
+    commonSituations: text("common_situations"),
+    exampleFix: text("example_fix"),
     severity: varchar("severity", { length: 20 }),
     httpStatus: integer("http_status"),
     tags: text("tags").array(),
+    // Defensive programming fields
+    handlingStrategy: varchar("handling_strategy", { length: 50 }),
+    validationCode: text("validation_code"),
+    typeGuard: text("type_guard"),
+    tryCatchPattern: text("try_catch_pattern"),
+    preventionTips: text("prevention_tips").array(),
+    // Article recommendations
+    recommendedArticles: text("recommended_articles").array(),
+    suggestedNewArticles: text("suggested_new_articles"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
