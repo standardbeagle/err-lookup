@@ -1,0 +1,6 @@
+/manifest.json
+  Cache-Control: public, max-age=300
+/data/manifest.json
+  Cache-Control: public, max-age=300
+/data/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800

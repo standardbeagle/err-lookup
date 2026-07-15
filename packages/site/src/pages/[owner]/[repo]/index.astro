@@ -1,0 +1,39 @@
+---
+import Base from "../../../layouts/Base.astro";
+import { getRepoErrors, getRepos } from "../../../data/load.js";
+
+export function getStaticPaths() {
+  return getRepos().map((r) => {
+    const [owner, name] = r.repo.split("/");
+    return { params: { owner, repo: name }, props: { repo: r } };
+  });
+}
+
+const { repo } = Astro.props;
+const errors = getRepoErrors(repo.repo);
+const title = `${repo.repo} — ErrLookup`;
+---
+<Base title={title} description={`Error index for ${repo.repo}: ${repo.errorCount} documented errors.`}>
+  <h1>{repo.repo}</h1>
+  <p class="muted">{repo.description ?? ""} · {repo.language ?? "—"} · ★ {repo.stars.toLocaleString()}</p>
+  <p class="muted">Analyzed at <code>{repo.analyzedSha.slice(0, 10)}</code> on {repo.analyzedAt.slice(0, 10)}. {errors.length} documented errors.</p>
+
+  <table>
+    <thead><tr><th>Code / Message</th><th>Type</th><th>Severity</th><th>Tags</th></tr></thead>
+    <tbody>
+      {errors.map((e) => (
+        <tr>
+          <td>
+            <a href={`/${repo.repo}/${e.slug}/`}>
+              {e.errorCode ? <code>{e.errorCode}</code> : <span>{e.errorMessage.slice(0, 60)}</span>}
+            </a>
+            <div class="muted">{e.errorCode ? e.errorMessage.slice(0, 80) : ""}</div>
+          </td>
+          <td>{e.errorType}</td>
+          <td><span class="pill">{e.severity}</span></td>
+          <td class="muted">{e.tags.join(", ")}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</Base>

@@ -1,0 +1,124 @@
+---
+import Base from "../../../../layouts/Base.astro";
+import { getRepos, getRepoErrors, relatedErrors } from "../../../../data/load.js";
+import type { ErrorEntry } from "@errlookup/schema";
+
+export function getStaticPaths() {
+  const paths: { params: { owner: string; repo: string; slug: string }; props: { error: ErrorEntry; repoFullName: string } }[] = [];
+  for (const r of getRepos()) {
+    const [owner, name] = r.repo.split("/");
+    for (const e of getRepoErrors(r.repo)) {
+      paths.push({ params: { owner, repo: name, slug: e.slug }, props: { error: e, repoFullName: r.repo } });
+    }
+  }
+  return paths;
+}
+
+const { error: e, repoFullName } = Astro.props;
+const title = `${e.errorCode ?? e.errorMessage.slice(0, 40)}: ${e.errorMessage} — ${repoFullName} | ErrLookup`;
+const description = e.documentation.slice(0, 155);
+const related = relatedErrors(repoFullName, e.slug);
+const jsonUrl = `/data/errors/${e.id}.json`;
+const issuesUrl = `https://github.com/${repoFullName}/issues`;
+
+// JSON-LD: TechArticle + FAQPage (question = message, answer = top solution)
+const ld = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "TechArticle",
+      headline: e.errorCode ?? e.errorMessage.slice(0, 80),
+      description: e.documentation,
+      about: `${repoFullName} — ${e.errorMessage}`,
+      url: `https://errlookup.dev/${repoFullName}/${e.slug}/`,
+      proficiencyLevel: "Expert",
+    },
+    {
+      "@type": "FAQPage",
+      mainEntity: [
+        {
+          "@type": "Question",
+          name: `What causes "${e.errorMessage}" in ${repoFullName}?`,
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: e.solutions[0] ?? e.documentation,
+          },
+        },
+      ],
+    },
+  ],
+};
+---
+<Base title={title} description={description}>
+  <Fragment slot="head">
+    <link rel="alternate" type="application/json" href={jsonUrl} title="JSON dataset record" />
+    <link rel="canonical" href={`https://errlookup.dev/${repoFullName}/${e.slug}/`} />
+    <script type="application/ld+json" set:html={JSON.stringify(ld)} />
+  </Fragment>
+
+  <p class="muted"><a href={`/${repoFullName}/`}>{repoFullName}</a> · <span class="pill">{e.severity}</span> {e.errorClass && <>· <code>{e.errorClass}</code></>}</p>
+  <h1>{e.errorCode ?? e.errorMessage.slice(0, 60)}</h1>
+  {e.errorCode && <p class="muted"><code>{e.errorCode}</code></p>}
+
+  <h2>Error message</h2>
+  <pre>{e.errorMessage}</pre>
+
+  <h2>What it means</h2>
+  <p>{e.documentation}</p>
+
+  <h2>Source</h2>
+  <p class="muted">Thrown at <code>{e.filePath}{e.lineNumber ? `:${e.lineNumber}` : ""}</code></p>
+  {e.sourceCode && <pre>{e.sourceCode}</pre>}
+  <p><a href={e.githubUrl}>View on GitHub ↗</a> (pinned to <code>{e.analyzedSha.slice(0, 10)}</code>)</p>
+
+  {e.solutions.length > 0 && (
+    <>
+      <h2>Solutions</h2>
+      <ol>
+        {e.solutions.map((s) => <li>{s}</li>)}
+      </ol>
+    </>
+  )}
+  {e.exampleFix && (
+    <>
+      <h3>Example fix</h3>
+      <pre>{e.exampleFix}</pre>
+    </>
+  )}
+
+  {(e.handlingStrategy || e.validationCode || e.typeGuard || e.tryCatchPattern || e.preventionTips.length > 0) && (
+    <details open>
+      <summary>Defensive patterns</summary>
+      {e.handlingStrategy && <p>Strategy: <span class="pill">{e.handlingStrategy}</span></p>}
+      {e.validationCode && <><h3>Validate before calling</h3><pre>{e.validationCode}</pre></>}
+      {e.typeGuard && <><h3>Type guard</h3><pre>{e.typeGuard}</pre></>}
+      {e.tryCatchPattern && <><h3>Try / catch</h3><pre>{e.tryCatchPattern}</pre></>}
+      {e.preventionTips.length > 0 && (
+        <>
+          <h3>Prevention</h3>
+          <ul>{e.preventionTips.map((t) => <li>{t}</li>)}</ul>
+        </>
+      )}
+    </details>
+  )}
+
+  <h2>When it happens</h2>
+  <p><strong>Trigger:</strong> {e.triggerScenarios}</p>
+  <p><strong>Common situations:</strong> {e.commonSituations}</p>
+
+  {related.length > 0 && (
+    <>
+      <h2>Related errors</h2>
+      <ul>
+        {related.map((r) => <li><a href={`/${repoFullName}/${r.slug}/`}>{r.errorCode ?? r.errorMessage.slice(0, 60)}</a></li>)}
+      </ul>
+    </>
+  )}
+
+  <hr />
+  <p class="muted">
+    AI-assisted analysis of <code>{repoFullName}@{e.analyzedSha.slice(0, 10)}</code> ({e.analyzedAt.slice(0, 10)}).
+    Data as JSON: <a href={jsonUrl}>{jsonUrl}</a>.
+    Report an issue: <a href={issuesUrl}>GitHub ↗</a>.
+  </p>
+</Base>
