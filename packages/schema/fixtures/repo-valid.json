@@ -1,0 +1,11 @@
+{
+  "$comment": "Valid RepoEntry fixture — axios.",
+  "repo": "axios/axios",
+  "description": "Promise based HTTP client for the browser and node.js",
+  "language": "JavaScript",
+  "stars": 106000,
+  "defaultBranch": "main",
+  "analyzedSha": "2e88108521a8e1c0b9b0ed8f5a04b29c21c2e9fc",
+  "analyzedAt": "2026-07-14T00:00:00Z",
+  "errorCount": 12
+}

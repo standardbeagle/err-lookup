@@ -1,0 +1,32 @@
+{
+  "name": "@errlookup/schema",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./schema.json": "./schema.json"
+  },
+  "scripts": {
+    "build": "tsc && pnpm gen-json-schema",
+    "gen-json-schema": "tsx scripts/gen-json-schema.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist schema.json"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "zod-to-json-schema": "^3.23.5"
+  }
+}

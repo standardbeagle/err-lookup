@@ -12,7 +12,7 @@
     },
     "test": {
       "dependsOn": ["build"],
-      "inputs": ["src/**", "tests/**"]
+      "inputs": ["src/**", "tests/**", "fixtures/**", "scripts/**"]
     },
     "lint": {
       "dependsOn": ["^build"]
