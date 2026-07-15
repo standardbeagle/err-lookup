@@ -1,0 +1,31 @@
+{
+  "enriched": [
+    {
+      "errorIndex": 0,
+      "documentation": "The library throws a TypeError when the expected callable is not a function. This guards dynamic dispatch sites where a callback or method is required.",
+      "triggerScenarios": "Calling a higher-order helper with a non-function argument, or passing undefined where a method reference is expected.",
+      "commonSituations": "Migration shuffling of arguments, optional-dependency trees resolving to undefined in production, or a misnamed import.",
+      "solutions": [
+        "Guard the value with typeof === 'function' before invoking.",
+        "Provide a default no-op callback at the call site.",
+        "Add a type annotation so the mismatch surfaces at compile time."
+      ],
+      "exampleFix": "// BEFORE:\nrun(cb) // cb undefined\n\n// AFTER:\nrun(typeof cb === 'function' ? cb : () => {})",
+      "severity": "error",
+      "tags": ["typescript", "validation"]
+    },
+    {
+      "errorIndex": 1,
+      "documentation": "A validation guard rejects non-object input where an object is required by the API contract.",
+      "triggerScenarios": "Passing a primitive or null where a config object is expected.",
+      "commonSituations": "Missing config object, JSON parse returning a string, default null from an upstream module.",
+      "solutions": [
+        "Construct the expected object shape before calling.",
+        "Validate with a schema (zod/joi) and surface a clearer error."
+      ],
+      "exampleFix": "// BEFORE:\nis({}) // value null\n\n// AFTER:\nis(typeof value === 'object' && value !== null ? value : {})",
+      "severity": "warning",
+      "tags": ["validation"]
+    }
+  ]
+}

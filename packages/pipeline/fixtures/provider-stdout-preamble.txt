@@ -1,0 +1,6 @@
+Analysis complete. Results follow.
+
+Some preamble text that should be skipped by the JSON extractor. The CLI
+sometimes prints status messages before the structured output.
+
+{"errors":[{"message":"Cannot find module '{name}'","type":"exception","file":"lib/load.js","line":7,"code":null,"errorClass":null,"httpStatus":null}]}

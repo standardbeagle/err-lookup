@@ -1,0 +1,22 @@
+{
+  "errors": [
+    {
+      "message": "Expected a function, got {type}",
+      "type": "exception",
+      "file": "index.js",
+      "line": 18,
+      "code": null,
+      "errorClass": "TypeError",
+      "httpStatus": null
+    },
+    {
+      "message": "Expected object, received {value}",
+      "type": "validation",
+      "file": "source/is.js",
+      "line": 42,
+      "code": null,
+      "errorClass": null,
+      "httpStatus": null
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+import { sqliteTable, text, integer, uniqueIndex, index } from "drizzle-orm/sqlite-core";
+
+/**
+ * SQLite schema — pipeline working state only (§3.2). Never shipped.
+ * The static JSON export (§5) is the publication format.
+ *
+ * Arrays / structured fields are stored as JSON text columns. All multi-row
+ * writes happen in transactions (see db/client.ts). WAL mode on.
+ */
+
+export const repositories = sqliteTable(
+  "repositories",
+  {
+    repo: text("repo").primaryKey(),
+    description: text("description"),
+    language: text("language"),
+    stars: integer("stars").notNull().default(0),
+    defaultBranch: text("default_branch").notNull(),
+    analyzedSha: text("analyzed_sha"),
+    analyzedAt: text("analyzed_at"),
+    errorCount: integer("error_count").notNull().default(0),
+    // Pipeline working state
+    status: text("status", { enum: ["pending", "analyzing", "analyzed", "failed", "exported"] })
+      .notNull()
+      .default("pending"),
+    lastError: text("last_error"),
+    createdAt: integer("created_at").notNull().$defaultFn(() => Date.now()),
+    updatedAt: integer("updated_at").notNull().$defaultFn(() => Date.now()),
+  },
+  (table) => [index("idx_repos_status").on(table.status, table.updatedAt)]
+);
+
+export const errors = sqliteTable(
+  "errors",
+  {
+    id: text("id").primaryKey(),
+    repo: text("repo").notNull(),
+    slug: text("slug").notNull(),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message").notNull(),
+    messagePattern: text("message_pattern").notNull(),
+    errorType: text("error_type").notNull(),
+    errorClass: text("error_class"),
+    httpStatus: integer("http_status"),
+    severity: text("severity").notNull(),
+
+    filePath: text("file_path").notNull(),
+    lineNumber: integer("line_number"),
+    sourceCode: text("source_code"),
+    sourceCodeStart: integer("source_code_start"),
+    sourceCodeEnd: integer("source_code_end"),
+    githubUrl: text("github_url").notNull(),
+
+    documentation: text("documentation"),
+    triggerScenarios: text("trigger_scenarios"),
+    commonSituations: text("common_situations"),
+    solutions: text("solutions", { mode: "json" }).$type<string[]>(),
+    exampleFix: text("example_fix"),
+
+    handlingStrategy: text("handling_strategy"),
+    validationCode: text("validation_code"),
+    typeGuard: text("type_guard"),
+    tryCatchPattern: text("try_catch_pattern"),
+    preventionTips: text("prevention_tips", { mode: "json" }).$type<string[]>(),
+
+    tags: text("tags", { mode: "json" }).$type<string[]>(),
+    analyzedSha: text("analyzed_sha").notNull(),
+    analyzedAt: text("analyzed_at").notNull(),
+    schemaVersion: integer("schema_version").notNull().default(2),
+
+    updatedAt: integer("updated_at").notNull().$defaultFn(() => Date.now()),
+  },
+  (table) => [
+    uniqueIndex("idx_errors_repo_slug").on(table.repo, table.slug),
+    index("idx_errors_repo").on(table.repo),
+    index("idx_errors_code").on(table.errorCode),
+  ]
+);
+
+export const jobHistory = sqliteTable(
+  "job_history",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    repo: text("repo").notNull(),
+    phase: text("phase").notNull(),
+    status: text("status").notNull(), // running | success | failed | skipped
+    startedAt: integer("started_at").notNull(),
+    completedAt: integer("completed_at"),
+    durationMs: integer("duration_ms"),
+    analyzedSha: text("analyzed_sha"),
+    errorLog: text("error_log"),
+    /** Optional phase output (e.g. discovery's discovered[] JSON) for resuming. */
+    result: text("result"),
+  },
+  (table) => [index("idx_jobs_repo").on(table.repo, table.startedAt)]
+);
+
+// Queue table for corpus blitz (§11.1). Used by `corpus build` / `batch --from-queue`.
+export const queue = sqliteTable(
+  "queue",
+  {
+    repo: text("repo").primaryKey(),
+    priority: integer("priority").notNull().default(0),
+    status: text("status").notNull().default("queued"), // queued | running | done | failed | skipped
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    updatedAt: integer("updated_at").notNull().$defaultFn(() => Date.now()),
+  },
+  (table) => [index("idx_queue_status_priority").on(table.status, table.priority)]
+);
+
+export type RepositoryRow = typeof repositories.$inferSelect;
+export type NewRepositoryRow = typeof repositories.$inferInsert;
+export type ErrorRow = typeof errors.$inferSelect;
+export type NewErrorRow = typeof errors.$inferInsert;
+export type JobHistoryRow = typeof jobHistory.$inferSelect;
+export type NewJobHistoryRow = typeof jobHistory.$inferInsert;
+export type QueueRow = typeof queue.$inferSelect;
+export type NewQueueRow = typeof queue.$inferInsert;

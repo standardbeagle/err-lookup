@@ -1,0 +1,21 @@
+I'll analyze the codebase and find all error patterns.
+
+Looking at the source files, here are the errors I discovered:
+
+```json
+{
+  "errors": [
+    {
+      "message": "Expected a function, got {type}",
+      "type": "exception",
+      "file": "index.js",
+      "line": 18,
+      "code": null,
+      "errorClass": "TypeError",
+      "httpStatus": null
+    }
+  ]
+}
+```
+
+Let me know if you need more detail on any of these.

@@ -5,3 +5,4 @@ packages:
 onlyBuiltDependencies:
   - core-js
   - core-js-pure
+  - better-sqlite3

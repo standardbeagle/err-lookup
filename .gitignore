@@ -31,6 +31,14 @@ Thumbs.db
 # Database
 *.sqlite
 *.sqlite-journal
+*.db
+*.db-wal
+*.db-shm
+
+# Pipeline working state
+data/
+.tmp-test/
+.tmp-src-test/
 
 # Drizzle
 drizzle/

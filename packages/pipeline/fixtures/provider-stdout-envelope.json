@@ -1,0 +1,1 @@
+{"type":"result","subtype":"success","is_error":false,"duration_ms":12227,"result":"{\"errors\":[{\"message\":\"Expected a function, got {type}\",\"type\":\"exception\",\"file\":\"index.js\",\"line\":18,\"code\":null,\"errorClass\":\"TypeError\",\"httpStatus\":null}]}","stop_reason":"end_turn","session_id":"abc","total_cost_usd":0.6}
