@@ -3,14 +3,10 @@ import {
   type ErrorEntry,
   CURRENT_SCHEMA_VERSION,
 } from "@errlookup/schema";
-import type { DiscoveredErrorJson, EnrichedErrorJson } from "./prompts.js";
+import type { DiscoveredErrorJson, EnrichedErrorJson, DefenseStrategyJson } from "./prompts.js";
 import { computeErrorId, deriveSlug, normalizeErrorType } from "../util/ids.js";
 import { extractSourceRegion, githubPermalink } from "../util/source.js";
-
-/** Escape a string as a literal regex (M2 placeholder; full derivation in M3 §4.3). */
-export function escapeLiteralPattern(message: string): string {
-  return message.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+import { deriveMessagePattern } from "../util/pattern.js";
 
 export interface AssembleInput {
   repo: string;
@@ -19,6 +15,7 @@ export interface AssembleInput {
   repoPath: string;
   discovered: DiscoveredErrorJson[];
   enriched: Map<number, EnrichedErrorJson>;
+  defense?: Map<number, DefenseStrategyJson>;
 }
 
 export interface AssembleOutput {
@@ -27,13 +24,12 @@ export interface AssembleOutput {
 }
 
 /**
- * Merge discovery + enrichment + deterministic source extraction into validated
- * ErrorEntry records (§3.1). GitHub permalinks pinned to the analyzed SHA (never
- * branch-relative — fixes v1 bug). Missing enrichment is backfilled with minimal
- * valid placeholders so records pass schema; the verify phase later patches gaps.
+ * Merge discovery + enrichment + defense + deterministic source extraction into
+ * validated ErrorEntry records (§3.1). GitHub permalinks pinned to the analyzed
+ * SHA (never branch-relative — fixes v1 bug). messagePattern derived per §4.3.
  */
 export function assemble(input: AssembleInput): AssembleOutput {
-  const { repo, sha, repoPath, discovered, enriched } = input;
+  const { repo, sha, repoPath, discovered, enriched, defense } = input;
   const analyzedAt = new Date().toISOString();
   const records: ErrorEntry[] = [];
   const rejects: { message: string; error: string }[] = [];
@@ -44,6 +40,7 @@ export function assemble(input: AssembleInput): AssembleOutput {
     const region = line != null ? extractSourceRegion(repoPath, filePath, line) : null;
 
     const e = enriched.get(i);
+    const def = defense?.get(i);
 
     const record = {
       id: computeErrorId({
@@ -56,7 +53,7 @@ export function assemble(input: AssembleInput): AssembleOutput {
       slug: deriveSlug(d.code ?? null, d.message),
       errorCode: d.code ?? null,
       errorMessage: d.message,
-      messagePattern: escapeLiteralPattern(d.message),
+      messagePattern: deriveMessagePattern(d.message).pattern,
       errorType: normalizeErrorType(d.type),
       errorClass: d.errorClass ?? null,
       httpStatus: d.httpStatus ?? null,
@@ -78,11 +75,11 @@ export function assemble(input: AssembleInput): AssembleOutput {
       commonSituations: e?.commonSituations ?? "See trigger scenarios.",
       solutions: e?.solutions ?? [],
       exampleFix: e?.exampleFix ?? null,
-      handlingStrategy: null,
-      validationCode: null,
-      typeGuard: null,
-      tryCatchPattern: null,
-      preventionTips: [],
+      handlingStrategy: def?.handlingStrategy ?? null,
+      validationCode: def?.validationCode ?? null,
+      typeGuard: def?.typeGuard ?? null,
+      tryCatchPattern: def?.tryCatchPattern ?? null,
+      preventionTips: def?.preventionTips ?? [],
       tags: (e?.tags ?? []).map((t) => t.toLowerCase()),
       analyzedSha: sha,
       analyzedAt,

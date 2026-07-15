@@ -4,13 +4,17 @@ import {
   recordPhase,
   latestPhaseRun,
   replaceErrors,
+  getRepo,
 } from "../db/store.js";
-import type { PhaseName } from "@errlookup/schema";
+import type { PhaseName, ErrorEntry } from "@errlookup/schema";
+import { validateErrorEntry } from "@errlookup/schema";
 import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider } from "../provider/types.js";
 import { ProviderError } from "../provider/types.js";
 import { runDiscovery } from "./discovery.js";
 import { runEnrichment } from "./enrichment.js";
+import { runDefense } from "./defense.js";
+import { runVerify, applyPatches } from "./verify.js";
 import { assemble } from "./assembler.js";
 import type { DiscoveredErrorJson } from "./prompts.js";
 
@@ -111,7 +115,8 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
     return { errorCount: 0, rejects: [], skipped };
   }
 
-  // ----- Phase 2: Enrichment + assemble -----
+  // ----- Phase 2: Enrichment -----
+  let enrichedMap = new Map<number, import("./prompts.js").EnrichedErrorJson>();
   if (wanted("enrichment")) {
     if (phaseDone(db, repo, sha, "enrichment", opts.force)) {
       skipped.push("enrichment");
@@ -122,8 +127,7 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         const enr = await runEnrichment(repoPath, discovered, providers, cfg, (b, t) =>
           log(`phase enrichment: batch ${b}/${t}`)
         );
-        const { records, rejects } = assemble({ repo, sha, repoPath, discovered, enriched: enr.byIndex });
-        replaceErrors(db, repo, records.map(toRow));
+        enrichedMap = enr.byIndex;
         recordPhase(db, {
           repo,
           phase: "enrichment",
@@ -132,26 +136,10 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           completedAt: Date.now(),
           analyzedSha: sha,
         });
-        log(`phase enrichment: ${records.length} records, ${rejects.length} rejects via ${enr.providerUsed} (${enr.durationMs}ms)`);
-        upsertRepo(db, {
-          repo,
-          status: "analyzed",
-          analyzedSha: sha,
-          analyzedAt: new Date().toISOString(),
-          errorCount: records.length,
-        });
-        return { errorCount: records.length, rejects, skipped };
+        log(`phase enrichment: ${enrichedMap.size}/${discovered.length} enriched via ${enr.providerUsed} (${enr.durationMs}ms)`);
       } catch (e) {
         const msg = e instanceof ProviderError ? `[${e.kind}] ${e.message}` : (e as Error).message;
-        recordPhase(db, {
-          repo,
-          phase: "enrichment",
-          status: "failed",
-          startedAt: started,
-          completedAt: Date.now(),
-          analyzedSha: sha,
-          errorLog: msg,
-        });
+        recordPhase(db, { repo, phase: "enrichment", status: "failed", startedAt: started, completedAt: Date.now(), analyzedSha: sha, errorLog: msg });
         upsertRepo(db, { repo, status: "failed", lastError: `enrichment: ${msg}` });
         log(`phase enrichment: FAILED — ${msg}`);
         return { errorCount: 0, rejects: [], skipped };
@@ -159,8 +147,76 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
     }
   }
 
-  // enrichment skipped but discovery produced errors — keep whatever was in DB
-  return { errorCount: 0, rejects: [], skipped };
+  // ----- Phase 3: Defense -----
+  let defenseMap = new Map<number, import("./prompts.js").DefenseStrategyJson>();
+  if (wanted("defense") && !skipped.includes("enrichment")) {
+    if (phaseDone(db, repo, sha, "defense", opts.force)) {
+      skipped.push("defense");
+      log(`phase defense: skipped (already succeeded for ${sha.slice(0, 8)})`);
+    } else {
+      const started = Date.now();
+      try {
+        const def = await runDefense(repoPath, discovered, providers, cfg, (b, t) =>
+          log(`phase defense: batch ${b}/${t}`)
+        );
+        defenseMap = def.byIndex;
+        recordPhase(db, { repo, phase: "defense", status: "success", startedAt: started, completedAt: Date.now(), analyzedSha: sha });
+        log(`phase defense: ${defenseMap.size}/${discovered.length} strategies via ${def.providerUsed} (${def.durationMs}ms)`);
+      } catch (e) {
+        const msg = e instanceof ProviderError ? `[${e.kind}] ${e.message}` : (e as Error).message;
+        recordPhase(db, { repo, phase: "defense", status: "failed", startedAt: started, completedAt: Date.now(), analyzedSha: sha, errorLog: msg });
+        log(`phase defense: FAILED — ${msg} (continuing, defense is optional)`);
+      }
+    }
+  }
+
+  // If enrichment was skipped this run (already succeeded before), the errors
+  // table already holds the full records — don't reassemble/clobber them.
+  if (skipped.includes("enrichment")) {
+    const existing = getRepo(db, repo);
+    log(`done: ${existing?.errorCount ?? 0} records (enrichment previously completed)`);
+    return { errorCount: existing?.errorCount ?? 0, rejects: [], skipped };
+  }
+
+  // ----- Assemble + write -----
+  const assembled = assemble({ repo, sha, repoPath, discovered, enriched: enrichedMap, defense: defenseMap });
+  replaceErrors(db, repo, assembled.records.map(toRow));
+
+  // ----- Phase 5: Verify (patch loop, max 2 rounds) -----
+  if (wanted("verify") && assembled.records.length > 0) {
+    if (phaseDone(db, repo, sha, "verify", opts.force)) {
+      skipped.push("verify");
+      log(`phase verify: skipped (already succeeded for ${sha.slice(0, 8)})`);
+    } else {
+      const started = Date.now();
+      let records = assembled.records;
+      for (let round = 0; round < 2; round++) {
+        const v = await runVerify(repoPath, records, providers, cfg, (m) => log(`phase verify: ${m}`));
+        if (v.patches.length === 0) break;
+        const { records: patched, applied } = applyPatches(records, v.patches);
+        // re-validate every patched record; keep only valid
+        const revalidated = patched
+          .map((r) => validateErrorEntry(r))
+          .filter((r): r is { ok: true; value: ErrorEntry } => r.ok)
+          .map((r) => r.value);
+        records = revalidated;
+        log(`phase verify: round ${round + 1} applied ${applied} patches → ${records.length} valid records`);
+      }
+      replaceErrors(db, repo, records.map(toRow));
+      assembled.records = records;
+      recordPhase(db, { repo, phase: "verify", status: "success", startedAt: started, completedAt: Date.now(), analyzedSha: sha });
+    }
+  }
+
+  upsertRepo(db, {
+    repo,
+    status: "analyzed",
+    analyzedSha: sha,
+    analyzedAt: new Date().toISOString(),
+    errorCount: assembled.records.length,
+  });
+  log(`done: ${assembled.records.length} records (${assembled.rejects.length} rejects)`);
+  return { errorCount: assembled.records.length, rejects: assembled.rejects, skipped };
 }
 
 /** Map a validated ErrorEntry to a DB row (arrays stored as JSON text). */

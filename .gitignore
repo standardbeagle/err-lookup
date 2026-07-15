@@ -70,3 +70,6 @@ run-*.sh
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Local tooling artifacts
+.risk-pipeline/

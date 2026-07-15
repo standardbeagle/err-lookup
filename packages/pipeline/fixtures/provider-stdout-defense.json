@@ -1,0 +1,20 @@
+{
+  "defenseStrategies": [
+    {
+      "errorIndex": 0,
+      "handlingStrategy": "type-guard",
+      "validationCode": "function isFn(x) { return typeof x === 'function'; }",
+      "typeGuard": "function isFunction(x) { return typeof x === 'function'; }",
+      "tryCatchPattern": "try { run(cb); } catch (e) { if (e instanceof TypeError) console.warn(e); else throw e; }",
+      "preventionTips": ["Type the callback parameter explicitly.", "Default to a no-op when undefined."]
+    },
+    {
+      "errorIndex": 1,
+      "handlingStrategy": "validation",
+      "validationCode": "function isObj(x) { return typeof x === 'object' && x !== null; }",
+      "typeGuard": null,
+      "tryCatchPattern": null,
+      "preventionTips": ["Validate at the boundary."]
+    }
+  ]
+}

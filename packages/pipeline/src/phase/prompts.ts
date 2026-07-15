@@ -25,6 +25,28 @@ export interface EnrichedErrorJson {
   tags: string[];
 }
 
+export interface DefenseStrategyJson {
+  errorIndex: number;
+  handlingStrategy: "try-catch" | "type-guard" | "validation" | "retry" | "fallback";
+  validationCode?: string | null;
+  typeGuard?: string | null;
+  tryCatchPattern?: string | null;
+  preventionTips: string[];
+}
+
+export interface VerifyPatchJson {
+  id: string;
+  field:
+    | "documentation"
+    | "triggerScenarios"
+    | "commonSituations"
+    | "solutions"
+    | "exampleFix"
+    | "sourceCode"
+    | "filePath";
+  value: unknown;
+}
+
 /** Phase 1 — Discovery (§4.2.1): scan repo for user-facing errors. */
 export const DISCOVERY_PROMPT = `You are an expert at finding error patterns in codebases. Systematically discover ALL user-facing errors in this repository.
 
@@ -70,4 +92,53 @@ For EACH error (use the bracketed index as errorIndex) provide:
 
 OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
 {"enriched":[{"errorIndex":0,"documentation":"...","triggerScenarios":"...","commonSituations":"...","solutions":["step 1","step 2"],"exampleFix":"// before\\n...\\n// after\\n...","severity":"error","tags":["x","y"]}]}`;
+}
+
+/** Phase 3 — Defense (§4.2.3): defensive-programming guidance per error, batched. */
+export function defensePrompt(batch: DiscoveredErrorJson[], startIndex: number): string {
+  const list = batch
+    .map(
+      (e, i) =>
+        `[${startIndex + i}] message=${JSON.stringify(e.message)} file=${e.file}:${e.line ?? "?"}${e.code ? ` code=${e.code}` : ""}`
+    )
+    .join("\n");
+  return `For each of these ${batch.length} errors, recommend how a USER of the library should defend against it. Use the bracketed index as errorIndex.
+
+ERRORS:
+${list}
+
+For EACH error provide:
+- handlingStrategy: exactly one of try-catch|type-guard|validation|retry|fallback.
+- validationCode: code the caller can run BEFORE the API to avoid the error (null if not applicable).
+- typeGuard: a language-appropriate type guard / narrowing function (null if not applicable).
+- tryCatchPattern: the recommended catch pattern for this specific error (null if not applicable).
+- preventionTips: array of concrete habits/checks to avoid it.
+
+OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
+{"defenseStrategies":[{"errorIndex":0,"handlingStrategy":"try-catch","validationCode":"// ...","typeGuard":"// ...","tryCatchPattern":"// ...","preventionTips":["..."]}]}`;
+}
+
+/** Phase 5 — Verify (§4.2.5): review assembled records for gaps, emit patches. */
+export function verifyPrompt(compact: { id: string; message: string; file: string; line: number | null; hasDoc: boolean; hasSolutions: boolean; hasSource: boolean; hasDefense: boolean }[]): string {
+  const list = compact
+    .map(
+      (c) =>
+        `id=${c.id} message=${JSON.stringify(c.message)} file=${c.file}:${c.line ?? "?"} hasDoc=${c.hasDoc} hasSolutions=${c.hasSolutions} hasSource=${c.hasSource} hasDefense=${c.hasDefense}`
+    )
+    .join("\n");
+  return `Review these assembled error records for gaps. For each record with a gap, emit a patch that fills it. Only patch fields that are missing/empty/wrong.
+
+RECORDS:
+${list}
+
+Patchable fields and the value shapes:
+- documentation (string), triggerScenarios (string), commonSituations (string)
+- solutions (array of strings), exampleFix (string)
+- sourceCode (string: the real throwing region, ≤40 lines, read from the file)
+- filePath (string: corrected path if the recorded one is wrong)
+
+Do NOT patch records that are already complete. Do NOT invent ids.
+
+OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
+{"patches":[{"id":"<16 hex>","field":"documentation","value":"..."}]}`;
 }

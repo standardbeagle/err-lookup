@@ -51,6 +51,8 @@ describe("pipeline e2e (fixture-replay)", () => {
     const providers = {
       claude: new ScriptedProvider("claude", [
         { match: "Enrich each", fixturePath: fx("provider-stdout-enriched.json") },
+        { match: "recommend how a USER", fixturePath: fx("provider-stdout-defense.json") },
+        { match: "Review these assembled", fixturePath: fx("provider-stdout-verify.json") },
         { match: "error patterns", fixturePath: fx("provider-stdout-clean.json") },
       ]),
     };
@@ -69,6 +71,9 @@ describe("pipeline e2e (fixture-replay)", () => {
 
     const rows = db.select().from(errors).where(eq(errors.repo, "sindresorhus/is")).all();
     expect(rows).toHaveLength(2);
+    // defense data merged in
+    expect(rows.some((r) => r.handlingStrategy === "type-guard")).toBe(true);
+    expect(rows.some((r) => r.preventionTips && r.preventionTips.length > 0)).toBe(true);
     for (const r of rows) {
       // every DB row re-validates against the schema
       const v = validateErrorEntry({
@@ -109,10 +114,15 @@ describe("pipeline e2e (fixture-replay)", () => {
       expect(r.githubUrl).not.toContain("/blob/main/");
     }
 
-    // job_history recorded both phases as success
+    // job_history recorded all 4 phases as success
     const jobs = db.select().from(jobHistory).all();
     const successes = jobs.filter((j) => j.status === "success");
-    expect(successes.map((j) => j.phase).sort()).toEqual(["discovery", "enrichment"]);
+    expect(successes.map((j) => j.phase).sort()).toEqual([
+      "defense",
+      "discovery",
+      "enrichment",
+      "verify",
+    ]);
 
     raw.close();
     rmSync(local.path, { recursive: true, force: true });
