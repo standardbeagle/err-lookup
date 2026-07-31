@@ -33,6 +33,8 @@ export function assemble(input: AssembleInput): AssembleOutput {
   const analyzedAt = new Date().toISOString();
   const records: ErrorEntry[] = [];
   const rejects: { message: string; error: string }[] = [];
+  const seenIds = new Set<string>();
+  const usedSlugs = new Set<string>();
 
   discovered.forEach((d, i) => {
     const filePath = d.file ?? "unknown";
@@ -42,15 +44,29 @@ export function assemble(input: AssembleInput): AssembleOutput {
     const e = enriched.get(i);
     const def = defense?.get(i);
 
-    const record = {
-      id: computeErrorId({
-        repo,
-        errorCode: d.code ?? null,
-        errorMessage: d.message,
-        filePath,
-      }),
+    const id = computeErrorId({
       repo,
-      slug: deriveSlug(d.code ?? null, d.message),
+      errorCode: d.code ?? null,
+      errorMessage: d.message,
+      filePath,
+    });
+    if (seenIds.has(id)) {
+      rejects.push({ message: d.message, error: `duplicate discovery (id ${id})` });
+      return;
+    }
+    seenIds.add(id);
+
+    // Slug must be unique per repo (unique index). deriveSlug collides when the
+    // same errorCode is thrown from multiple files, so disambiguate with a
+    // stable id fragment — deterministic across runs.
+    let slug = deriveSlug(d.code ?? null, d.message);
+    if (usedSlugs.has(slug)) slug = `${slug}-${id.slice(0, 6)}`;
+    usedSlugs.add(slug);
+
+    const record = {
+      id,
+      repo,
+      slug,
       errorCode: d.code ?? null,
       errorMessage: d.message,
       messagePattern: deriveMessagePattern(d.message).pattern,
