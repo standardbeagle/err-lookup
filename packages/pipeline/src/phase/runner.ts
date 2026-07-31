@@ -16,7 +16,7 @@ import { runEnrichment } from "./enrichment.js";
 import { runDefense } from "./defense.js";
 import { runVerify, applyPatches } from "./verify.js";
 import { assemble } from "./assembler.js";
-import type { DiscoveredErrorJson } from "./prompts.js";
+import type { DiscoveredErrorJson, EnrichedErrorJson, DefenseStrategyJson } from "./prompts.js";
 
 export interface RunPhasesOptions {
   db: Db;
@@ -42,6 +42,17 @@ const ALL_M2_PHASES: PhaseName[] = ["discovery", "enrichment"];
 function phaseDone(db: Db, repo: string, sha: string, phase: PhaseName, force?: boolean): boolean {
   if (force) return false;
   return latestPhaseRun(db, repo, sha, phase)?.status === "success";
+}
+
+/** Parse a persisted Map<number, T> phase result (stored as [index, value][]). */
+function parseIndexedMap<T>(result: string | null | undefined): Map<number, T> | null {
+  if (!result) return null;
+  try {
+    const arr = JSON.parse(result) as [number, T][];
+    return Array.isArray(arr) ? new Map(arr) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -115,12 +126,30 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
     return { errorCount: 0, rejects: [], skipped };
   }
 
+  // Fully analyzed at this SHA with enrichment recorded — nothing to redo, and
+  // reassembling would clobber verify-phase patches already in the errors table.
+  const repoRow = getRepo(db, repo);
+  if (
+    !opts.force &&
+    (repoRow?.status === "analyzed" || repoRow?.status === "exported") &&
+    repoRow.analyzedSha === sha &&
+    phaseDone(db, repo, sha, "enrichment")
+  ) {
+    skipped.push("enrichment");
+    log(`done: ${repoRow.errorCount ?? 0} records (already analyzed at ${sha.slice(0, 8)})`);
+    return { errorCount: repoRow.errorCount ?? 0, rejects: [], skipped };
+  }
+
   // ----- Phase 2: Enrichment -----
-  let enrichedMap = new Map<number, import("./prompts.js").EnrichedErrorJson>();
+  let enrichedMap = new Map<number, EnrichedErrorJson>();
   if (wanted("enrichment")) {
-    if (phaseDone(db, repo, sha, "enrichment", opts.force)) {
+    const persisted = phaseDone(db, repo, sha, "enrichment", opts.force)
+      ? parseIndexedMap<EnrichedErrorJson>(latestPhaseRun(db, repo, sha, "enrichment")?.result)
+      : null;
+    if (persisted) {
+      enrichedMap = persisted;
       skipped.push("enrichment");
-      log(`phase enrichment: skipped (already succeeded for ${sha.slice(0, 8)})`);
+      log(`phase enrichment: skipped (already succeeded for ${sha.slice(0, 8)}; reusing persisted output)`);
     } else {
       const started = Date.now();
       try {
@@ -135,6 +164,7 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           startedAt: started,
           completedAt: Date.now(),
           analyzedSha: sha,
+          result: JSON.stringify([...enrichedMap.entries()]),
         });
         log(`phase enrichment: ${enrichedMap.size}/${discovered.length} enriched via ${enr.providerUsed} (${enr.durationMs}ms)`);
       } catch (e) {
@@ -148,11 +178,15 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
   }
 
   // ----- Phase 3: Defense -----
-  let defenseMap = new Map<number, import("./prompts.js").DefenseStrategyJson>();
-  if (wanted("defense") && !skipped.includes("enrichment")) {
-    if (phaseDone(db, repo, sha, "defense", opts.force)) {
+  let defenseMap = new Map<number, DefenseStrategyJson>();
+  if (wanted("defense")) {
+    const persisted = phaseDone(db, repo, sha, "defense", opts.force)
+      ? parseIndexedMap<DefenseStrategyJson>(latestPhaseRun(db, repo, sha, "defense")?.result)
+      : null;
+    if (persisted) {
+      defenseMap = persisted;
       skipped.push("defense");
-      log(`phase defense: skipped (already succeeded for ${sha.slice(0, 8)})`);
+      log(`phase defense: skipped (already succeeded for ${sha.slice(0, 8)}; reusing persisted output)`);
     } else {
       const started = Date.now();
       try {
@@ -160,7 +194,15 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           log(`phase defense: batch ${b}/${t}`)
         );
         defenseMap = def.byIndex;
-        recordPhase(db, { repo, phase: "defense", status: "success", startedAt: started, completedAt: Date.now(), analyzedSha: sha });
+        recordPhase(db, {
+          repo,
+          phase: "defense",
+          status: "success",
+          startedAt: started,
+          completedAt: Date.now(),
+          analyzedSha: sha,
+          result: JSON.stringify([...defenseMap.entries()]),
+        });
         log(`phase defense: ${defenseMap.size}/${discovered.length} strategies via ${def.providerUsed} (${def.durationMs}ms)`);
       } catch (e) {
         const msg = e instanceof ProviderError ? `[${e.kind}] ${e.message}` : (e as Error).message;
@@ -170,15 +212,9 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
     }
   }
 
-  // If enrichment was skipped this run (already succeeded before), the errors
-  // table already holds the full records — don't reassemble/clobber them.
-  if (skipped.includes("enrichment")) {
-    const existing = getRepo(db, repo);
-    log(`done: ${existing?.errorCount ?? 0} records (enrichment previously completed)`);
-    return { errorCount: existing?.errorCount ?? 0, rejects: [], skipped };
-  }
-
   // ----- Assemble + write -----
+  // Reached when the repo write never completed (fresh analysis, or a prior run
+  // whose write failed). Assembly is deterministic from the phase outputs above.
   const assembled = assemble({ repo, sha, repoPath, discovered, enriched: enrichedMap, defense: defenseMap });
   replaceErrors(db, repo, assembled.records.map(toRow));
 
