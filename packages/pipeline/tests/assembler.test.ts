@@ -1,0 +1,41 @@
+import { describe, it, expect } from "vitest";
+import { assemble } from "../src/phase/assembler.js";
+
+function discovered(code: string | null, message: string, file: string) {
+  return { message, type: "exception", file, line: null, code, errorClass: null, httpStatus: null };
+}
+
+describe("assemble slug uniqueness", () => {
+  it("disambiguates records that derive the same slug (same code, different files)", () => {
+    const out = assemble({
+      repo: "acme/lib",
+      sha: "a".repeat(40),
+      repoPath: "/nonexistent",
+      discovered: [
+        discovered("ERR_INVALID_STATE", "invalid state in parser", "src/parser.ts"),
+        discovered("ERR_INVALID_STATE", "invalid state in lexer", "src/lexer.ts"),
+      ],
+      enriched: new Map(),
+    });
+    expect(out.records).toHaveLength(2);
+    const slugs = out.records.map((r) => r.slug);
+    expect(new Set(slugs).size).toBe(2);
+    // first occurrence keeps the clean slug; collision gets a stable suffix
+    expect(slugs[0]).toBe("err-invalid-state");
+    expect(slugs[1]).toMatch(/^err-invalid-state-[0-9a-f]{6}$/);
+  });
+
+  it("drops exact duplicate discoveries (same id) instead of failing the repo", () => {
+    const dup = discovered("ERR_DUP", "duplicate thing", "src/a.ts");
+    const out = assemble({
+      repo: "acme/lib",
+      sha: "a".repeat(40),
+      repoPath: "/nonexistent",
+      discovered: [dup, { ...dup }],
+      enriched: new Map(),
+    });
+    expect(out.records).toHaveLength(1);
+    expect(out.rejects).toHaveLength(1);
+    expect(out.rejects[0]!.error).toMatch(/duplicate/i);
+  });
+});
