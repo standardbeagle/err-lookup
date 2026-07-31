@@ -1,4 +1,5 @@
 import type { IndexError } from "./cache.js";
+import { siteErrorUrl } from "./base-url.js";
 
 export interface SearchHit {
   id: string;
@@ -100,7 +101,6 @@ function tierFuzzy(input: string, errors: IndexError[], idf: Map<string, number>
 }
 
 function toHit(e: IndexError, score: number, matchType: SearchHit["matchType"]): SearchHit {
-  const [owner, name] = e.repo.split("/");
   return {
     id: e.id,
     repo: e.repo,
@@ -108,7 +108,7 @@ function toHit(e: IndexError, score: number, matchType: SearchHit["matchType"]):
     message: e.msg,
     score,
     matchType,
-    url: `https://errlookup.dev/${owner}/${name}/${e.slug}/`,
+    url: siteErrorUrl(e.repo, e.slug),
   };
 }
 

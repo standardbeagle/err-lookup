@@ -14,15 +14,15 @@ export const GET: APIRoute = () => {
   lines.push(`- errors: ${m.counts.errors} across ${m.counts.repos} repos`);
   lines.push("");
   lines.push("## Dataset");
-  lines.push("- [manifest](https://errlookup.dev/data/manifest.json): freshness + inventory");
-  lines.push("- [index](https://errlookup.dev/data/index.json): compact search index");
-  lines.push("- [repos](https://errlookup.dev/data/repos.json): repo list");
-  lines.push("- [schema](https://errlookup.dev/schema.json): JSON Schema (Draft-07)");
+  lines.push("- [manifest](https://errors.standardbeagle.com/data/manifest.json): freshness + inventory");
+  lines.push("- [index](https://errors.standardbeagle.com/data/index.json): compact search index");
+  lines.push("- [repos](https://errors.standardbeagle.com/data/repos.json): repo list");
+  lines.push("- [schema](https://errors.standardbeagle.com/schema.json): JSON Schema (Draft-07)");
   lines.push("");
   lines.push("## Per-repo datasets");
   for (const r of repos) {
     const [owner, name] = r.repo.split("/");
-    lines.push(`- [${r.repo}](https://errlookup.dev/data/repos/${owner}/${name}.json) — ${r.errorCount} errors`);
+    lines.push(`- [${r.repo}](https://errors.standardbeagle.com/data/repos/${owner}/${name}.json) — ${r.errorCount} errors`);
   }
   return new Response(lines.join("\n"), {
     headers: { "content-type": "text/plain; charset=utf-8" },

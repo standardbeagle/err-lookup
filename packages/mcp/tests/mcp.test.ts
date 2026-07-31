@@ -143,7 +143,7 @@ describe("MCP sync + search (§8.4)", () => {
     const id = idx.errors[0]!.id;
     const r = await toolGetError(ctx, { id });
     expect(r.markdown).toContain("## What it means");
-    expect(r.url).toContain("https://errlookup.dev/");
+    expect(r.url).toContain("https://errors.standardbeagle.com/");
   });
 
   it("list_repos returns the repo list", async () => {

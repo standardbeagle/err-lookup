@@ -17,7 +17,7 @@ const outPath = resolve(__dirname, "..", "schema.json");
 
 const jsonSchema = {
   $schema: "http://json-schema.org/draft-07/schema#",
-  $id: "https://errlookup.dev/schema.json",
+  $id: "https://errors.standardbeagle.com/schema.json",
   title: "ErrLookup Dataset",
   description: "Canonical schema for the err-lookup v2 error knowledge base.",
   schemaVersion: CURRENT_SCHEMA_VERSION,

@@ -30,7 +30,7 @@ const ld = {
       headline: e.errorCode ?? e.errorMessage.slice(0, 80),
       description: e.documentation,
       about: `${repoFullName} — ${e.errorMessage}`,
-      url: `https://errlookup.dev/${repoFullName}/${e.slug}/`,
+      url: `https://errors.standardbeagle.com/${repoFullName}/${e.slug}/`,
       proficiencyLevel: "Expert",
     },
     {
@@ -52,7 +52,7 @@ const ld = {
 <Base title={title} description={description}>
   <Fragment slot="head">
     <link rel="alternate" type="application/json" href={jsonUrl} title="JSON dataset record" />
-    <link rel="canonical" href={`https://errlookup.dev/${repoFullName}/${e.slug}/`} />
+    <link rel="canonical" href={`https://errors.standardbeagle.com/${repoFullName}/${e.slug}/`} />
     <script type="application/ld+json" set:html={JSON.stringify(ld)} />
   </Fragment>
 

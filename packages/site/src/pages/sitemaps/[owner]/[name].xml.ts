@@ -12,7 +12,7 @@ export function getStaticPaths() {
 export const GET: APIRoute = ({ props }) => {
   const repo = props.repo as string;
   const errors = getRepoErrors(repo);
-  const base = `https://errlookup.dev/${repo}`;
+  const base = `https://errors.standardbeagle.com/${repo}`;
   const urls = [`${base}/`, ...errors.map((e) => `${base}/${e.slug}/`)];
   const body = [
     '<?xml version="1.0" encoding="UTF-8"?>',

@@ -3,6 +3,7 @@ import { syncDataset, type SyncResult } from "./sync.js";
 import { searchErrors, type SearchHit } from "./search.js";
 import type { ErrorEntry } from "@errlookup/schema";
 import { existsSync, readFileSync } from "node:fs";
+import { siteErrorUrl } from "./base-url.js";
 
 export interface ToolContext {
   store: CacheStore;
@@ -61,8 +62,7 @@ export async function toolGetError(
     match = idx.errors.find((e) => e.repo === args.repo && e.slug === args.slug);
   }
   if (!match) throw new Error("Error not found in index.");
-  const [owner, name] = match.repo.split("/");
-  const url = `https://errlookup.dev/${owner}/${name}/${match.slug}/`;
+  const url = siteErrorUrl(match.repo, match.slug);
 
   const records = await loadRepoRecords(ctx, match.repo);
   const full = records.find((r) => r.id === match!.id);

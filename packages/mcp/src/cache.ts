@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { homedir } from "node:os";
+import { siteBaseUrl } from "./base-url.js";
 
 export interface CacheConfig {
   baseUrl: string;
@@ -13,7 +14,7 @@ export interface CacheConfig {
 export function defaultCacheConfig(env: NodeJS.ProcessEnv = process.env): CacheConfig {
   const xdg = env.XDG_CACHE_HOME || join(homedir(), ".cache");
   return {
-    baseUrl: env.ERRLOOKUP_BASE_URL ?? "https://errlookup.dev",
+    baseUrl: siteBaseUrl(env),
     cacheDir: env.ERRLOOKUP_CACHE_DIR ?? join(xdg, "errlookup"),
     ttlSeconds: Number.parseInt(env.ERRLOOKUP_TTL_SECONDS ?? "300", 10),
     offline: env.ERRLOOKUP_OFFLINE === "1",

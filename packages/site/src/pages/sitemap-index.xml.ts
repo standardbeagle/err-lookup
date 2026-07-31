@@ -7,7 +7,7 @@ export const GET: APIRoute = () => {
   const parts: string[] = ['<?xml version="1.0" encoding="UTF-8"?>', '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'];
   for (const r of repos) {
     const [owner, name] = r.repo.split("/");
-    parts.push(`  <sitemap><loc>https://errlookup.dev/sitemaps/${owner}/${name}.xml</loc></sitemap>`);
+    parts.push(`  <sitemap><loc>https://errors.standardbeagle.com/sitemaps/${owner}/${name}.xml</loc></sitemap>`);
   }
   parts.push("</sitemapindex>");
   return new Response(parts.join("\n"), {
