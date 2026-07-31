@@ -9,6 +9,7 @@ import { openDb } from "../src/db/client.js";
 import { errors, jobHistory } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
 import { analyzeRepo } from "../src/pipeline.js";
+import { replaceErrors, upsertRepo } from "../src/db/store.js";
 import { ScriptedProvider } from "../src/provider/fixture.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
@@ -170,6 +171,60 @@ describe("pipeline e2e (fixture-replay)", () => {
     expect(calls).toBe(callsAfterFirst);
     expect(res2.skipped).toContain("discovery");
     expect(res2.skipped).toContain("enrichment");
+
+    raw.close();
+    rmSync(local.path, { recursive: true, force: true });
+    rmSync(dbPath, { force: true });
+  }, 60000);
+
+  it("recovers records after a failed write without re-spending LLM phases", async () => {
+    const local = await makeLocalRepo();
+    const dbPath = resolve(".tmp-test", `e2e-recover-${process.pid}.db`);
+    rmSync(dbPath, { force: true });
+    const { db, raw } = openDb(dbPath);
+    let calls = 0;
+    const providers = {
+      claude: {
+        name: "claude",
+        async invoke(prompt: string) {
+          calls++;
+          const p = new ScriptedProvider("claude", [
+            { match: "Enrich each", fixturePath: fx("provider-stdout-enriched.json") },
+            { match: "error patterns", fixturePath: fx("provider-stdout-clean.json") },
+          ]);
+          return p.invoke(prompt, { cwd: "." });
+        },
+      },
+    };
+
+    await analyzeRepo("sindresorhus/is", {
+      db,
+      providers,
+      cfg: makeCfg(),
+      repoPath: local.path,
+      sha: local.sha,
+    });
+    const callsAfterFirst = calls;
+
+    // Simulate the production failure: phases succeeded but the errors write
+    // aborted — errors table empty, repo left in failed state.
+    replaceErrors(db, "sindresorhus/is", []);
+    upsertRepo(db, { repo: "sindresorhus/is", status: "failed", lastError: "write: UNIQUE constraint failed", errorCount: 0 });
+
+    const res = await analyzeRepo("sindresorhus/is", {
+      db,
+      providers,
+      cfg: makeCfg(),
+      repoPath: local.path,
+      sha: local.sha,
+    });
+
+    expect(calls).toBe(callsAfterFirst); // no LLM re-spend
+    expect(res.errorCount).toBe(2); // records reassembled from persisted phase results
+    const rows = db.select().from(errors).where(eq(errors.repo, "sindresorhus/is")).all();
+    expect(rows).toHaveLength(2);
+    // enrichment data survived the round-trip through job_history
+    expect(rows.some((r) => r.documentation.length > 50)).toBe(true);
 
     raw.close();
     rmSync(local.path, { recursive: true, force: true });
