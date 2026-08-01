@@ -24,17 +24,15 @@ const jsonLd = JSON.stringify({
     <input type="text" id="title" name="title" placeholder="e.g. fastify/fastify" required pattern="[^/\s]+/[^/\s]+.*" />
     <label for="body">Why this library? (optional context — versions you use, errors that bit you)</label>
     <textarea id="body" name="body" rows="5" placeholder="We hit ERR_STREAM_PREMATURE_CLOSE constantly and the docs don't cover it…"></textarea>
-    <p><button class="btn" type="submit">Open request on GitHub →</button></p>
+    <p class="actions"><button class="btn" type="submit">Open request on GitHub</button></p>
   </form>
 
   <h2>What qualifies</h2>
-  <table>
-    <tbody>
-      <tr><td>✅</td><td>Public open-source repositories with real error surfaces (libraries, frameworks, CLIs, databases).</td></tr>
-      <tr><td>✅</td><td>Any mainstream language — JS/TS, Python, Go, Rust, Java, C#, Ruby, PHP, C.</td></tr>
-      <tr><td>❌</td><td>Docs-only or awesome-list repos (nothing throws), private code, forks of already-analyzed repos.</td></tr>
-    </tbody>
-  </table>
+  <ul class="criteria">
+    <li>Public open-source repositories with real error surfaces: libraries, frameworks, CLIs, databases.</li>
+    <li>Any mainstream language — JS/TS, Python, Go, Rust, Java, C#, Ruby, PHP, C.</li>
+    <li class="excluded">Not a fit: docs-only or awesome-list repos (nothing throws), private code, forks of already-analyzed repos.</li>
+  </ul>
 
   <p class="muted">
     Popular requests get crawled first — analysis is pinned to the current default-branch

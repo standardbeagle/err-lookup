@@ -19,16 +19,21 @@ const jsonLd = JSON.stringify({
 ---
 <Base title="ErrLookup — Know what every open-source error means" description="Structured knowledge base of errors thrown by popular open-source libraries: exact messages, causes, ordered fixes, and defensive patterns. MCP server for AI agents + static JSON dataset.">
   <script slot="head" type="application/ld+json" set:html={jsonLd} />
-  <h1>Know what every error means — and how to fix it.</h1>
-  <p class="muted">ErrLookup reads library source and documents every user-facing error: exact message, cause, ordered fixes, defensive patterns. Built for coding agents (MCP), answer engines (JSON + <a href="/llms.txt">llms.txt</a>), and humans (these pages).</p>
+  <h1>Know what every error means, and how to fix it.</h1>
+  <p class="lead">ErrLookup reads library source and documents every user-facing error: exact message, cause, ordered fixes, defensive patterns. Built for coding agents, answer engines, and humans.</p>
 
-  <p>
-    <span class="pill">{manifest.counts.errors} errors</span>
-    <span class="pill">{manifest.counts.repos} repos</span>
-    <span class="pill">dataset {manifest.datasetVersion.slice(0, 10)}</span>
-  </p>
+  <div class="actions">
+    <a class="btn" href="#install">Install the MCP server</a>
+    <a class="btn-ghost" href="/request-crawl/">Request a library</a>
+  </div>
 
-  <h2>Give your coding agent error superpowers</h2>
+  <div class="stats">
+    <div><b>{manifest.counts.errors.toLocaleString()}</b><span>errors documented</span></div>
+    <div><b>{manifest.counts.repos}</b><span>repositories</span></div>
+    <div><b>{manifest.datasetVersion.slice(0, 10)}</b><span>dataset version</span></div>
+  </div>
+
+  <h2 id="install">Give your coding agent error superpowers</h2>
   <pre>{
     JSON.stringify(
       { mcpServers: { errlookup: { command: "npx", args: ["-y", "@standardbeagle/errlookup-mcp"] } } },
@@ -36,7 +41,7 @@ const jsonLd = JSON.stringify({
       2
     )
   }</pre>
-  <p class="muted">The MCP server caches the dataset locally — offline-capable, no API keys, answers <code>search_error</code> straight from disk.</p>
+  <p class="muted">The MCP server caches the dataset locally: offline-capable, no API keys, answers <code>search_error</code> straight from disk.</p>
 
   <h2>Analyzed repos</h2>
   <table>
@@ -52,7 +57,7 @@ const jsonLd = JSON.stringify({
       ))}
     </tbody>
   </table>
-  <p>Missing a library you depend on? <a class="btn" href="/request-crawl/">Request a crawl →</a></p>
+  <p>Missing a library you depend on? <a href="/request-crawl/">Request a crawl</a>.</p>
 
   <p class="muted">Honest provenance: every record is AI-assisted analysis of the cited commit, pinned to its SHA. See <a href="/about/">how records are made</a> and the <a href="/api-docs/">dataset contract</a>.</p>
 </Base>

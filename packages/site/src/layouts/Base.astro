@@ -20,85 +20,125 @@ const canonicalUrl = canonical ?? new URL(Astro.url.pathname, SITE).href;
     <meta name="twitter:card" content="summary" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <slot name="head" />
-    <style>
+    <style is:global>
       :root {
+        /* 8pt spacing scale */
+        --s1: .5rem; --s2: 1rem; --s3: 1.5rem; --s4: 2rem; --s5: 3rem; --s6: 4rem;
         --maxw: 760px;
+        /* warm standardbeagle palette — light */
         --ink: #241c15;
-        --mute: #6b5d52;
+        --mute: #66584d;
         --line: #eadfd5;
-        --accent: #c2410c;         /* standardbeagle burnt orange */
-        --accent-ink: #9a3412;
-        --wash: #faf6f1;           /* warm paper */
-        --card: #fff;
-        --pill-bg: #fef0e6;
-        --pill-ink: #9a3412;
-        --pill-line: #f6d9c4;
+        --accent: #c2410c;
+        --accent-strong: #9a3412;
+        --wash: #faf6f1;
+        --card: #ffffff;
       }
       @media (prefers-color-scheme: dark) {
         :root {
           --ink: #ece4dc; --mute: #b3a396; --line: #3d332b;
-          --accent: #fb923c; --accent-ink: #fdba74;
+          --accent: #fb923c; --accent-strong: #fdba74;
           --wash: #191410; --card: #221b16;
-          --pill-bg: #33231a; --pill-ink: #fdba74; --pill-line: #4a3527;
         }
       }
       * { box-sizing: border-box; }
       html { -webkit-text-size-adjust: 100%; }
       body {
-        margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji";
-        color: var(--ink); line-height: 1.55; font-size: 16px; background: var(--wash);
+        margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        color: var(--ink); line-height: 1.6; font-size: 1rem; background: var(--wash);
       }
-      main { max-width: var(--maxw); margin: 0 auto; padding: 1.5rem 1.1rem 3rem; }
-      a { color: var(--accent); text-decoration: none; }
-      a:hover { text-decoration: underline; color: var(--accent-ink); }
-      h1 { font-size: 1.7rem; line-height: 1.2; margin: 1.2rem 0 .6rem; letter-spacing: -0.01em; }
-      h2 { font-size: 1.2rem; margin: 1.6rem 0 .4rem; }
+      main { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--s2) var(--s6); }
+
+      /* type scale — clear stops: 2.25 / 1.375 / 1 / .875 */
+      h1 { font-size: 2.25rem; line-height: 1.15; font-weight: 800; letter-spacing: -0.015em; margin: var(--s5) 0 var(--s2); }
+      h2 { font-size: 1.375rem; line-height: 1.3; font-weight: 700; margin: var(--s5) 0 var(--s1); }
+      p { margin: var(--s1) 0 var(--s2); }
+      .lead { font-size: 1.125rem; color: var(--mute); max-width: 56ch; }
+      .muted { color: var(--mute); font-size: .875rem; }
+
+      a { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 2px; }
+      a:hover { color: var(--accent); }
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
       pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-      pre { background: var(--card); border:1px solid var(--line); padding:.8rem; overflow:auto; border-radius:8px; font-size:.85rem; }
+      pre { background: var(--card); border: 1px solid var(--line); padding: var(--s2); overflow: auto; border-radius: 8px; font-size: .85rem; margin: var(--s2) 0; }
       code { font-size: .9em; }
-      .muted { color: var(--mute); font-size: .9rem; }
-      table { width:100%; border-collapse: collapse; margin:.6rem 0; font-size:.92rem; }
-      th, td { text-align:left; padding:.45rem .5rem; border-bottom:1px solid var(--line); vertical-align: top; }
-      nav.top { border-bottom:2px solid var(--accent); background: var(--card); }
-      nav.top div { max-width:var(--maxw); margin:0 auto; padding:.7rem 1.1rem; display:flex; gap:1rem; align-items:center; flex-wrap:wrap; }
-      nav.top a.brand { font-weight:800; color:var(--ink); display:flex; align-items:center; gap:.45rem; }
-      nav.top a.brand svg { flex:none; }
-      nav.top a { font-size:.95rem; }
-      details { margin:.5rem 0; border:1px solid var(--line); border-radius:8px; padding:.5rem .8rem; background: var(--card); }
-      summary { cursor:pointer; font-weight:600; }
-      .pill { display:inline-block; font-size:.72rem; padding:.1rem .45rem; border-radius:99px; background:var(--pill-bg); color:var(--pill-ink); border:1px solid var(--pill-line); }
-      footer.site { border-top:1px solid var(--line); margin-top:2rem; background: var(--card); }
-      footer.site div { max-width:var(--maxw); margin:0 auto; padding:1.1rem; font-size:.85rem; color:var(--mute); display:flex; gap:1rem; flex-wrap:wrap; align-items:center; }
-      footer.site a { color: var(--mute); text-decoration: underline; }
-      footer.site a:hover { color: var(--accent); }
-      .btn {
-        display:inline-block; background:var(--accent); color:#fff !important; font-weight:600;
-        padding:.5rem .9rem; border-radius:8px; border:none; font-size:.95rem; cursor:pointer;
+
+      table { width: 100%; border-collapse: collapse; margin: var(--s2) 0; font-size: .92rem; }
+      th { text-transform: uppercase; letter-spacing: .04em; font-size: .75rem; color: var(--mute); }
+      th, td { text-align: left; padding: .55rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+
+      details { margin: var(--s1) 0; border: 1px solid var(--line); border-radius: 8px; padding: var(--s1) var(--s2); background: var(--card); }
+      summary { cursor: pointer; font-weight: 600; padding: .25rem 0; }
+
+      /* header: brand left, actions right; 44px targets */
+      nav.top { background: var(--card); border-bottom: 1px solid var(--line); }
+      nav.top > div { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--s2); display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; }
+      nav.top a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 .6rem; text-decoration: none; color: var(--mute); font-size: .95rem; }
+      nav.top a:hover { color: var(--accent-strong); }
+      nav.top a.brand { font-weight: 800; font-size: 1.05rem; color: var(--ink); gap: .5rem; padding-left: 0; margin-right: auto; }
+
+      footer.site { border-top: 1px solid var(--line); margin-top: var(--s6); background: var(--card); }
+      footer.site > div { max-width: var(--maxw); margin: 0 auto; padding: var(--s3) var(--s2); font-size: .875rem; color: var(--mute); display: flex; gap: var(--s2); flex-wrap: wrap; align-items: center; }
+      footer.site a { color: var(--mute); }
+      footer.site a:hover { color: var(--accent-strong); }
+
+      /* actions: one primary per page; secondary is ghost (1.5:1 visual weight) */
+      .btn, .btn-ghost {
+        display: inline-flex; align-items: center; justify-content: center;
+        min-height: 44px; padding: 0 var(--s3); border-radius: 8px;
+        font-weight: 600; font-size: 1rem; text-decoration: none; cursor: pointer; border: 0;
       }
-      .btn:hover { background:var(--accent-ink); text-decoration:none; }
+      .btn { background: var(--accent); color: #fff; }
+      .btn:hover { background: var(--accent-strong); color: #fff; }
+      @media (prefers-color-scheme: dark) {
+        .btn { color: #1c0d02; }
+        .btn:hover { color: #1c0d02; }
+      }
+      .btn-ghost { background: transparent; color: var(--accent-strong); border: 1.5px solid var(--line); }
+      .btn-ghost:hover { border-color: var(--accent); }
+      .actions { display: flex; gap: var(--s2); flex-wrap: wrap; margin: var(--s3) 0; }
+
+      /* stat row: number dominates, label recedes */
+      .stats { display: flex; gap: var(--s4); flex-wrap: wrap; margin: var(--s3) 0; }
+      .stats b { display: block; font-size: 1.75rem; font-weight: 800; line-height: 1.1; }
+      .stats span { font-size: .8125rem; text-transform: uppercase; letter-spacing: .05em; color: var(--mute); }
+
       input[type="text"], textarea, select {
-        width:100%; padding:.5rem .6rem; font:inherit; color:var(--ink);
-        background:var(--card); border:1px solid var(--line); border-radius:8px;
+        width: 100%; padding: .65rem .7rem; font: inherit; color: var(--ink);
+        background: var(--card); border: 1px solid var(--line); border-radius: 8px;
       }
-      label { font-weight:600; font-size:.92rem; display:block; margin:.9rem 0 .25rem; }
+      label { font-weight: 600; font-size: .92rem; display: block; margin: var(--s2) 0 .3rem; }
+
+      .pill {
+        display: inline-block; font-size: .72rem; font-weight: 600; padding: .15rem .5rem;
+        border-radius: 99px; background: var(--card); color: var(--accent-strong); border: 1px solid var(--line);
+        text-transform: uppercase; letter-spacing: .03em;
+      }
+
+      ul.criteria { list-style: none; padding: 0; margin: var(--s2) 0; }
+      ul.criteria li { padding: .45rem 0 .45rem 1.4rem; position: relative; border-bottom: 1px solid var(--line); }
+      ul.criteria li::before { content: ""; position: absolute; left: 0; top: .85rem; width: .55rem; height: .55rem; border-radius: 2px; background: var(--accent); }
+      ul.criteria li.excluded::before { background: var(--line); }
+      ul.criteria li.excluded { color: var(--mute); }
     </style>
   </head>
   <body>
     <nav class="top"><div>
       <a class="brand" href="/">
-        <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="#c2410c"/><circle cx="6.6" cy="8" r="1.5" fill="#fff"/><circle cx="13.4" cy="8" r="1.5" fill="#fff"/><path d="M6.5 12.5c1 1.4 2.2 2.1 3.5 2.1s2.5-.7 3.5-2.1" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
+        <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><rect x="1" y="1" width="20" height="20" rx="5" fill="#c2410c"/><path d="M6.2 8.4 9.4 11l-3.2 2.6M11.4 14.4h4.4" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
         ErrLookup
       </a>
       <a href="/about/">About</a>
       <a href="/request-crawl/">Request a crawl</a>
-      <a href="/api-docs/">API &amp; Dataset</a>
+      <a href="/api-docs/">API</a>
       <a href="https://www.npmjs.com/package/@standardbeagle/errlookup-mcp">MCP</a>
     </div></nav>
     <main>
       <slot />
     </main>
     <footer class="site"><div>
-      <span>Built by <a href="https://standardbeagle.com">Standard Beagle</a> — the AI UX agency for bold product teams.</span>
+      <span>Built by <a href="https://standardbeagle.com">Standard Beagle</a>, the AI UX agency for bold product teams.</span>
       <a href="/llms.txt">llms.txt</a>
       <a href="/data/manifest.json">dataset</a>
       <a href="https://github.com/standardbeagle/err-lookup">GitHub</a>
