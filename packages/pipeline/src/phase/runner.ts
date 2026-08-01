@@ -85,7 +85,9 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
       upsertRepo(db, { repo, status: "analyzing", analyzedSha: sha });
       recordPhase(db, { repo, phase: "discovery", status: "running", startedAt: started, analyzedSha: sha });
       try {
-        const r = await runDiscovery(repoPath, providers, cfg);
+        const r = await runDiscovery(repoPath, providers, cfg, (b, t) =>
+          log(`phase discovery: batch ${b}/${t}`)
+        );
         discovered = r.errors;
         recordPhase(db, {
           repo,
@@ -96,7 +98,7 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           analyzedSha: sha,
           result: JSON.stringify(discovered),
         });
-        log(`phase discovery: ${discovered.length} errors via ${r.providerUsed} (${r.durationMs}ms)`);
+        log(`phase discovery: ${discovered.length} errors via ${r.providerUsed} [${r.mode}] (${r.durationMs}ms)`);
       } catch (e) {
         const msg = e instanceof ProviderError ? `[${e.kind}] ${e.message}` : (e as Error).message;
         recordPhase(db, {

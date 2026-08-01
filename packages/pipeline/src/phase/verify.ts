@@ -34,7 +34,7 @@ export async function runVerify(
   const budget = primary?.timeoutMs ?? 600_000;
   try {
     const result = await withTimeout(
-      runProvider(verifyPrompt(compact), { cwd: repoPath }, providers, cfg),
+      runProvider(verifyPrompt(compact), { cwd: repoPath }, providers, cfg, "verify"),
       budget
     );
     const parsed = result.parsed as { patches?: VerifyPatchJson[] };

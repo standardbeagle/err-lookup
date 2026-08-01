@@ -43,7 +43,7 @@ export async function runEnrichment(
       const primary = cfg.providers[cfg.defaults.primary];
       const budget = primary?.timeoutMs ?? 600_000;
       const result = await withTimeout(
-        runProvider(enrichmentPrompt(batch, startIndex), { cwd: repoPath }, providers, cfg),
+        runProvider(enrichmentPrompt(batch, startIndex), { cwd: repoPath }, providers, cfg, "enrichment"),
         budget
       );
       lastProvider = result.providerUsed;

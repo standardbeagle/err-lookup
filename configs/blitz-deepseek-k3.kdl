@@ -1,0 +1,25 @@
+// Corpus-blitz routing: DeepSeek V4 Flash does the bulk phases over
+// pre-extracted candidates; Kimi K3 (strong, pricier) validates.
+// Use with: ERRLOOKUP_CONFIG=configs/blitz-deepseek-k3.kdl
+provider "deepseek" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "opencode/deepseek-v4-flash-free"
+    timeout-ms 600000
+}
+provider "k3" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "kimi-for-coding/k3"
+    timeout-ms 600000
+}
+defaults {
+    primary "deepseek"
+    max-concurrent 1
+    delay-between-phases-ms 2000
+}
+phase-providers {
+    verify "k3"
+}

@@ -34,9 +34,10 @@ export async function runProvider(
   prompt: string,
   opts: InvokeOptions,
   providers: Record<string, LlmProvider>,
-  cfg: ErrlookupConfig
+  cfg: ErrlookupConfig,
+  phase?: "discovery" | "enrichment" | "defense" | "verify"
 ): Promise<RunResult> {
-  const primaryName = cfg.defaults.primary;
+  const primaryName = (phase && cfg.phaseProviders?.[phase]) || cfg.defaults.primary;
   const fallbackName = cfg.defaults.fallback;
   const primary = providers[primaryName];
   if (!primary) {

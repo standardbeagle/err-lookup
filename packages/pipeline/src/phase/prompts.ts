@@ -47,6 +47,31 @@ export interface VerifyPatchJson {
   value: unknown;
 }
 
+/**
+ * Phase 1a — Candidate classification: the deterministic extractor already
+ * located error-raising sites; the model verifies each against the surrounding
+ * source and emits the discovery shape. One dense payload per batch — no
+ * repo exploration required, which keeps lighter models accurate.
+ */
+export function candidateDiscoveryPrompt(
+  candidates: { file: string; line: number; kind: string; snippet: string; literal: string | null }[]
+): string {
+  return `You are an expert at finding error patterns in codebases. A static scanner extracted these candidate error-raising sites from the repository (you are in its root). For each candidate, open the file at the given line to see the full context, then decide whether it is a USER-FACING error.
+
+CANDIDATES:
+${JSON.stringify(candidates)}
+
+RULES:
+- Include the EXACT error message string from source, preserving template placeholders (e.g. \`\${name}\`, {}, %s). Read the file — do not trust the snippet alone for multi-line messages.
+- Use the candidate's file and line (correct the line only if the actual throw is adjacent).
+- Capture the error code when one is defined; note the error class and HTTP status where applicable.
+- EXCLUDE: internal assertions never shown to users, debug logging, dead code, generated files.
+- Do not invent errors that are not in the candidate list.
+
+OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
+{"errors":[{"message":"exact string","type":"exception|error_code|console|http|validation|panic","file":"path/relative/to/repo.ts","line":42,"code":"ERR_CODE_OR_NULL","errorClass":"CustomErrorOrNull","httpStatus":404}]}`;
+}
+
 /** Phase 1 — Discovery (§4.2.1): scan repo for user-facing errors. */
 export const DISCOVERY_PROMPT = `You are an expert at finding error patterns in codebases. Systematically discover ALL user-facing errors in this repository.
 

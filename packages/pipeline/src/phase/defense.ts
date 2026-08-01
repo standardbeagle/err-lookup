@@ -37,7 +37,7 @@ export async function runDefense(
       const primary = cfg.providers[cfg.defaults.primary];
       const budget = primary?.timeoutMs ?? 600_000;
       const result = await withTimeout(
-        runProvider(defensePrompt(batch, startIndex), { cwd: repoPath }, providers, cfg),
+        runProvider(defensePrompt(batch, startIndex), { cwd: repoPath }, providers, cfg, "defense"),
         budget
       );
       lastProvider = result.providerUsed;
