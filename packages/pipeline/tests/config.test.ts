@@ -61,6 +61,8 @@ describe("config mapping", () => {
       args: ["-p", "--output-format", "json"],
       timeoutMs: 600_000,
       promptMode: "stdin",
+      type: "spawn",
+      model: null,
     });
     expect(cfg.providers.claude.args).toContain("--max-turns");
     expect(cfg.defaults).toEqual({

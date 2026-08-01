@@ -8,6 +8,10 @@ export interface ProviderConfig {
   timeoutMs: number;
   /** How the prompt is delivered: piped to stdin (default) or appended as a final arg. */
   promptMode: "stdin" | "arg";
+  /** Invocation protocol: plain subprocess (default) or ACP (JSON-RPC over stdio, e.g. `opencode acp`). */
+  type: "spawn" | "acp";
+  /** Model override for ACP providers (opencode `provider/model` id), pinned via OPENCODE_CONFIG_CONTENT. */
+  model: string | null;
 }
 
 export interface ErrlookupConfig {
@@ -24,9 +28,11 @@ export const DEFAULT_CONFIG: ErrlookupConfig = {
   providers: {
     claude: {
       command: "claude",
-      args: ["-p", "--output-format", "json"],
+      args: ["-p", "--output-format", "json", "--permission-mode", "acceptEdits"],
       timeoutMs: 600_000,
       promptMode: "stdin",
+      type: "spawn",
+      model: null,
     },
   },
   defaults: {
@@ -65,6 +71,10 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
           asString(childByName(node, "prompt-mode")?.values[0], "stdin") === "arg"
             ? "arg"
             : "stdin",
+        type: asString(childByName(node, "type")?.values[0], "spawn") === "acp" ? "acp" : "spawn",
+        model: childByName(node, "model")?.values[0] != null
+          ? asString(childByName(node, "model")?.values[0], "")
+          : null,
       };
     } else if (node.name === "defaults") {
       cfg.defaults = {
@@ -91,6 +101,7 @@ export function loadConfig(configPath?: string): ErrlookupConfig {
   const candidates = configPath
     ? [configPath]
     : [
+        ...(process.env.ERRLOOKUP_CONFIG ? [resolve(process.env.ERRLOOKUP_CONFIG)] : []),
         resolve(process.cwd(), "errlookup.config.kdl"),
         resolve(process.cwd(), "errlookup.config.json"),
         resolve(process.cwd(), "packages", "pipeline", "errlookup.config.kdl"),
