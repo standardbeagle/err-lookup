@@ -144,17 +144,22 @@ export function candidatesFromLciJson(kind: string, repoPath: string, payload: L
  * ignore handling) from the lci code-intelligence binary. Throws if lci is
  * unusable — callers pick the backend explicitly via extractCandidatesAuto.
  */
+/** Build the lci invocation. `-r/--root` is a GLOBAL flag: it must precede the subcommand. */
+export function lciGrepArgs(repoPath: string, patternSource: string, maxResults: number): string[] {
+  return ["-r", repoPath, "grep", "-E", "-j", "--exclude-tests", "--exclude-comments", "-n", String(maxResults), patternSource];
+}
+
 export function extractCandidatesLci(repoPath: string, opts: ExtractOptions = {}): CandidateSite[] {
   const maxCandidates = opts.maxCandidates ?? 2000;
   const seen = new Set<string>();
   const out: CandidateSite[] = [];
   for (const { kind, source } of LCI_PATTERNS) {
     if (out.length >= maxCandidates) break;
-    const stdout = execFileSync(
-      "lci",
-      ["grep", "-E", "-j", "--exclude-tests", "--exclude-comments", "-n", String(maxCandidates), "-r", repoPath, source],
-      { encoding: "utf8", timeout: 120_000, maxBuffer: 64 * 1024 * 1024 }
-    );
+    const stdout = execFileSync("lci", lciGrepArgs(repoPath, source, maxCandidates), {
+      encoding: "utf8",
+      timeout: 120_000,
+      maxBuffer: 64 * 1024 * 1024,
+    });
     out.push(...candidatesFromLciJson(kind, repoPath, JSON.parse(stdout) as LciGrepResult, seen));
   }
   return out.slice(0, maxCandidates);
@@ -174,7 +179,9 @@ export function extractCandidatesAuto(repoPath: string, opts: ExtractOptions = {
 
 export function extractCandidates(repoPath: string, opts: ExtractOptions = {}): CandidateSite[] {
   const maxCandidates = opts.maxCandidates ?? 2000;
-  const maxPerFile = opts.maxPerFile ?? 50;
+  // Error-dense files are legitimate (validation libraries put 100+ throws in
+  // one module) — the per-file cap only guards against generated/minified junk.
+  const maxPerFile = opts.maxPerFile ?? 500;
   const maxFileBytes = opts.maxFileBytes ?? 400_000;
   const out: CandidateSite[] = [];
 

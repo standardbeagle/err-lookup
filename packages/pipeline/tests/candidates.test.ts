@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { extractCandidates, candidatesFromLciJson } from "../src/phase/candidates.js";
+import { extractCandidates, candidatesFromLciJson, lciGrepArgs, extractCandidatesLci } from "../src/phase/candidates.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
 
@@ -41,6 +41,28 @@ describe("builtin candidate extractor", () => {
     expect(extractCandidates(dir, { maxPerFile: 10 })).toHaveLength(10);
     expect(extractCandidates(dir, { maxCandidates: 5 })).toHaveLength(5);
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("lci invocation", () => {
+  it("puts the global -r flag before the grep subcommand", () => {
+    const args = lciGrepArgs("/repo", "throw", 100);
+    expect(args.indexOf("-r")).toBeLessThan(args.indexOf("grep"));
+    expect(args[args.length - 1]).toBe("throw");
+  });
+
+  it("extracts real candidates end-to-end when the lci binary is available", () => {
+    const dir = fixtureRepo();
+    try {
+      const c = extractCandidatesLci(dir);
+      // lci must at least find the JS throw; other langs depend on its grammars
+      expect(c.some((s) => s.file === "index.js" && s.line === 2)).toBe(true);
+    } catch (e) {
+      // acceptable only when the binary is genuinely absent on this host
+      expect((e as NodeJS.ErrnoException).code).toBe("ENOENT");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
