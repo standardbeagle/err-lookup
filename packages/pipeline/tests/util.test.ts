@@ -83,3 +83,15 @@ describe("source region", () => {
     expect(single).toBe("https://github.com/r/r/blob/sha/f.js#L7");
   });
 });
+
+describe("github repo metadata", () => {
+  it("parses the fields RepoEntry needs and tolerates junk", async () => {
+    const { parseRepoMeta } = await import("../src/vcs/github-meta.js");
+    expect(
+      parseRepoMeta({ description: "d", language: "Rust", stargazers_count: 42, default_branch: "trunk" })
+    ).toEqual({ description: "d", language: "Rust", stars: 42, defaultBranch: "trunk" });
+    expect(parseRepoMeta({})).toEqual({ description: null, language: null, stars: 0, defaultBranch: "main" });
+    expect(parseRepoMeta(null)).toBeNull();
+    expect(parseRepoMeta("nope")).toBeNull();
+  });
+});
