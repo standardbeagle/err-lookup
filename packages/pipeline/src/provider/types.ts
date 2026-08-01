@@ -8,6 +8,12 @@ export interface InvokeOptions {
   cwd: string;
   /** Override the provider's configured timeout for this single call. */
   timeoutMs?: number;
+  /**
+   * When set, the prompt instructs the agent to write its JSON here and the
+   * provider parses this file instead of scraping stdout. Missing file = failure
+   * (never silently fall back to fabricated output).
+   */
+  outputFile?: string;
 }
 
 export interface LlmProvider {

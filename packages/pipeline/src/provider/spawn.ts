@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import type { LlmProvider, InvokeOptions, ProviderResult } from "./types.js";
 import { extractJson } from "./json.js";
 import type { ProviderConfig } from "../config/index.js";
@@ -91,6 +92,16 @@ export class SpawningProvider implements LlmProvider {
       };
     }
 
+    if (opts.outputFile) {
+      if (!existsSync(opts.outputFile)) {
+        return {
+          ok: false,
+          kind: "empty",
+          error: `${this.name}: agent did not write ${opts.outputFile}; stdout tail: ${stdout.slice(-200)}`,
+        };
+      }
+      return extractJson(readFileSync(opts.outputFile, "utf8"));
+    }
     const extracted = extractJson(stdout);
     return extracted;
   }
