@@ -1,0 +1,65 @@
+---
+import Base from "../layouts/Base.astro";
+import { getManifest } from "../data/load.js";
+const manifest = getManifest();
+const jsonLd = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "AboutPage",
+  name: "About ErrLookup",
+  description: "How ErrLookup builds a machine-consumable error knowledge base for open-source libraries.",
+  publisher: {
+    "@type": "Organization",
+    name: "Standard Beagle Studio",
+    url: "https://standardbeagle.com",
+  },
+});
+---
+<Base
+  title="About — ErrLookup"
+  description="ErrLookup is a structured error knowledge base for open-source libraries: what each error means, why it happens, and how to fix it — built for AI coding agents, answer engines, and humans."
+>
+  <script slot="head" type="application/ld+json" set:html={jsonLd} />
+  <h1>About ErrLookup</h1>
+  <p>
+    Paste an error message into a search box and you get a decade of forum posts, half of them
+    for other versions. ErrLookup starts from the other end: we read the <em>source</em> of
+    popular open-source libraries, find every user-facing error they can raise, and document
+    each one — what it means, what triggers it, the most likely fixes, and how to write code
+    that avoids it.
+  </p>
+
+  <h2>Who it's for</h2>
+  <table>
+    <tbody>
+      <tr><td><strong>AI coding agents</strong></td><td>An <a href="https://www.npmjs.com/package/@standardbeagle/errlookup-mcp">MCP server</a> answers "what is this error" at runtime from a locally cached dataset — offline-capable, no API keys.</td></tr>
+      <tr><td><strong>Answer engines</strong></td><td>Every page has a JSON twin and the whole dataset is published as versioned static files described in <a href="/llms.txt">llms.txt</a>.</td></tr>
+      <tr><td><strong>Humans</strong></td><td>These pages — one per error, with the exact message text you just pasted into a search box.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>How records are made</h2>
+  <p>
+    A deterministic scanner extracts every error-raising site from a pinned commit of the
+    repository. Language models then document each site — meaning, trigger scenarios,
+    ordered solutions, defensive patterns — and a second, independent model pass verifies
+    the assembled records. Every page cites the analyzed commit SHA and links the exact
+    source line on GitHub.
+  </p>
+  <p class="muted">
+    Honest provenance: records are AI-assisted analysis, clearly labeled, pinned to the
+    commit we analyzed ({manifest.counts.errors} errors across {manifest.counts.repos} repos
+    as of dataset <code>{manifest.datasetVersion}</code>). If something is wrong,
+    <a href="https://github.com/standardbeagle/err-lookup/issues">tell us</a> — the fix ships
+    in the next dataset version.
+  </p>
+
+  <h2>Who builds it</h2>
+  <p>
+    ErrLookup is a project of <a href="https://standardbeagle.com">Standard Beagle Studio</a>,
+    an Austin-based, woman-owned AI UX agency for bold product teams. We build AI-enhanced
+    developer tooling and product experiences — ErrLookup is our answer to every debugging
+    session that started with a cryptic stack trace.
+  </p>
+
+  <p><a class="btn" href="/request-crawl/">Request a library →</a></p>
+</Base>

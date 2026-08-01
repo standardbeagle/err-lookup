@@ -3,17 +3,32 @@ import Base from "../layouts/Base.astro";
 import { getManifest, getRepos } from "../data/load.js";
 const manifest = getManifest();
 const repos = getRepos();
+const jsonLd = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "ErrLookup",
+  url: "https://errors.standardbeagle.com",
+  description:
+    "Machine-consumable error knowledge base for open-source libraries: what every error means, why it happens, and how to fix it.",
+  publisher: {
+    "@type": "Organization",
+    name: "Standard Beagle Studio",
+    url: "https://standardbeagle.com",
+  },
+});
 ---
-<Base title="ErrLookup — Open-source error knowledge base" description="Machine-consumable error knowledge base for open-source libraries. Searchable by error message, code, or pattern. MCP server + static dataset.">
+<Base title="ErrLookup — Know what every open-source error means" description="Structured knowledge base of errors thrown by popular open-source libraries: exact messages, causes, ordered fixes, and defensive patterns. MCP server for AI agents + static JSON dataset.">
+  <script slot="head" type="application/ld+json" set:html={jsonLd} />
   <h1>Know what every error means — and how to fix it.</h1>
-  <p class="muted">ErrLookup is a structured, AI-assisted knowledge base of errors thrown by popular open-source libraries. Built for coding agents (MCP), answer engines (JSON + llms.txt), and humans (these pages).</p>
+  <p class="muted">ErrLookup reads library source and documents every user-facing error: exact message, cause, ordered fixes, defensive patterns. Built for coding agents (MCP), answer engines (JSON + <a href="/llms.txt">llms.txt</a>), and humans (these pages).</p>
 
   <p>
-    <strong>{manifest.counts.errors}</strong> errors across <strong>{manifest.counts.repos}</strong> repos.
-    Dataset version <code>{manifest.datasetVersion}</code>.
+    <span class="pill">{manifest.counts.errors} errors</span>
+    <span class="pill">{manifest.counts.repos} repos</span>
+    <span class="pill">dataset {manifest.datasetVersion.slice(0, 10)}</span>
   </p>
 
-  <h2>Install the MCP server</h2>
+  <h2>Give your coding agent error superpowers</h2>
   <pre>{
     JSON.stringify(
       { mcpServers: { errlookup: { command: "npx", args: ["-y", "@standardbeagle/errlookup-mcp"] } } },
@@ -21,8 +36,9 @@ const repos = getRepos();
       2
     )
   }</pre>
+  <p class="muted">The MCP server caches the dataset locally — offline-capable, no API keys, answers <code>search_error</code> straight from disk.</p>
 
-  <h2>Repos</h2>
+  <h2>Analyzed repos</h2>
   <table>
     <thead><tr><th>Repo</th><th>Language</th><th>Errors</th><th>Stars</th></tr></thead>
     <tbody>
@@ -36,6 +52,7 @@ const repos = getRepos();
       ))}
     </tbody>
   </table>
+  <p>Missing a library you depend on? <a class="btn" href="/request-crawl/">Request a crawl →</a></p>
 
-  <p class="muted">Honest provenance: every record is AI-assisted analysis of the cited commit. See the dataset contract in <a href="/api-docs/">API docs</a>.</p>
+  <p class="muted">Honest provenance: every record is AI-assisted analysis of the cited commit, pinned to its SHA. See <a href="/about/">how records are made</a> and the <a href="/api-docs/">dataset contract</a>.</p>
 </Base>

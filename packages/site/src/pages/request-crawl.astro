@@ -1,0 +1,44 @@
+---
+import Base from "../layouts/Base.astro";
+const jsonLd = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  name: "Request a crawl — ErrLookup",
+  description: "Ask ErrLookup to analyze an open-source library's errors.",
+});
+---
+<Base
+  title="Request a crawl — ErrLookup"
+  description="Want an open-source library's errors documented? Request a crawl and ErrLookup will analyze its error surface — every message, cause, and fix."
+>
+  <script slot="head" type="application/ld+json" set:html={jsonLd} />
+  <h1>Request a crawl</h1>
+  <p>
+    Tell us which open-source library you want in the knowledge base. Requests open a public
+    GitHub issue — no account data touches this site (there's no backend to touch).
+  </p>
+
+  <form action="https://github.com/standardbeagle/err-lookup/issues/new" method="get">
+    <input type="hidden" name="labels" value="crawl-request" />
+    <label for="title">Repository (owner/name)</label>
+    <input type="text" id="title" name="title" placeholder="e.g. fastify/fastify" required pattern="[^/\s]+/[^/\s]+.*" />
+    <label for="body">Why this library? (optional context — versions you use, errors that bit you)</label>
+    <textarea id="body" name="body" rows="5" placeholder="We hit ERR_STREAM_PREMATURE_CLOSE constantly and the docs don't cover it…"></textarea>
+    <p><button class="btn" type="submit">Open request on GitHub →</button></p>
+  </form>
+
+  <h2>What qualifies</h2>
+  <table>
+    <tbody>
+      <tr><td>✅</td><td>Public open-source repositories with real error surfaces (libraries, frameworks, CLIs, databases).</td></tr>
+      <tr><td>✅</td><td>Any mainstream language — JS/TS, Python, Go, Rust, Java, C#, Ruby, PHP, C.</td></tr>
+      <tr><td>❌</td><td>Docs-only or awesome-list repos (nothing throws), private code, forks of already-analyzed repos.</td></tr>
+    </tbody>
+  </table>
+
+  <p class="muted">
+    Popular requests get crawled first — analysis is pinned to the current default-branch
+    commit and lands with the next dataset release. Prefer email?
+    <a href="mailto:ai@standardbeagle.com?subject=ErrLookup%20crawl%20request">ai@standardbeagle.com</a>.
+  </p>
+</Base>

@@ -5,6 +5,7 @@ import { getRepos } from "../data/load.js";
 export const GET: APIRoute = () => {
   const repos = getRepos();
   const parts: string[] = ['<?xml version="1.0" encoding="UTF-8"?>', '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'];
+  parts.push("  <sitemap><loc>https://errors.standardbeagle.com/sitemaps/pages.xml</loc></sitemap>");
   for (const r of repos) {
     const [owner, name] = r.repo.split("/");
     parts.push(`  <sitemap><loc>https://errors.standardbeagle.com/sitemaps/${owner}/${name}.xml</loc></sitemap>`);
