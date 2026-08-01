@@ -33,6 +33,13 @@ const jsonLd = JSON.stringify({
     <div><b>{manifest.datasetVersion.slice(0, 10)}</b><span>dataset version</span></div>
   </div>
 
+  <h2>See it in action</h2>
+  <p class="muted">opencode hits an <code>AxiosError</code>, asks the ErrLookup MCP server what it means, and applies the fix the library authors recommend.</p>
+  <video controls preload="metadata" playsinline style="width:100%; border:1px solid var(--line); border-radius:8px; background:#191410;">
+    <source src="/demo/errlookup-demo.mp4" type="video/mp4" />
+    Your browser does not support embedded video — <a href="/demo/errlookup-demo.mp4">download the demo</a>.
+  </video>
+
   <h2 id="install">Give your coding agent error superpowers</h2>
   <pre>{
     JSON.stringify(
