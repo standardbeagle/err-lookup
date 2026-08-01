@@ -1,11 +1,11 @@
-// Corpus-blitz routing: DeepSeek V4 Flash does the bulk phases over
+// Corpus-blitz routing: GLM 5.2 (comparison winner) does the bulk phases over
 // pre-extracted candidates; Kimi K3 (strong, pricier) validates.
-// Use with: ERRLOOKUP_CONFIG=configs/blitz-deepseek-k3.kdl
-provider "deepseek" {
+// Use with: ERRLOOKUP_CONFIG=configs/blitz-glm-k3.kdl
+provider "glm" {
     command "opencode"
     args "acp" "--pure"
     type "acp"
-    model "opencode/deepseek-v4-flash-free"
+    model "zai-coding-plan/glm-5.2"
     timeout-ms 600000
 }
 provider "k3" {
@@ -16,7 +16,7 @@ provider "k3" {
     timeout-ms 600000
 }
 defaults {
-    primary "deepseek"
+    primary "glm"
     max-concurrent 1
     delay-between-phases-ms 2000
 }
