@@ -18,6 +18,17 @@ if ! flock -n 9; then
   exit 0
 fi
 
+# Disk hygiene (§11.3): reap orphaned clone dirs from crashed runs, then
+# refuse to start below the free-space floor — a full disk mid-batch corrupts
+# nothing (atomic export) but wastes a night.
+find /tmp -maxdepth 1 -name 'errlookup-*' -mmin +720 -exec rm -rf {} + 2>/dev/null
+MIN_FREE_GB="${ERRLOOKUP_MIN_FREE_GB:-10}"
+free_gb=$(df -BG --output=avail /tmp | tail -1 | tr -dc '0-9')
+if [ "${free_gb:-0}" -lt "$MIN_FREE_GB" ]; then
+  echo "$(date -u +%FT%TZ) ABORT: ${free_gb}GB free on /tmp < ${MIN_FREE_GB}GB floor" >>"$LOG_DIR/scan.log"
+  exit 1
+fi
+
 RUN_LOG="$LOG_DIR/scan-$(date -u +%Y%m%d-%H%M%S).log"
 {
   echo "=== scan run start $(date -u +%FT%TZ) corpus=$CORPUS"

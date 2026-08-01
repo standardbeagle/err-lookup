@@ -177,6 +177,33 @@ describe("pipeline e2e (fixture-replay)", () => {
     rmSync(dbPath, { force: true });
   }, 60000);
 
+  it("skips oversized clones without spending LLM tokens (disk cap §11.1)", async () => {
+    const local = await makeLocalRepo();
+    const dbPath = resolve(".tmp-test", `e2e-cap-${process.pid}.db`);
+    rmSync(dbPath, { force: true });
+    const { db, raw } = openDb(dbPath);
+    let calls = 0;
+    const providers = {
+      claude: { name: "claude", async invoke() { calls++; return { ok: false as const, kind: "spawn" as const, error: "must not be called" }; } },
+    };
+    process.env.ERRLOOKUP_MAX_CLONE_MB = "0";
+    try {
+      const res = await analyzeRepo("acme/huge", {
+        db,
+        providers,
+        cfg: makeCfg(),
+        cloneUrlOverride: local.path,
+      });
+      expect(res.failed).toMatch(/skipped_too_large/);
+      expect(calls).toBe(0);
+    } finally {
+      delete process.env.ERRLOOKUP_MAX_CLONE_MB;
+      raw.close();
+      rmSync(local.path, { recursive: true, force: true });
+      rmSync(dbPath, { force: true });
+    }
+  }, 30000);
+
   it("recovers records after a failed write without re-spending LLM phases", async () => {
     const local = await makeLocalRepo();
     const dbPath = resolve(".tmp-test", `e2e-recover-${process.pid}.db`);

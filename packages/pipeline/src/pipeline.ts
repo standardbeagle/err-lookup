@@ -2,7 +2,17 @@ import type { Db } from "./db/client.js";
 import type { ErrlookupConfig } from "./config/index.js";
 import type { LlmProvider } from "./provider/types.js";
 import type { PhaseName } from "@errlookup/schema";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { cloneShallow, headSha, tempWorkDir } from "./vcs/git.js";
+
+const execFileAsync = promisify(execFile);
+
+/** Size of a directory in MB via `du -sm` (fast, no JS tree walk). */
+async function dirSizeMb(path: string): Promise<number> {
+  const { stdout } = await execFileAsync("du", ["-sm", path]);
+  return Number.parseInt(stdout.trim().split(/\s+/)[0] ?? "0", 10);
+}
 import { fetchRepoMeta } from "./vcs/github-meta.js";
 import { upsertRepo } from "./db/store.js";
 import { runPhases, type RunPhasesResult } from "./phase/runner.js";
@@ -48,6 +58,18 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
   try {
     log(`cloning ${repo} → ${work.path}`);
     await cloneShallow(repo, work.path, opts.cloneUrlOverride);
+
+    // Disk budget (§11.1/§11.3): oversized clones are recorded and skipped,
+    // never analyzed — one monorepo must not eat the workdir budget.
+    const capMb = Number.parseInt(process.env.ERRLOOKUP_MAX_CLONE_MB ?? "2048", 10);
+    const sizeMb = await dirSizeMb(work.path);
+    if (sizeMb > capMb) {
+      const msg = `skipped_too_large: clone ${sizeMb}MB > cap ${capMb}MB`;
+      upsertRepo(opts.db, { repo, status: "failed", lastError: msg });
+      log(msg);
+      return { errorCount: 0, rejects: [], skipped: [], failed: msg };
+    }
+
     const sha = await headSha(work.path);
     log(`HEAD sha ${sha}`);
     // GitHub-hosted repos get description/language/stars; local clones (tests)
