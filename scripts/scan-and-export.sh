@@ -7,7 +7,9 @@ set -u -o pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="${ERRLOOKUP_LOG_DIR:-$HOME/.local/state/errlookup}"
 LOCK_FILE="$LOG_DIR/scan.lock"
-CORPUS="${ERRLOOKUP_CORPUS:-$REPO_ROOT/docs/starter-corpus.txt}"
+CORPUS="${ERRLOOKUP_CORPUS:-$REPO_ROOT/docs/blitz-corpus.txt}"
+# GLM 5.2 bulk + K3 verify won the model comparison (docs/model-comparison-2026-07-31.md)
+export ERRLOOKUP_CONFIG="${ERRLOOKUP_CONFIG:-$REPO_ROOT/configs/blitz-glm-k3.kdl}"
 
 mkdir -p "$LOG_DIR"
 exec 9>"$LOCK_FILE"

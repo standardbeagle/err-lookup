@@ -125,8 +125,16 @@ async function main(): Promise<void> {
     const { db, raw } = openDb(dbPath());
     let ok = 0;
     let failed = 0;
+    // Circuit breaker: provider quota exhaustion fails every repo the same way;
+    // stop burning clones and let the next scheduled run resume (§11.2).
+    let consecutiveFailures = 0;
+    const BREAKER = 5;
     try {
       for (const repo of repos) {
+        if (consecutiveFailures >= BREAKER) {
+          console.error(`\nbatch aborted: ${BREAKER} consecutive failures — provider likely rate-limited/exhausted`);
+          break;
+        }
         console.log(`\n=== ${repo} ===`);
         try {
           const r = await analyzeRepo(repo, {
@@ -140,13 +148,16 @@ async function main(): Promise<void> {
           if (r.failed) {
             console.error(`  FAILED: ${r.failed}`);
             failed++;
+            consecutiveFailures++;
           } else {
             console.log(`  → ${r.errorCount} errors`);
             ok++;
+            consecutiveFailures = 0;
           }
         } catch (e) {
           console.error(`  FAILED: ${(e as Error).message}`);
           failed++;
+          consecutiveFailures++;
         }
       }
       console.log(`\nbatch done: ${ok} ok, ${failed} failed`);
