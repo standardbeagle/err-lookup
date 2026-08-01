@@ -1,0 +1,15 @@
+// Comparison run: DeepSeek V4 Flash via opencode Zen ($0.14/$0.28 per 1M, or
+// the -free variant at $0 with data-collection caveat).
+// Use with: ERRLOOKUP_CONFIG=configs/compare-opencode-deepseek.kdl ERRLOOKUP_DB=data/compare-deepseek.db
+provider "opencode" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "opencode/deepseek-v4-flash-free"
+    timeout-ms 600000
+}
+defaults {
+    primary "opencode"
+    max-concurrent 1
+    delay-between-phases-ms 2000
+}
