@@ -77,6 +77,11 @@ const canonicalUrl = canonical ?? new URL(Astro.url.pathname, SITE).href;
       nav.top a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 .6rem; text-decoration: none; color: var(--mute); font-size: .95rem; }
       nav.top a:hover { color: var(--accent-strong); }
       nav.top a.brand { font-weight: 800; font-size: 1.05rem; color: var(--ink); gap: .5rem; padding-left: 0; margin-right: auto; }
+      nav.top a.star {
+        gap: .35rem; min-height: 34px; margin-left: .3rem; padding: 0 .75rem;
+        border: 1px solid var(--line); border-radius: 8px; color: var(--accent-strong); font-weight: 600;
+      }
+      nav.top a.star:hover { border-color: var(--accent); color: var(--accent); }
 
       footer.site { border-top: 1px solid var(--line); margin-top: var(--s6); background: var(--card); }
       footer.site > div { max-width: var(--maxw); margin: 0 auto; padding: var(--s3) var(--s2); font-size: .875rem; color: var(--mute); display: flex; gap: var(--s2); flex-wrap: wrap; align-items: center; }
@@ -133,16 +138,20 @@ const canonicalUrl = canonical ?? new URL(Astro.url.pathname, SITE).href;
       <a href="/blog/">Blog</a>
       <a href="/request-crawl/">Request a crawl</a>
       <a href="/api-docs/">API</a>
-      <a href="https://www.npmjs.com/package/@standardbeagle/errlookup-mcp">MCP</a>
+      <a href="https://www.npmjs.com/package/@standardbeagle/errlookup-mcp" target="_blank" rel="noopener noreferrer">MCP</a>
+      <a class="star" href="https://github.com/standardbeagle/err-lookup" target="_blank" rel="noopener noreferrer" aria-label="Star ErrLookup on GitHub">
+        <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+        Star
+      </a>
     </div></nav>
     <main>
       <slot />
     </main>
     <footer class="site"><div>
-      <span>Built by <a href="https://standardbeagle.com">Standard Beagle</a>, the AI UX agency for bold product teams.</span>
+      <span>Built by <a href="https://standardbeagle.com" target="_blank" rel="noopener noreferrer">Standard Beagle</a>, the AI UX agency for bold product teams.</span>
       <a href="/llms.txt">llms.txt</a>
       <a href="/data/manifest.json">dataset</a>
-      <a href="https://github.com/standardbeagle/err-lookup">GitHub</a>
+      <a href="https://github.com/standardbeagle/err-lookup" target="_blank" rel="noopener noreferrer">GitHub</a>
     </div></footer>
   </body>
 </html>

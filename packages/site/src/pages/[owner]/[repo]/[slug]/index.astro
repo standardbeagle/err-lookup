@@ -69,7 +69,7 @@ const ld = {
   <h2>Source</h2>
   <p class="muted">Thrown at <code>{e.filePath}{e.lineNumber ? `:${e.lineNumber}` : ""}</code></p>
   {e.sourceCode && <pre>{e.sourceCode}</pre>}
-  <p><a href={e.githubUrl}>View on GitHub ↗</a> (pinned to <code>{e.analyzedSha.slice(0, 10)}</code>)</p>
+  <p><a href={e.githubUrl} target="_blank" rel="noopener noreferrer">View on GitHub</a> (pinned to <code>{e.analyzedSha.slice(0, 10)}</code>)</p>
 
   {e.solutions.length > 0 && (
     <>
@@ -119,6 +119,6 @@ const ld = {
   <p class="muted">
     AI-assisted analysis of <code>{repoFullName}@{e.analyzedSha.slice(0, 10)}</code> ({e.analyzedAt.slice(0, 10)}).
     Data as JSON: <a href={jsonUrl}>{jsonUrl}</a>.
-    Report an issue: <a href={issuesUrl}>GitHub ↗</a>.
+    Report an issue: <a href={issuesUrl} target="_blank" rel="noopener noreferrer">GitHub</a>.
   </p>
 </Base>
