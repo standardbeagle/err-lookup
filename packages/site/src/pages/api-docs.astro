@@ -12,7 +12,20 @@ const examples = [
 ---
 <Base title="API & Dataset — ErrLookup" description="The static JSON dataset is the contract between the site and the MCP server.">
   <h1>Dataset contract</h1>
-  <p>The product is structured data. The site is the distribution channel. Everything below is served as immutable static JSON at <code>https://errors.standardbeagle.com/data/…</code>.</p>
+  <p>The product is structured data. The site is the distribution channel. Everything below is served as immutable static JSON at <code>https://errors.standardbeagle.com/data/…</code> — CORS-enabled, so browsers and third-party tools can fetch it directly.</p>
+
+  <h2>Search API</h2>
+  <p>A thin edge function wraps the same tiered matching the MCP server uses (exact code → derived pattern → fuzzy). All responses are JSON with <code>Access-Control-Allow-Origin: *</code>.</p>
+  <table>
+    <thead><tr><th>Endpoint</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /api/search?q=&lt;message&gt;</code></td><td>Scored matches for a raw error message. Optional <code>repo=owner/name</code>, <code>limit</code> (max 25).</td></tr>
+      <tr><td><code>GET /api/errors/&#123;id&#125;</code></td><td>Full ErrorEntry record by id.</td></tr>
+      <tr><td><code>GET /api/repos</code></td><td>Analyzed repositories with error counts.</td></tr>
+    </tbody>
+  </table>
+  <pre>curl "https://errors.standardbeagle.com/api/search?q=Request+failed+with+status+code+404"</pre>
+  <p class="muted">Prefer bulk or offline consumption? Skip the API — download the dataset files below and query locally; that is exactly what the MCP server does.</p>
 
   <h2>Files</h2>
   <table>

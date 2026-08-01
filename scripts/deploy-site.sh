@@ -23,7 +23,9 @@ fi
 
 cd "$REPO_ROOT"
 pnpm --filter @errlookup/site build
-npx --yes wrangler@4 pages deploy packages/site/dist \
+# run from packages/site so wrangler picks up ./functions (Pages Functions API)
+cd "$REPO_ROOT/packages/site"
+npx --yes wrangler@4 pages deploy dist \
   --project-name "${ERRLOOKUP_PAGES_PROJECT:-errlookup}" \
   --branch main \
   --commit-dirty=true

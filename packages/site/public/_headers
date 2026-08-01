@@ -2,5 +2,11 @@
   Cache-Control: public, max-age=300
 /data/manifest.json
   Cache-Control: public, max-age=300
+  Access-Control-Allow-Origin: *
 /data/*
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+  Access-Control-Allow-Origin: *
+/schema.json
+  Access-Control-Allow-Origin: *
+/llms.txt
+  Access-Control-Allow-Origin: *
