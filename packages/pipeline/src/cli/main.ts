@@ -137,8 +137,13 @@ async function main(): Promise<void> {
             force: values.force,
             onLog: (m) => console.log(`  ${m}`),
           });
-          console.log(`  → ${r.errorCount} errors`);
-          ok++;
+          if (r.failed) {
+            console.error(`  FAILED: ${r.failed}`);
+            failed++;
+          } else {
+            console.log(`  → ${r.errorCount} errors`);
+            ok++;
+          }
         } catch (e) {
           console.error(`  FAILED: ${(e as Error).message}`);
           failed++;

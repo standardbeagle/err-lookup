@@ -35,6 +35,8 @@ export interface RunPhasesResult {
   errorCount: number;
   rejects: { message: string; error: string }[];
   skipped: PhaseName[];
+  /** Set when a required phase failed and the repo produced no usable result. */
+  failed?: string;
 }
 
 const ALL_M2_PHASES: PhaseName[] = ["discovery", "enrichment"];
@@ -108,7 +110,7 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         });
         upsertRepo(db, { repo, status: "failed", lastError: `discovery: ${msg}` });
         log(`phase discovery: FAILED — ${msg}`);
-        return { errorCount: 0, rejects: [], skipped };
+        return { errorCount: 0, rejects: [], skipped, failed: `discovery: ${msg}` };
       }
     }
   }
@@ -172,7 +174,7 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         recordPhase(db, { repo, phase: "enrichment", status: "failed", startedAt: started, completedAt: Date.now(), analyzedSha: sha, errorLog: msg });
         upsertRepo(db, { repo, status: "failed", lastError: `enrichment: ${msg}` });
         log(`phase enrichment: FAILED — ${msg}`);
-        return { errorCount: 0, rejects: [], skipped };
+        return { errorCount: 0, rejects: [], skipped, failed: `enrichment: ${msg}` };
       }
     }
   }

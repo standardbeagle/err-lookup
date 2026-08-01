@@ -85,10 +85,12 @@ export class SpawningProvider implements LlmProvider {
       };
     }
     if (code !== 0) {
+      // agent CLIs (claude -p) print usage-limit and auth errors to stdout
+      const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join(" | ");
       return {
         ok: false,
         kind: "spawn",
-        error: `${this.name} exited ${code}: ${stderr.slice(0, 500)}`,
+        error: `${this.name} exited ${code}: ${detail.slice(0, 500)}`,
       };
     }
 
