@@ -1,0 +1,94 @@
+import { describe, it, expect } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { extractCandidates, candidatesFromLciJson } from "../src/phase/candidates.js";
+import { mapConfig } from "../src/config/index.js";
+import { parseKdl } from "../src/config/kdl.js";
+
+function fixtureRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), "cand-"));
+  writeFileSync(join(dir, "index.js"), `function f(x) {\n  if (!x) throw new TypeError('Expected a function');\n}\n`);
+  writeFileSync(join(dir, "api.py"), `def g():\n    raise ValueError("bad input: %s" % x)\n`);
+  writeFileSync(join(dir, "main.go"), `func h() error {\n\treturn fmt.Errorf("connect failed: %w", err)\n}\n`);
+  writeFileSync(join(dir, "lib.rs"), `fn i() {\n    panic!("unreachable state {}", s);\n}\n`);
+  // must be skipped:
+  writeFileSync(join(dir, "index.test.js"), `throw new Error('in test');\n`);
+  mkdirSync(join(dir, "node_modules", "x"), { recursive: true });
+  writeFileSync(join(dir, "node_modules", "x", "dep.js"), `throw new Error('in dep');\n`);
+  return dir;
+}
+
+describe("builtin candidate extractor", () => {
+  it("finds error sites across languages with literals, skipping tests and deps", () => {
+    const dir = fixtureRepo();
+    const c = extractCandidates(dir);
+    const files = c.map((s) => s.file).sort();
+    expect(files).toEqual(["api.py", "index.js", "lib.rs", "main.go"]);
+    const js = c.find((s) => s.file === "index.js")!;
+    expect(js.line).toBe(2);
+    expect(js.kind).toBe("throw");
+    expect(js.literal).toBe("Expected a function");
+    const go = c.find((s) => s.file === "main.go")!;
+    expect(go.literal).toContain("connect failed");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("honors caps", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cand-cap-"));
+    const lines = Array.from({ length: 100 }, (_, i) => `throw new Error('e${i}');`).join("\n");
+    writeFileSync(join(dir, "many.js"), lines);
+    expect(extractCandidates(dir, { maxPerFile: 10 })).toHaveLength(10);
+    expect(extractCandidates(dir, { maxCandidates: 5 })).toHaveLength(5);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("lci JSON mapping", () => {
+  it("maps lci grep payloads to candidate sites and dedupes by file:line", () => {
+    const payload = {
+      results: [
+        {
+          path: "/repo/src/a.ts",
+          line: 113,
+          context: {
+            lines: ["    const res = await fetch(url);", "    if (!res.ok) throw new Error(`GET failed`);"],
+            matched_lines: [113],
+            start_line: 112,
+          },
+        },
+        { path: "/repo/src/a.ts", line: 113 }, // duplicate
+        { path: "/outside/other.ts", line: 5 }, // outside repo root
+      ],
+    };
+    const seen = new Set<string>();
+    const c = candidatesFromLciJson("throw", "/repo", payload, seen);
+    expect(c).toHaveLength(1);
+    expect(c[0]).toMatchObject({ file: "src/a.ts", line: 113, kind: "throw", literal: "GET failed" });
+  });
+});
+
+describe("phase-providers config", () => {
+  it("parses per-phase routing and leaves unset phases on the primary", () => {
+    const cfg = mapConfig(
+      parseKdl(
+        [
+          'provider "deepseek" {',
+          '  command "opencode"',
+          "}",
+          'provider "k3" {',
+          '  command "opencode"',
+          "}",
+          "defaults {",
+          '  primary "deepseek"',
+          "}",
+          "phase-providers {",
+          '  verify "k3"',
+          "}",
+        ].join("\n")
+      )
+    );
+    expect(cfg.phaseProviders).toEqual({ verify: "k3" });
+    expect(cfg.defaults.primary).toBe("deepseek");
+  });
+});
