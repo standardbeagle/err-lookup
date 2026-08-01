@@ -11,7 +11,10 @@ function fixtureRepo(): string {
   writeFileSync(join(dir, "index.js"), `function f(x) {\n  if (!x) throw new TypeError('Expected a function');\n}\n`);
   writeFileSync(join(dir, "api.py"), `def g():\n    raise ValueError("bad input: %s" % x)\n`);
   writeFileSync(join(dir, "main.go"), `func h() error {\n\treturn fmt.Errorf("connect failed: %w", err)\n}\n`);
-  writeFileSync(join(dir, "lib.rs"), `fn i() {\n    panic!("unreachable state {}", s);\n}\n`);
+  writeFileSync(
+    join(dir, "lib.rs"),
+    `fn i() {\n    panic!("unreachable state {}", s);\n}\n#[error("connection reset by {peer}")]\nstruct E;\nfn j() {\n    let f = std::fs::File::open(p).expect("config file must exist");\n    Err(io::Error::new(ErrorKind::Other, "socket closed"))\n}\n`
+  );
   // must be skipped:
   writeFileSync(join(dir, "index.test.js"), `throw new Error('in test');\n`);
   mkdirSync(join(dir, "node_modules", "x"), { recursive: true });
@@ -23,8 +26,12 @@ describe("builtin candidate extractor", () => {
   it("finds error sites across languages with literals, skipping tests and deps", () => {
     const dir = fixtureRepo();
     const c = extractCandidates(dir);
-    const files = c.map((s) => s.file).sort();
+    const files = [...new Set(c.map((s) => s.file))].sort();
     expect(files).toEqual(["api.py", "index.js", "lib.rs", "main.go"]);
+    // rust idioms: thiserror attr, .expect(), Error::new all captured
+    const rs = c.filter((s) => s.file === "lib.rs");
+    expect(rs.map((s) => s.kind).sort()).toEqual(["error_attr", "error_new", "panic", "panic"]);
+    expect(rs.some((s) => s.literal === "connection reset by {peer}")).toBe(true);
     const js = c.find((s) => s.file === "index.js")!;
     expect(js.line).toBe(2);
     expect(js.kind).toBe("throw");

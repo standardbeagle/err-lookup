@@ -60,6 +60,9 @@ const PATTERNS: Record<string, Pattern[]> = {
   rs: [
     { kind: "panic", re: /\b(?:panic|unreachable|todo|unimplemented)!\s*\(/ },
     { kind: "error_new", re: /\b(?:bail|anyhow|ensure)!\s*\(/ },
+    { kind: "error_attr", re: /#\[error\s*\(/ }, // thiserror display messages
+    { kind: "error_new", re: /\bError::new\s*\(/ },
+    { kind: "panic", re: /\.expect\s*\(\s*"/ },
   ],
   jvm: [{ kind: "throw", re: /\bthrow\s+new\s+[A-Z][A-Za-z0-9_.]*(?:Exception|Error)\s*\(/ }],
   cs: [{ kind: "throw", re: /\bthrow\s+new\s+[A-Z][A-Za-z0-9_.]*Exception\s*\(/ }],
