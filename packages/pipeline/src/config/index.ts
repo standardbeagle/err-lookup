@@ -98,14 +98,21 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
  * Returns DEFAULT_CONFIG if no file is present.
  */
 export function loadConfig(configPath?: string): ErrlookupConfig {
-  const candidates = configPath
-    ? [configPath]
-    : [
-        ...(process.env.ERRLOOKUP_CONFIG ? [resolve(process.env.ERRLOOKUP_CONFIG)] : []),
-        resolve(process.cwd(), "errlookup.config.kdl"),
-        resolve(process.cwd(), "errlookup.config.json"),
-        resolve(process.cwd(), "packages", "pipeline", "errlookup.config.kdl"),
-      ];
+  // An explicitly requested config (argument or env) must exist — silently
+  // falling back to defaults would run the wrong provider on real budgets.
+  const explicit = configPath ?? process.env.ERRLOOKUP_CONFIG;
+  if (explicit) {
+    const p = resolve(explicit);
+    if (!existsSync(p)) throw new Error(`config not found: ${p} (from ${configPath ? "argument" : "ERRLOOKUP_CONFIG"})`);
+    const src = readFileSync(p, "utf8");
+    return p.endsWith(".json") ? mergeWithDefaults(JSON.parse(src)) : mapConfig(parseKdl(src));
+  }
+
+  const candidates = [
+    resolve(process.cwd(), "errlookup.config.kdl"),
+    resolve(process.cwd(), "errlookup.config.json"),
+    resolve(process.cwd(), "packages", "pipeline", "errlookup.config.kdl"),
+  ];
 
   const path = candidates.find((p) => existsSync(p));
   if (!path) return structuredClone(DEFAULT_CONFIG);

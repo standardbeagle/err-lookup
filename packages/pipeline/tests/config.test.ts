@@ -22,6 +22,21 @@ defaults {
 }
 `;
 
+describe("loadConfig explicit path", () => {
+  it("throws when ERRLOOKUP_CONFIG points at a missing file (no silent default)", () => {
+    process.env.ERRLOOKUP_CONFIG = "does/not/exist.kdl";
+    try {
+      expect(() => loadConfig()).toThrow(/config not found/);
+    } finally {
+      delete process.env.ERRLOOKUP_CONFIG;
+    }
+  });
+
+  it("throws when an explicit configPath argument is missing", () => {
+    expect(() => loadConfig("/nonexistent/errlookup.kdl")).toThrow(/config not found/);
+  });
+});
+
 describe("kdl parser", () => {
   it("parses the spec sample config", () => {
     const doc = parseKdl(SPEC_SAMPLE);
