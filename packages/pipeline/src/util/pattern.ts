@@ -72,13 +72,24 @@ export interface DerivedPattern {
  * Derive a messagePattern. Falls back to an escaped literal when the derived
  * pattern is ReDoS-prone or fails to compile.
  */
+/** Literal (non-group) character weight of a derived pattern. */
+export function patternLiteralWeight(pattern: string): number {
+  return pattern.split("(.+?)").join("").replace(/\\(.)/g, "$1").trim().length;
+}
+
 export function deriveMessagePattern(
   errorMessage: string,
   variableLiterals: string[] = []
 ): DerivedPattern {
-  if (!errorMessage) return { pattern: "(.+?)", source: "literal" };
+  if (!errorMessage) return { pattern: "", source: "literal" };
   const marked = replacePlaceholders(errorMessage, variableLiterals);
   const derived = buildPattern(marked);
+  // A message that is (almost) all placeholder derives a match-anything regex
+  // ("{template}" → "(.+?)") that false-positives on every search. Keep such
+  // messages literal.
+  if (patternLiteralWeight(derived) < 6) {
+    return { pattern: escapeRegex(errorMessage), source: "literal" };
+  }
   try {
     // Must compile as a JS RegExp.
     // eslint-disable-next-line no-new

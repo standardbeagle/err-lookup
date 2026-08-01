@@ -40,6 +40,9 @@ function tierPattern(input: string, errors: IndexError[]): IndexError[] {
   const hits: IndexError[] = [];
   for (const e of errors) {
     if (e.pattern.length > 500) continue;
+    // Near-universal patterns (pure-placeholder messages in older datasets
+    // derive to "(.+?)") would match every query at 0.9 — skip them.
+    if (e.pattern.split("(.+?)").join("").replace(/\\(.)/g, "$1").trim().length < 6) continue;
     if (Date.now() - start > PATTERN_BUDGET_MS) break;
     try {
       if (new RegExp(e.pattern).test(input)) hits.push(e);

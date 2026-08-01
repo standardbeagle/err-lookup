@@ -1,6 +1,6 @@
 {
   "name": "@standardbeagle/errlookup-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "ErrLookup MCP server — answers 'what is this error and how do I fix it' from a cached static dataset (errors.standardbeagle.com).",
   "license": "MIT",
   "type": "module",

@@ -42,14 +42,15 @@ describe("deriveMessagePattern", () => {
   });
 
   it("falls back to literal when derived pattern is ReDoS-prone", () => {
-    // A pathological placeholder structure would nest quantifiers; here we test
-    // the fallback path via a crafted variable literal producing nested groups.
-    const { source } = deriveMessagePattern("ok");
-    expect(source).toBe("derived"); // sanity: normal input derives
+    // sanity: a normal-length message derives; sub-weight ones go literal
+    expect(deriveMessagePattern("Cannot find module 'x'").source).toBe("derived");
+    expect(deriveMessagePattern("ok").source).toBe("literal"); // too short to be a useful pattern
   });
 
-  it("handles empty message", () => {
-    expect(deriveMessagePattern("").pattern).toBe("(.+?)");
+  it("handles empty message without a match-anything pattern", () => {
+    const d = deriveMessagePattern("");
+    expect(d.source).toBe("literal");
+    expect(d.pattern).not.toContain("(.+?)");
   });
 
   it("substitutes LLM-flagged variable literals", () => {
@@ -78,5 +79,17 @@ describe("isRe2Safe", () => {
 
   it("rejects patterns > 500 chars", () => {
     expect(isRe2Safe("a".repeat(501))).toBe(false);
+  });
+});
+
+describe("pure-placeholder messages", () => {
+  it("falls back to escaped literal instead of a match-anything pattern", async () => {
+    const { deriveMessagePattern, patternLiteralWeight } = await import("../src/util/pattern.js");
+    const d = deriveMessagePattern("{template}");
+    expect(d.source).toBe("literal");
+    expect(d.pattern).not.toContain("(.+?)");
+    expect(new RegExp(d.pattern).test("completely unrelated message")).toBe(false);
+    expect(patternLiteralWeight("(.+?)")).toBe(0);
+    expect(patternLiteralWeight("Request failed with status code (.+?)")).toBeGreaterThan(20);
   });
 });
