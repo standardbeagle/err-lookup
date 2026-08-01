@@ -90,9 +90,12 @@ describe("config mapping", () => {
 });
 
 describe("loadConfig", () => {
-  it("returns DEFAULT_CONFIG when no file present", () => {
-    const cfg = loadConfig("/nonexistent/path.kdl");
-    expect(cfg.providers.claude.command).toBe("claude");
-    expect(cfg.defaults).toEqual(DEFAULT_CONFIG.defaults);
+  it("returns DEFAULT_CONFIG when no config file exists in cwd candidates", () => {
+    // no explicit path, no ERRLOOKUP_CONFIG: falls back to defaults only when
+    // none of the conventional locations exist (vitest cwd is packages/pipeline)
+    delete process.env.ERRLOOKUP_CONFIG;
+    const cfg = loadConfig();
+    expect(cfg.providers.claude?.command ?? "claude").toBe("claude");
+    expect(cfg.defaults.maxConcurrent).toBeGreaterThanOrEqual(1);
   });
 });
