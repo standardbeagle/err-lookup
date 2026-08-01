@@ -140,3 +140,12 @@ describe("exporter", () => {
     raw.close();
   });
 });
+
+describe("default out dir", () => {
+  it("resolves against the pnpm workspace root, not the package cwd", async () => {
+    const { resolveDefaultOutDir } = await import("../src/exporter/index.js");
+    const p = resolveDefaultOutDir();
+    expect(p.endsWith("packages/site/public/data")).toBe(true);
+    expect(p).not.toContain("packages/pipeline/packages");
+  });
+});

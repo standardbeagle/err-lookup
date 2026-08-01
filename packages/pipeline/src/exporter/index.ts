@@ -241,9 +241,20 @@ export function publishDataset(
   return { manifest, counts };
 }
 
+/** Walk up from cwd to the pnpm workspace root (pnpm --filter runs set cwd to the package dir). */
+function workspaceRoot(): string {
+  let dir = process.cwd();
+  for (;;) {
+    if (existsSync(join(dir, "pnpm-workspace.yaml"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return process.cwd();
+    dir = parent;
+  }
+}
+
 function defaultOutDir(): string {
   // §5: packages/site/public/data (from repo root). Created on first export.
-  return resolve(process.cwd(), "packages", "site", "public", "data");
+  return resolve(workspaceRoot(), "packages", "site", "public", "data");
 }
 
 // re-export for tests / CLI
