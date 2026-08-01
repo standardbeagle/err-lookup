@@ -41,10 +41,12 @@ function htmlFiles(dir: string): string[] {
 function hrefToDistPath(href: string): string | null {
   if (!href.startsWith("/")) return null;
   if (href.startsWith("/data/")) return null; // static JSON asset, not an HTML page
-  // Static assets (favicon, icons, etc.) are not HTML pages — skip.
-  if (/\.(svg|ico|png|jpe?g|gif|webp|json|xml|txt|css|js|map)(\/.*)?$/.test(href)) return null;
-  const clean = href.split("#")[0]!.split("?")[0];
+  const clean = href.split("#")[0]!.split("?")[0]!;
   const rel = clean.replace(/^\//, "");
+  // Static assets (favicon, media, etc.) must exist in dist as plain files.
+  if (/\.(svg|ico|png|jpe?g|gif|webp|json|xml|txt|css|js|map|mp4|webm|pdf)$/.test(clean)) {
+    return resolve(dist, rel);
+  }
   if (rel === "") return resolve(dist, "index.html");
   return resolve(dist, rel, "index.html");
 }
