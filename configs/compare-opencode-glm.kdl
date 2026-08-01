@@ -1,0 +1,14 @@
+// Comparison run: GLM 5.2 via opencode ACP (Z.AI coding plan).
+// Use with: ERRLOOKUP_CONFIG=configs/compare-opencode-glm.kdl ERRLOOKUP_DB=data/compare-glm.db
+provider "opencode" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "zai-coding-plan/glm-5.2"
+    timeout-ms 600000
+}
+defaults {
+    primary "opencode"
+    max-concurrent 1
+    delay-between-phases-ms 2000
+}
