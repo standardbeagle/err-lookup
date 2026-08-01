@@ -204,6 +204,30 @@ describe("pipeline e2e (fixture-replay)", () => {
     }
   }, 30000);
 
+  it("serializes large repos behind the machine-wide lock; reaps stale locks", async () => {
+    const { acquireLargeRepoLock } = await import("../src/pipeline.js");
+    const lockDir = join(tmpdir(), `el-lock-test-${process.pid}`);
+    rmSync(lockDir, { recursive: true, force: true });
+
+    // First acquirer wins immediately.
+    const release = await acquireLargeRepoLock(lockDir);
+    // Second acquirer must wait until release.
+    let acquired = false;
+    const second = acquireLargeRepoLock(lockDir, undefined, 50).then((rel) => { acquired = true; rel(); });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(acquired).toBe(false); // still held
+    release();
+    await second;
+    expect(acquired).toBe(true);
+
+    // Stale lock (dead pid) is reaped instead of waiting forever.
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(join(lockDir, "pid"), "999999999");
+    const rel2 = await acquireLargeRepoLock(lockDir, undefined, 50);
+    rel2();
+    rmSync(lockDir, { recursive: true, force: true });
+  }, 30000);
+
   it("recovers records after a failed write without re-spending LLM phases", async () => {
     const local = await makeLocalRepo();
     const dbPath = resolve(".tmp-test", `e2e-recover-${process.pid}.db`);
