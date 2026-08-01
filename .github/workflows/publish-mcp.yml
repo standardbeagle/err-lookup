@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write # npm provenance
 
 jobs:
   publish:
@@ -24,7 +23,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @errlookup/schema build && pnpm --filter @standardbeagle/errlookup-mcp build
       - run: pnpm --filter @standardbeagle/errlookup-mcp test
-      - run: npm publish --provenance --access public
+      # --provenance requires a public source repo; this repo is private
+      - run: npm publish --access public
         working-directory: packages/mcp
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
