@@ -1,32 +1,43 @@
 {
-  "name": "@errlookup/mcp",
+  "name": "@standardbeagle/errlookup-mcp",
   "version": "0.1.0",
-  "description": "ErrLookup MCP server — answers 'what is this error and how do I fix it' from a cached static dataset.",
+  "description": "ErrLookup MCP server — answers 'what is this error and how do I fix it' from a cached static dataset (errors.standardbeagle.com).",
   "license": "MIT",
   "type": "module",
   "bin": {
     "errlookup-mcp": "dist/index.js"
   },
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/index.js --external:@modelcontextprotocol/sdk --banner:js=\"#!/usr/bin/env node\"",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.4",
-    "@errlookup/schema": "workspace:*"
+    "@modelcontextprotocol/sdk": "^1.0.4"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "esbuild": "^0.25.0",
+    "@errlookup/schema": "workspace:*"
   },
   "engines": {
     "node": ">=20"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/standardbeagle/err-lookup.git",
+    "directory": "packages/mcp"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -1,0 +1,30 @@
+name: publish-mcp
+
+on:
+  push:
+    tags: ["mcp-v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # npm provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @errlookup/schema build && pnpm --filter @standardbeagle/errlookup-mcp build
+      - run: pnpm --filter @standardbeagle/errlookup-mcp test
+      - run: npm publish --provenance --access public
+        working-directory: packages/mcp
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
