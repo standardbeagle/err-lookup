@@ -1,6 +1,6 @@
 {
   "name": "@standardbeagle/errlookup-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "ErrLookup MCP server — answers 'what is this error and how do I fix it' from a cached static dataset (errors.standardbeagle.com).",
   "license": "MIT",
   "type": "module",
@@ -8,7 +8,7 @@
     "errlookup-mcp": "dist/index.js"
   },
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/index.js --external:@modelcontextprotocol/sdk --banner:js=\"#!/usr/bin/env node\"",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/index.js --external:@modelcontextprotocol/sdk",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "test": "vitest run",

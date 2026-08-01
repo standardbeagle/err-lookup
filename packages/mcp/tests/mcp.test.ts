@@ -202,3 +202,30 @@ describe("MCP sync + search (§8.4)", () => {
     }
   });
 });
+
+describe("built bundle", () => {
+  it("dist/index.js starts and answers an MCP initialize (regression: double shebang)", async () => {
+    const { spawn } = await import("node:child_process");
+    const { resolve, dirname } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const bin = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist", "index.js");
+    const child = spawn(process.execPath, [bin], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, ERRLOOKUP_OFFLINE: "1", ERRLOOKUP_CACHE_DIR: "/tmp/errlookup-none" },
+    });
+    const line = await new Promise<string>((res, rej) => {
+      const t = setTimeout(() => { child.kill(); rej(new Error("no response from bundle in 10s")); }, 10_000);
+      let buf = "";
+      child.stdout.on("data", (d) => {
+        buf += d.toString();
+        const nl = buf.indexOf("\n");
+        if (nl >= 0) { clearTimeout(t); child.kill(); res(buf.slice(0, nl)); }
+      });
+      child.on("exit", (c) => { if (c !== null && c !== 0) { clearTimeout(t); rej(new Error(`bundle exited ${c}`)); } });
+      child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "t", version: "0" } } }) + "\n");
+    });
+    const msg = JSON.parse(line);
+    expect(msg.jsonrpc).toBe("2.0");
+    expect(msg.result?.serverInfo?.name).toBeTruthy();
+  }, 15000);
+});
