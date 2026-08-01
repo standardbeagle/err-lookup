@@ -1,0 +1,90 @@
+---
+import Base from "../../layouts/Base.astro";
+const meta = {
+  title: "Why error lookup matters most for compiled languages",
+  description:
+    "Go binaries, JARs, DLLs, and native libraries ship without the source that raises their errors. When the message string is the only artifact, a source-derived error knowledge base closes the gap.",
+  date: "2026-08-01",
+};
+const jsonLd = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  headline: meta.title,
+  description: meta.description,
+  datePublished: meta.date,
+  author: { "@type": "Organization", name: "Standard Beagle Studio", url: "https://standardbeagle.com" },
+});
+---
+<Base title={`${meta.title} — ErrLookup`} description={meta.description}>
+  <script slot="head" type="application/ld+json" set:html={jsonLd} />
+  <p class="muted"><a href="/blog/">Blog</a> · {meta.date}</p>
+  <h1>{meta.title}</h1>
+  <p class="lead">
+    In JavaScript or Python, the library that just threw is sitting in
+    <code>node_modules</code> or <code>site-packages</code> — worst case, you read it. In
+    compiled ecosystems that option usually does not exist. The dependency arrived as a
+    binary, and the error string in your logs is the only artifact you have.
+  </p>
+
+  <h2>The missing-source problem</h2>
+  <p>
+    Consider what actually ships downstream: a Go module compiled into someone else's static
+    binary; a JAR pulled from an artifact registry; a NuGet DLL; a <code>.so</code> behind an
+    FFI boundary; curl linked into a product that only surfaces its message text. When
+    <code>connection reset by peer</code> or <code>ERR_STREAM_PREMATURE_CLOSE</code> appears
+    in production logs, the code that raised it is not on the machine, not in the container
+    image, and often not in any repository your organization can open.
+  </p>
+  <p>
+    The debugging loop degrades to string-searching the internet — where results mix
+    versions, forks, and a decade of half-relevant forum threads.
+  </p>
+
+  <h2>Source-derived lookup inverts the problem</h2>
+  <p>
+    ErrLookup analyzes the <em>upstream source</em> at a pinned commit, before compilation
+    strips it away. That yields three things a web search cannot give you:
+  </p>
+  <table>
+    <tbody>
+      <tr><td><strong>Exact provenance</strong></td><td>The message maps to a file and line at a known SHA, with a permalink — not "somewhere in some version."</td></tr>
+      <tr><td><strong>Template-aware matching</strong></td><td>Sources say <code>connect failed: %s</code> or <code>Request failed with status code &#36;&#123;status&#125;</code>; production logs carry the filled-in values. Derived match patterns bridge the two, so the string from your logs finds the record that raised it.</td></tr>
+      <tr><td><strong>Consumer-side fixes</strong></td><td>Solutions and defensive patterns are written for the caller — the person holding the binary — not the library maintainer.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Where this bites hardest</h2>
+  <p>
+    The public dataset already shows the pattern: the Go and C repositories (hugo, docker,
+    curl, redis) carry the largest error surfaces — hundreds of distinct
+    <code>fmt.Errorf</code> and <code>errors.New</code> sites each — precisely the messages
+    that later appear in logs emitted by binaries with no source in sight. Rust's
+    <code>thiserror</code> attributes and panic messages, Java's exception constructors, and
+    .NET's exception hierarchy follow the same economics: rich error text in the source,
+    zero context at the point of failure.
+  </p>
+
+  <h2>The agent workflow</h2>
+  <p>
+    This is also why the primary consumer is an MCP server rather than a search box. A coding
+    agent watching your logs passes the raw message to <code>search_error</code>; tiered
+    matching (exact code, then derived pattern, then fuzzy) returns the record; the agent
+    reads the cause, applies the consumer-side fix, and cites the source line — offline,
+    from a locally cached dataset, without the source ever having shipped to your side of
+    the dependency boundary.
+  </p>
+
+  <pre>{`{
+  "mcpServers": {
+    "errlookup": { "command": "npx", "args": ["-y", "@standardbeagle/errlookup-mcp"] }
+  }
+}`}</pre>
+
+  <p>
+    Running closed-source or internal binaries? The same pipeline
+    <a href="/blog/analyze-your-internal-repos/">runs on your own repositories</a> — analyze
+    at build time, and the error strings your customers see stay explainable years later.
+  </p>
+
+  <p><a class="btn" href="/">Browse the knowledge base</a></p>
+</Base>

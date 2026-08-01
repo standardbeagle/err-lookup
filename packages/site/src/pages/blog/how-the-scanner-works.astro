@@ -1,0 +1,94 @@
+---
+import Base from "../../layouts/Base.astro";
+const meta = {
+  title: "How the ErrLookup scanner works",
+  description:
+    "Inside the ErrLookup pipeline: zero-token candidate extraction, batched LLM enrichment, model routing, an adversarial verify pass, and atomic dataset publishing.",
+  date: "2026-08-01",
+};
+const jsonLd = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  headline: meta.title,
+  description: meta.description,
+  datePublished: meta.date,
+  author: { "@type": "Organization", name: "Standard Beagle Studio", url: "https://standardbeagle.com" },
+});
+---
+<Base title={`${meta.title} — ErrLookup`} description={meta.description}>
+  <script slot="head" type="application/ld+json" set:html={jsonLd} />
+  <p class="muted"><a href="/blog/">Blog</a> · {meta.date}</p>
+  <h1>{meta.title}</h1>
+  <p class="lead">
+    Every record on this site started as a line of library source code. Here is the pipeline
+    that turns a repository into documented, searchable, citable error knowledge — and the
+    design decisions that keep it cheap, honest, and repeatable.
+  </p>
+
+  <h2>Step 1: deterministic candidate extraction (zero tokens)</h2>
+  <p>
+    The scanner does not ask a language model to "find the errors." It first runs a structural
+    grep over a pinned commit of the repository — <code>throw new</code>, <code>raise</code>,
+    <code>panic!</code>, <code>errors.New</code>, thiserror's <code>#[error(...)]</code>
+    attributes, HTTP error responses, error-code constants — across nine language families.
+    Test files, mocks, and generated code are excluded. The output is a list of concrete
+    candidate sites: file, line, matched code, extracted string literal.
+  </p>
+  <p>
+    This pass costs nothing and it changes what we ask the model to do. Language models are
+    mediocre at exhaustively <em>searching</em> a large codebase but very good at
+    <em>judging</em> a concrete site with its surrounding context. Feeding 80 candidates per
+    message also flips the economics: one dense request replaces dozens of exploratory
+    agent turns.
+  </p>
+
+  <h2>Step 2: batched analysis phases</h2>
+  <p>Each repository then flows through LLM phases, ten to eighty items per call:</p>
+  <table>
+    <tbody>
+      <tr><td><strong>Discovery</strong></td><td>Classify each candidate: user-facing or internal? Exact message with template placeholders preserved, error type, code, class, HTTP status.</td></tr>
+      <tr><td><strong>Enrichment</strong></td><td>What the error means, what triggers it, real-world situations, ordered solutions, an example fix.</td></tr>
+      <tr><td><strong>Defense</strong></td><td>How a consumer avoids it: validation snippets, type guards, try/catch patterns, prevention tips — in the library's language.</td></tr>
+      <tr><td><strong>Verify</strong></td><td>A separate pass reviews the assembled records for gaps and emits patches; records re-validate against the schema after every patch.</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Phases are checkpointed per repository and per commit SHA. A crashed run resumes at the
+    first incomplete phase with zero re-spend — phase outputs are persisted, so even a failed
+    database write can be reassembled without calling a model again.
+  </p>
+
+  <h2>Step 3: model routing</h2>
+  <p>
+    Nothing in the pipeline assumes a specific model. Providers are pluggable subprocesses —
+    a CLI in print mode, or any agent speaking ACP (the Agent Client Protocol) — and each
+    phase can route to a different one. We benchmarked frontier and low-cost models on the
+    same repository and found extraction quality at parity, so bulk phases run on an
+    inexpensive model while the verify pass gets a stronger one. The result of that
+    comparison ships in the repository as a markdown report.
+  </p>
+
+  <h2>Step 4: honest assembly and atomic publishing</h2>
+  <p>
+    Deterministic code — never the model — computes stable record IDs, URL slugs, message
+    regex patterns (with ReDoS-safety fallbacks), and extracts the throwing source region
+    with a GitHub permalink pinned to the analyzed SHA. Every record passes schema validation
+    on write; failures are logged as rejects, never silently dropped.
+  </p>
+  <p>
+    Exports are atomic: the dataset is written to a temp directory, every file re-validated,
+    then renamed over the previous version with a monotonically increasing dataset version.
+    Consumers — this site, the <a href="https://www.npmjs.com/package/@standardbeagle/errlookup-mcp">MCP server</a>,
+    answer engines reading <a href="/llms.txt">llms.txt</a> — never observe a torn dataset.
+  </p>
+
+  <h2>What keeps it trustworthy</h2>
+  <p>
+    Every page carries the analyzed commit SHA and a link to the exact source line. Records
+    are clearly labeled as AI-assisted analysis. When the scanner is wrong,
+    <a href="https://github.com/standardbeagle/err-lookup/issues">file an issue</a> — the fix
+    lands in the next dataset version, and the version history makes the change auditable.
+  </p>
+
+  <p><a class="btn" href="/request-crawl/">Request a library</a></p>
+</Base>

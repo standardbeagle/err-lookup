@@ -1,0 +1,93 @@
+---
+import Base from "../../layouts/Base.astro";
+const meta = {
+  title: "Run ErrLookup on your own internal repositories",
+  description:
+    "Self-host the ErrLookup pipeline: analyze private code on your own hardware, publish the dataset to any internal static host, and point the MCP server at it with one env var.",
+  date: "2026-08-01",
+};
+const jsonLd = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  headline: meta.title,
+  description: meta.description,
+  datePublished: meta.date,
+  author: { "@type": "Organization", name: "Standard Beagle Studio", url: "https://standardbeagle.com" },
+});
+---
+<Base title={`${meta.title} — ErrLookup`} description={meta.description}>
+  <script slot="head" type="application/ld+json" set:html={jsonLd} />
+  <p class="muted"><a href="/blog/">Blog</a> · {meta.date}</p>
+  <h1>{meta.title}</h1>
+  <p class="lead">
+    The public dataset covers open-source libraries, but the architecture was built for a
+    stricter environment: yours. The pipeline is a local CLI, the dataset is a directory of
+    static JSON, and nothing in between needs a backend — which means your private code
+    never has to leave your infrastructure.
+  </p>
+
+  <h2>The shape of a self-hosted deployment</h2>
+  <table>
+    <tbody>
+      <tr><td><strong>Pipeline</strong></td><td>A pnpm workspace CLI you run on any box with git and Node 20+. State lives in a local SQLite file.</td></tr>
+      <tr><td><strong>LLM provider</strong></td><td>A pluggable subprocess. Use a vendor CLI you already pay for, or an ACP-speaking agent in front of a local model — the pipeline never calls a metered API SDK directly.</td></tr>
+      <tr><td><strong>Dataset</strong></td><td>Versioned static JSON. Serve it from an internal S3 bucket, nginx, or your intranet's static host — anything that can serve files over HTTPS.</td></tr>
+      <tr><td><strong>Consumers</strong></td><td>The MCP server reads <code>ERRLOOKUP_BASE_URL</code>; point it at your internal host and every engineer's coding agent answers from your private knowledge base.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Setup in five steps</h2>
+  <p><strong>1. Clone and install.</strong></p>
+  <pre>git clone https://github.com/standardbeagle/err-lookup
+cd err-lookup && pnpm install</pre>
+  <p><strong>2. Configure a provider</strong> in <code>errlookup.config.kdl</code>. Any agent CLI works; here is an ACP provider pinned to a model:</p>
+  <pre>{`provider "agent" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "your-provider/your-model"
+    timeout-ms 600000
+}
+defaults { primary "agent" }`}</pre>
+  <p><strong>3. Analyze repositories.</strong> One at a time, or a batch file with one <code>owner/repo</code> per line (clones use your ambient git credentials, so private remotes just work):</p>
+  <pre>pnpm --filter @errlookup/pipeline dev analyze your-org/payments-service
+pnpm --filter @errlookup/pipeline dev batch internal-repos.txt</pre>
+  <p><strong>4. Export.</strong> Atomic, validated, versioned:</p>
+  <pre>pnpm --filter @errlookup/pipeline dev export</pre>
+  <p>
+    The output directory (<code>packages/site/public/data</code>) is the entire contract —
+    copy it to your internal static host as-is. Build the browsable site around it with
+    <code>pnpm --filter @errlookup/site build</code> if you want pages, or skip it: the JSON
+    alone serves agents.
+  </p>
+  <p><strong>5. Point the MCP server at it.</strong></p>
+  <pre>{`{
+  "mcpServers": {
+    "errlookup-internal": {
+      "command": "npx",
+      "args": ["-y", "@standardbeagle/errlookup-mcp"],
+      "env": { "ERRLOOKUP_BASE_URL": "https://errors.intranet.example.com" }
+    }
+  }
+}`}</pre>
+
+  <h2>Operating it unattended</h2>
+  <p>
+    Everything is built for cron: runs are idempotent and resume at the first incomplete
+    phase, exports never publish partially, a circuit breaker halts a batch when the
+    provider quota trips, oversized clones are skipped before any model spend
+    (<code>ERRLOOKUP_MAX_CLONE_MB</code>), and scheduled runs refuse to start below a
+    free-disk floor (<code>ERRLOOKUP_MIN_FREE_GB</code>). Our own scanner is a nightly
+    cron job on a spare machine.
+  </p>
+
+  <h2>Why teams do this</h2>
+  <p>
+    Internal platform libraries throw internal errors, and the engineer who understands
+    <code>ERR_LEDGER_STALE_SNAPSHOT</code> left two years ago. Analyzing your own repos turns
+    that tribal knowledge into something a new hire's coding agent can answer at 2 a.m. —
+    with a link to the exact line that raised it, at the exact commit that shipped.
+  </p>
+
+  <p><a class="btn" href="/blog/how-the-scanner-works/">Read how the scanner works</a></p>
+</Base>
