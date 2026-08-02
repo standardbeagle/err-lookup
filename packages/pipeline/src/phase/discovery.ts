@@ -2,8 +2,9 @@ import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider } from "../provider/types.js";
 import { runProvider } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
+import { mapPool, chunk } from "../util/pool.js";
 import { DISCOVERY_PROMPT, candidateDiscoveryPrompt, type DiscoveredErrorJson } from "./prompts.js";
-import { extractCandidatesAuto, type CandidateSite } from "./candidates.js";
+import { extractCandidatesAuto } from "./candidates.js";
 
 export interface DiscoveryResult {
   errors: DiscoveredErrorJson[];
@@ -54,27 +55,30 @@ export async function runDiscovery(
     };
   }
 
-  const batches: CandidateSite[][] = [];
-  for (let i = 0; i < candidates.length; i += CANDIDATE_BATCH) {
-    batches.push(candidates.slice(i, i + CANDIDATE_BATCH));
-  }
+  const batches = chunk(candidates, CANDIDATE_BATCH);
 
-  const errors: DiscoveredErrorJson[] = [];
+  // Classification batches are independent, so they run through a bounded pool.
+  // mapPool preserves input order, which keeps the discovered error list — and
+  // therefore every downstream error index — deterministic across runs.
+  let done = 0;
   let providerUsed = "";
   let raw = "";
-  for (let b = 0; b < batches.length; b++) {
-    const result = await withTimeout(
-      runProvider(candidateDiscoveryPrompt(batches[b]!), { cwd: repoPath }, providers, cfg, "discovery"),
-      budget
-    );
-    errors.push(...parseErrors(result.parsed));
-    providerUsed = result.providerUsed;
-    raw = result.raw;
-    onBatch?.(b + 1, batches.length);
-  }
+  const perBatch = await mapPool(batches, cfg.defaults.batchConcurrency, async (batch) => {
+    try {
+      const result = await withTimeout(
+        runProvider(candidateDiscoveryPrompt(batch), { cwd: repoPath }, providers, cfg, "discovery"),
+        budget
+      );
+      providerUsed = result.providerUsed;
+      raw = result.raw;
+      return parseErrors(result.parsed);
+    } finally {
+      onBatch?.(++done, batches.length);
+    }
+  });
 
   return {
-    errors,
+    errors: perBatch.flat(),
     raw,
     providerUsed,
     durationMs: Date.now() - started,
