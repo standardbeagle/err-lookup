@@ -79,7 +79,32 @@ const canonicalUrl = noCanonical ? null : (canonical ?? new URL(Astro.url.pathna
       nav.top > div { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--s2); display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; }
       nav.top a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 .6rem; text-decoration: none; color: var(--mute); font-size: .95rem; }
       nav.top a:hover { color: var(--accent-strong); }
-      nav.top a.brand { font-weight: 800; font-size: 1.05rem; color: var(--ink); gap: .5rem; padding-left: 0; margin-right: auto; }
+      nav.top a.brand { font-weight: 800; font-size: 1.05rem; color: var(--ink); gap: .5rem; padding-left: 0; }
+
+      /* header search: the primary action of the site — paste an error, get the
+         record. Grows to fill the bar and pushes the nav links to the right. */
+      .sr-only {
+        position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+        overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+      }
+      form.navsearch { display: flex; align-items: center; gap: .4rem; flex: 1 1 16rem; min-width: 12rem; margin-right: auto; }
+      form.navsearch input {
+        width: 100%; min-height: 38px; padding: .35rem .6rem; font: inherit; font-size: .92rem;
+        color: var(--ink); background: var(--wash); border: 1px solid var(--line); border-radius: 8px;
+      }
+      form.navsearch input::placeholder { color: var(--mute); }
+      form.navsearch input:focus { border-color: var(--accent); }
+      form.navsearch button {
+        min-height: 38px; padding: 0 .8rem; border-radius: 8px; border: 1px solid var(--line);
+        background: var(--accent); color: #fff; font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer;
+      }
+      form.navsearch button:hover { background: var(--accent-strong); }
+      @media (prefers-color-scheme: dark) { form.navsearch button { color: #1c0d02; } }
+      /* Below ~640px the bar wraps; search takes its own full-width row. */
+      @media (max-width: 640px) {
+        nav.top a.brand { margin-right: auto; }
+        form.navsearch { order: 99; flex-basis: 100%; margin: 0 0 .6rem; }
+      }
       nav.top a.gh { color: var(--mute); padding: 0 .5rem; }
       nav.top a.gh:hover { color: var(--ink); }
 
@@ -121,6 +146,20 @@ const canonicalUrl = noCanonical ? null : (canonical ?? new URL(Astro.url.pathna
         text-transform: uppercase; letter-spacing: .03em;
       }
 
+      /* search page form: same control, given room to hold a pasted stack line */
+      form.pagesearch { display: flex; gap: var(--s1); margin: var(--s3) 0; flex-wrap: wrap; }
+      form.pagesearch input {
+        flex: 1 1 20rem; min-height: 44px; padding: .55rem .7rem; font: inherit;
+        color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+      }
+      form.pagesearch input:focus { border-color: var(--accent); }
+      form.pagesearch button {
+        min-height: 44px; padding: 0 var(--s3); border-radius: 8px; border: 0;
+        background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+      }
+      form.pagesearch button:hover { background: var(--accent-strong); }
+      @media (prefers-color-scheme: dark) { form.pagesearch button { color: #1c0d02; } }
+
       /* pager: 44px targets, current page reads as a state not a link */
       nav.pager { display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; margin: var(--s2) 0 var(--s3); font-size: .92rem; }
       nav.pager .nums { display: flex; align-items: center; gap: .15rem; margin: 0 auto; }
@@ -148,6 +187,19 @@ const canonicalUrl = noCanonical ? null : (canonical ?? new URL(Astro.url.pathna
         <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><rect x="1" y="1" width="20" height="20" rx="5" fill="#c2410c"/><path d="M6.2 8.4 9.4 11l-3.2 2.6M11.4 14.4h4.4" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
         ErrLookup
       </a>
+      <form class="navsearch" role="search" method="get" action="/search/">
+        <label class="sr-only" for="nav-q">Search error messages</label>
+        <input
+          id="nav-q"
+          type="search"
+          name="q"
+          placeholder="Paste an error message…"
+          autocomplete="off"
+          spellcheck="false"
+enterkeyhint="search"
+        />
+        <button type="submit">Search</button>
+      </form>
       <a href="/about/">About</a>
       <a href="/blog/">Blog</a>
       <a href="/request-crawl/">Request a crawl</a>

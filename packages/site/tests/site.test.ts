@@ -179,3 +179,39 @@ describe("404 page", () => {
     expect(xml).not.toContain("404");
   });
 });
+
+describe("error search", () => {
+  it("puts the search box in the header of every page", () => {
+    // Pasting an error message is the site's primary action — it has to be
+    // reachable from wherever a search engine dropped the visitor.
+    for (const f of htmlFiles(dist)) {
+      const html = readFileSync(f, "utf8");
+      expect(html, `no header search on ${f}`).toContain('class="navsearch"');
+      expect(html).toContain('action="/search/"');
+      expect(html).toContain('name="q"');
+    }
+  });
+
+  it("labels the search inputs for screen readers", () => {
+    const html = readFileSync(resolve(dist, "index.html"), "utf8");
+    expect(html).toContain('role="search"');
+    // The visible control is placeholder-only, so the label must exist offscreen.
+    expect(html).toMatch(/<label class="sr-only" for="nav-q">/);
+  });
+
+  it("builds a /search/ page that reads the q parameter", () => {
+    const html = readFileSync(resolve(dist, "search", "index.html"), "utf8");
+    expect(html).toContain('URLSearchParams(location.search).get("q")');
+    expect(html).toContain("/api/search?limit=25&q=");
+    // Degrades to something actionable rather than a blank page.
+    expect(html).toContain("<noscript>");
+  });
+
+  it("keeps query-shaped result pages out of the index and the sitemap", () => {
+    const html = readFileSync(resolve(dist, "search", "index.html"), "utf8");
+    expect(html).toContain('name="robots" content="noindex, follow"');
+    expect(html).not.toContain('rel="canonical"');
+    const xml = readFileSync(resolve(dist, "sitemaps", "pages.xml"), "utf8");
+    expect(xml).not.toContain("/search/");
+  });
+});

@@ -1,0 +1,122 @@
+---
+import Base from "../layouts/Base.astro";
+import { getManifest } from "../data/load.js";
+const manifest = getManifest();
+---
+<Base
+  title="Search errors — ErrLookup"
+  description="Paste an error message and find the library that raises it, what it means, and how to fix it."
+  noCanonical
+>
+  <!-- Result pages are thin and query-shaped; keeping them out of the index
+       avoids the classic search-results index bloat. `follow` still lets a
+       crawler reach the error records linked from here. -->
+  <meta slot="head" name="robots" content="noindex, follow" />
+
+  <h1>Search errors</h1>
+  <p class="lead">
+    Paste the error message exactly as you saw it — stack trace line, error code, or the
+    bare text. Matching runs across {manifest.counts.errors.toLocaleString()} documented errors.
+  </p>
+
+  <form class="pagesearch" role="search" method="get" action="/search/">
+    <label class="sr-only" for="q">Error message</label>
+    <input id="q" type="search" name="q" placeholder="Request failed with status code 404" autocomplete="off" spellcheck="false" />
+    <button type="submit">Search</button>
+  </form>
+
+  <div id="status" class="muted" aria-live="polite"></div>
+  <div id="results"></div>
+
+  <noscript>
+    <p class="muted">
+      Search needs JavaScript because results come from the live API. Without it you can query
+      the endpoint directly — <code>/api/search?q=your+message</code> — or
+      <a href="/">browse the analyzed repositories</a>.
+    </p>
+  </noscript>
+
+  <p class="muted">
+    Same tiered matching the <a href="/api-docs/">API</a> and the MCP server use: exact error
+    code first, then message pattern, then fuzzy text.
+  </p>
+
+  <script is:inline>
+    (function () {
+      var statusEl = document.getElementById("status");
+      var resultsEl = document.getElementById("results");
+      var input = document.getElementById("q");
+      var q = new URLSearchParams(location.search).get("q");
+
+      if (!q) {
+        statusEl.textContent = "";
+        return;
+      }
+      input.value = q;
+      document.title = q.slice(0, 60) + " — Search — ErrLookup";
+      statusEl.textContent = "Searching…";
+
+      function el(tag, cls, text) {
+        var n = document.createElement(tag);
+        if (cls) n.className = cls;
+        if (text != null) n.textContent = text;
+        return n;
+      }
+
+      fetch("/api/search?limit=25&q=" + encodeURIComponent(q))
+        .then(function (r) {
+          return r.json().then(function (body) {
+            return { ok: r.ok, body: body };
+          });
+        })
+        .then(function (res) {
+          if (!res.ok || res.body.error) {
+            statusEl.textContent = "Search is unavailable right now" +
+              (res.body && res.body.error ? " (" + res.body.error + ")." : ".");
+            return;
+          }
+          var matches = res.body.matches || [];
+          if (matches.length === 0) {
+            statusEl.textContent = "No documented error matches that message.";
+            var p = el("p");
+            p.appendChild(document.createTextNode("The library may not be analyzed yet — "));
+            var a = el("a", null, "request a crawl");
+            a.href = "/request-crawl/";
+            p.appendChild(a);
+            p.appendChild(document.createTextNode("."));
+            resultsEl.appendChild(p);
+            return;
+          }
+          statusEl.textContent =
+            matches.length + (matches.length === 1 ? " match" : " matches") + ", best first.";
+
+          var table = el("table");
+          var thead = el("thead");
+          thead.innerHTML = "<tr><th>Error</th><th>Repo</th><th>Match</th></tr>";
+          table.appendChild(thead);
+          var tbody = el("tbody");
+          matches.forEach(function (m) {
+            var tr = el("tr");
+            var td1 = el("td");
+            var link = el("a", null, m.code ? m.code + ": " + m.message : m.message);
+            // The API returns the canonical site URL for the record.
+            link.href = m.url;
+            td1.appendChild(link);
+            tr.appendChild(td1);
+            var td2 = el("td");
+            var repoLink = el("a", null, m.repo);
+            repoLink.href = "/" + m.repo + "/";
+            td2.appendChild(repoLink);
+            tr.appendChild(td2);
+            tr.appendChild(el("td", "muted", m.matchType));
+            tbody.appendChild(tr);
+          });
+          table.appendChild(tbody);
+          resultsEl.appendChild(table);
+        })
+        .catch(function () {
+          statusEl.textContent = "Search request failed. Check your connection and try again.";
+        });
+    })();
+  </script>
+</Base>
