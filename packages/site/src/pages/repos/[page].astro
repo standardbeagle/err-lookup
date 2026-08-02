@@ -1,0 +1,40 @@
+---
+import Base from "../../layouts/Base.astro";
+import RepoTable from "../../components/RepoTable.astro";
+import { getRepos } from "../../data/load.js";
+import { paginateRepos, totalRepoPages, REPOS_PER_PAGE } from "../../data/paging.js";
+
+/**
+ * Pages 2..N of the analyzed-repos list. Page 1 is the home page, so it is not
+ * generated here — a second URL serving the same table would be duplicate
+ * content competing with "/" for the same query.
+ */
+export function getStaticPaths() {
+  const repos = getRepos();
+  const total = totalRepoPages(repos.length);
+  return Array.from({ length: Math.max(0, total - 1) }, (_, i) => ({
+    params: { page: String(i + 2) },
+    props: { pageNumber: i + 2 },
+  }));
+}
+
+const { pageNumber } = Astro.props as { pageNumber: number };
+const page = paginateRepos(getRepos(), pageNumber);
+const first = (page.page - 1) * REPOS_PER_PAGE + 1;
+const last = first + page.repos.length - 1;
+---
+<Base
+  title={`Analyzed repos — page ${page.page} of ${page.totalPages} — ErrLookup`}
+  description={`Open-source repositories with documented errors in the ErrLookup dataset, ranked by documented error count (${first}–${last}).`}
+>
+  <h1>Analyzed repos</h1>
+  <p class="lead">
+    Repositories {first}–{last}, most-documented first. Page {page.page} of {page.totalPages}.
+  </p>
+  <RepoTable page={page} />
+  <p>Missing a library you depend on? <a href="/request-crawl/">Request a crawl</a>.</p>
+  <p class="muted">
+    Every record is AI-assisted analysis of the cited commit, pinned to its SHA.
+    See <a href="/about/">how records are made</a> and the <a href="/api-docs/">dataset contract</a>.
+  </p>
+</Base>

@@ -118,6 +118,20 @@ const canonicalUrl = canonical ?? new URL(Astro.url.pathname, SITE).href;
         text-transform: uppercase; letter-spacing: .03em;
       }
 
+      /* pager: 44px targets, current page reads as a state not a link */
+      nav.pager { display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; margin: var(--s2) 0 var(--s3); font-size: .92rem; }
+      nav.pager .nums { display: flex; align-items: center; gap: .15rem; margin: 0 auto; }
+      nav.pager a, nav.pager .here, nav.pager .off {
+        display: inline-flex; align-items: center; justify-content: center;
+        min-height: 44px; min-width: 44px; padding: 0 .6rem; border-radius: 8px; text-decoration: none;
+      }
+      nav.pager a { color: var(--accent-strong); border: 1px solid var(--line); }
+      nav.pager a:hover { border-color: var(--accent); color: var(--accent); }
+      nav.pager .here { background: var(--accent); color: #fff; font-weight: 700; }
+      @media (prefers-color-scheme: dark) { nav.pager .here { color: #1c0d02; } }
+      nav.pager .off { color: var(--mute); opacity: .5; }
+      nav.pager .gap { color: var(--mute); padding: 0 .2rem; }
+
       ul.criteria { list-style: none; padding: 0; margin: var(--s2) 0; }
       ul.criteria li { padding: .45rem 0 .45rem 1.4rem; position: relative; border-bottom: 1px solid var(--line); }
       ul.criteria li::before { content: ""; position: absolute; left: 0; top: .85rem; width: .55rem; height: .55rem; border-radius: 2px; background: var(--accent); }

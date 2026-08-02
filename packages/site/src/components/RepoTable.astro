@@ -1,0 +1,45 @@
+---
+import type { RepoPage } from "../data/paging.js";
+const { page } = Astro.props as { page: RepoPage };
+// Window the page numbers so a 100-page corpus does not print 100 links.
+const WINDOW = 2;
+const numbers = Array.from({ length: page.totalPages }, (_, i) => i + 1).filter(
+  (n) => n === 1 || n === page.totalPages || Math.abs(n - page.page) <= WINDOW
+);
+---
+<table>
+  <thead><tr><th>Repo</th><th>Language</th><th>Errors</th><th>Stars</th></tr></thead>
+  <tbody>
+    {page.repos.map((r) => (
+      <tr>
+        <td><a href={`/${r.repo}/`}>{r.repo}</a></td>
+        <td>{r.language ?? "—"}</td>
+        <td>{r.errorCount}</td>
+        <td class="muted">{r.stars.toLocaleString()}</td>
+      </tr>
+    ))}
+  </tbody>
+</table>
+
+{page.totalPages > 1 && (
+  <nav class="pager" aria-label="Analyzed repository pages">
+    {page.prev
+      ? <a rel="prev" href={page.prev}>← Previous</a>
+      : <span class="off" aria-hidden="true">← Previous</span>}
+
+    <span class="nums">
+      {numbers.map((n, i) => (
+        <>
+          {i > 0 && numbers[i - 1]! < n - 1 && <span class="gap">…</span>}
+          {n === page.page
+            ? <span class="here" aria-current="page">{n}</span>
+            : <a href={n === 1 ? "/" : `/repos/${n}/`}>{n}</a>}
+        </>
+      ))}
+    </span>
+
+    {page.next
+      ? <a rel="next" href={page.next}>Next →</a>
+      : <span class="off" aria-hidden="true">Next →</span>}
+  </nav>
+)}

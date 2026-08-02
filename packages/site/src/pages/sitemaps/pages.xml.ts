@@ -1,8 +1,8 @@
 import type { APIRoute } from "astro";
+import { SITE, xmlResponse } from "../../data/sitemap.js";
+import { allRepoPageHrefs } from "../../data/paging.js";
 
-const SITE = "https://errors.standardbeagle.com";
 const STATIC_PAGES = [
-  "/",
   "/about/",
   "/request-crawl/",
   "/api-docs/",
@@ -13,14 +13,16 @@ const STATIC_PAGES = [
 ];
 
 // Static (non-repo) pages sitemap, referenced from the sitemap index.
+// The repo-list pages are derived rather than listed: they grow with the corpus,
+// and a hand-kept list would silently stop covering them at the next scan.
 export const GET: APIRoute = () => {
-  const parts = [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-    ...STATIC_PAGES.map((p) => `  <url><loc>${SITE}${p}</loc></url>`),
-    "</urlset>",
-  ];
-  return new Response(parts.join("\n"), {
-    headers: { "content-type": "application/xml; charset=utf-8" },
-  });
+  const urls = [...allRepoPageHrefs(), ...STATIC_PAGES];
+  return xmlResponse(
+    [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+      ...urls.map((p) => `  <url><loc>${SITE}${p}</loc></url>`),
+      "</urlset>",
+    ].join("\n")
+  );
 };

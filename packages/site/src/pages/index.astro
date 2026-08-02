@@ -1,8 +1,11 @@
 ---
 import Base from "../layouts/Base.astro";
-import { getManifest, getRepos } from "../data/load.js";
+import RepoTable from "../components/RepoTable.astro";
+import { getManifest } from "../data/load.js";
+import { getRepoPage } from "../data/paging.js";
 const manifest = getManifest();
-const repos = getRepos();
+// Page 1 of the analyzed-repos list; /repos/2/ onward carry the rest.
+const page = getRepoPage(1);
 const jsonLd = JSON.stringify({
   "@context": "https://schema.org",
   "@type": "WebSite",
@@ -51,19 +54,11 @@ const jsonLd = JSON.stringify({
   <p class="muted">The MCP server caches the dataset locally: offline-capable, no API keys, answers <code>search_error</code> straight from disk.</p>
 
   <h2>Analyzed repos</h2>
-  <table>
-    <thead><tr><th>Repo</th><th>Language</th><th>Errors</th><th>Stars</th></tr></thead>
-    <tbody>
-      {repos.map((r) => (
-        <tr>
-          <td><a href={`/${r.repo}/`}>{r.repo}</a></td>
-          <td>{r.language ?? "—"}</td>
-          <td>{r.errorCount}</td>
-          <td class="muted">{r.stars.toLocaleString()}</td>
-        </tr>
-      ))}
-    </tbody>
-  </table>
+  <p class="muted">
+    {manifest.counts.repos.toLocaleString()} repositories, most-documented first
+    {page.totalPages > 1 && <> — page {page.page} of {page.totalPages}</>}.
+  </p>
+  <RepoTable page={page} />
   <p>Missing a library you depend on? <a href="/request-crawl/">Request a crawl</a>.</p>
 
   <p class="muted">Honest provenance: every record is AI-assisted analysis of the cited commit, pinned to its SHA. See <a href="/about/">how records are made</a> and the <a href="/api-docs/">dataset contract</a>.</p>
