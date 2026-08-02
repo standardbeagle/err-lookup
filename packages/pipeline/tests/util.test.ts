@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { withTimeout, TimeoutError, sleep } from "../src/util/watchdog.js";
 import { mapPool, chunk, Semaphore } from "../src/util/pool.js";
+import { isPeak, msUntilOffPeak } from "../src/util/peak.js";
 import { computeErrorId, deriveSlug, normalizeErrorType } from "../src/util/ids.js";
 import { extractSourceRegion, githubPermalink } from "../src/util/source.js";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -177,5 +178,29 @@ describe("Semaphore", () => {
     release();
     release();
     expect(gate.free).toBe(2);
+  });
+});
+
+describe("peak-price window", () => {
+  const at = (iso: string) => new Date(iso);
+
+  it("treats 06:00-10:00 UTC on weekdays as peak", () => {
+    expect(isPeak(at("2026-08-03T05:59:59Z"))).toBe(false); // Monday, just before
+    expect(isPeak(at("2026-08-03T06:00:00Z"))).toBe(true);
+    expect(isPeak(at("2026-08-03T09:59:59Z"))).toBe(true);
+    expect(isPeak(at("2026-08-03T10:00:00Z"))).toBe(false); // window is exclusive at the end
+  });
+
+  it("treats weekends as entirely off-peak", () => {
+    expect(isPeak(at("2026-08-01T08:00:00Z"))).toBe(false); // Saturday
+    expect(isPeak(at("2026-08-02T08:00:00Z"))).toBe(false); // Sunday
+    expect(isPeak(at("2026-08-07T08:00:00Z"))).toBe(true); // Friday
+  });
+
+  it("waits exactly to the window's end, not a fixed poll interval", () => {
+    expect(msUntilOffPeak(at("2026-08-03T09:30:00Z"))).toBe(30 * 60_000);
+    expect(msUntilOffPeak(at("2026-08-03T06:00:00Z"))).toBe(4 * 60 * 60_000);
+    expect(msUntilOffPeak(at("2026-08-03T10:00:00Z"))).toBe(0);
+    expect(msUntilOffPeak(at("2026-08-02T08:00:00Z"))).toBe(0); // Sunday
   });
 });

@@ -25,6 +25,10 @@ defaults {
     max-concurrent 3
     batch-concurrency 6
     analysis-batch-size 20
+    // Off-peak only: the plan bills peak (Mon-Fri 06:00-10:00 UTC) at twice the
+    // credit rate, so a long unattended run holds between repos rather than
+    // spending double for the same output.
+    skip-peak true
     delay-between-phases-ms 2000
 }
 phase-providers {

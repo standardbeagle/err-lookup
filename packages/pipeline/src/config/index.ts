@@ -31,6 +31,8 @@ export interface ErrlookupConfig {
     providerMaxConcurrent: number;
     /** Errors per enrichment/defense call. */
     analysisBatchSize: number;
+    /** Pause between repos during the provider's peak-price window. */
+    skipPeak: boolean;
     delayBetweenPhasesMs: number;
   };
   /**
@@ -58,6 +60,7 @@ export const DEFAULT_CONFIG: ErrlookupConfig = {
     batchConcurrency: 1,
     providerMaxConcurrent: 0,
     analysisBatchSize: 20,
+    skipPeak: false,
     delayBetweenPhasesMs: 5_000,
   },
 };
@@ -119,6 +122,7 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
         // 0 is meaningful here (no gate), so it bypasses the positive-clamp.
         providerMaxConcurrent: Math.max(0, Math.floor(asNumber(childByName(node, "provider-max-concurrent")?.values[0], 0))),
         analysisBatchSize: asConcurrency(childByName(node, "analysis-batch-size")?.values[0], 20),
+        skipPeak: childByName(node, "skip-peak")?.values[0] === true,
         delayBetweenPhasesMs: asNumber(childByName(node, "delay-between-phases-ms")?.values[0], 5_000),
       };
     }

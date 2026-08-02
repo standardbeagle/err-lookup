@@ -8,6 +8,8 @@ import { buildProviders } from "../providers.js";
 import { analyzeRepo } from "../pipeline.js";
 import { publishDataset } from "../exporter/index.js";
 import { mapPool } from "../util/pool.js";
+import { msUntilOffPeak } from "../util/peak.js";
+import { sleep } from "../util/watchdog.js";
 import { printStatus } from "./status.js";
 
 function dbPath(): string {
@@ -149,6 +151,16 @@ async function main(): Promise<void> {
         if (tripped) {
           skipped++;
           return;
+        }
+        // Peak-price gate. Checked between repos, never mid-repo: interrupting a
+        // repo would abandon an in-flight phase and re-spend it on resume, which
+        // costs more than the 2x rate it was avoiding.
+        if (cfg.defaults.skipPeak) {
+          const waitMs = msUntilOffPeak(new Date());
+          if (waitMs > 0) {
+            say(repo, `peak pricing until ${new Date(Date.now() + waitMs).toISOString()} — holding`);
+            await sleep(waitMs);
+          }
         }
         say(repo, "start");
         try {

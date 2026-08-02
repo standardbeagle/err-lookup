@@ -87,6 +87,7 @@ describe("config mapping", () => {
       batchConcurrency: 1,
       providerMaxConcurrent: 0,
       analysisBatchSize: 20,
+      skipPeak: false,
       delayBetweenPhasesMs: 5_000,
     });
   });
