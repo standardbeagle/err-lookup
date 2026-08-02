@@ -111,4 +111,35 @@ describe("site build (§8.3)", () => {
     expect(existsSync(resolve(dist, "llms.txt"))).toBe(true);
     expect(existsSync(resolve(dist, "_headers"))).toBe(true);
   });
+
+  it("serves the sitemap index at the conventional /sitemap.xml", () => {
+    const canonical = resolve(dist, "sitemap.xml");
+    expect(existsSync(canonical)).toBe(true);
+    // Both paths must be the same document — a crawler that found one and a
+    // console that submitted the other have to see the same child sitemaps.
+    expect(readFileSync(canonical, "utf8")).toBe(readFileSync(resolve(dist, "sitemap-index.xml"), "utf8"));
+  });
+
+  it("sitemap.xml lists every repo's child sitemap, and each one exists", () => {
+    const xml = readFileSync(resolve(dist, "sitemap.xml"), "utf8");
+    const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]!);
+    expect(locs.length).toBeGreaterThan(1); // pages.xml + at least one repo
+
+    const repos = JSON.parse(readFileSync(resolve(dist, "data", "repos.json"), "utf8")) as { repo: string }[];
+    expect(locs).toHaveLength(repos.length + 1);
+    for (const r of repos) {
+      expect(locs).toContain(`https://errors.standardbeagle.com/sitemaps/${r.repo}.xml`);
+    }
+    // A sitemap index pointing at a 404 is worse than no sitemap: the crawler
+    // drops the whole submission.
+    for (const loc of locs) {
+      const rel = loc.replace("https://errors.standardbeagle.com/", "");
+      expect(existsSync(resolve(dist, rel)), `missing ${rel}`).toBe(true);
+    }
+  });
+
+  it("robots.txt points at the canonical sitemap", () => {
+    const robots = readFileSync(resolve(dist, "robots.txt"), "utf8");
+    expect(robots).toContain("Sitemap: https://errors.standardbeagle.com/sitemap.xml");
+  });
 });
