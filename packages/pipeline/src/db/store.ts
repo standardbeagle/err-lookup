@@ -43,7 +43,7 @@ export function phaseStatus(
     .select()
     .from(jobHistory)
     .where(and(eq(jobHistory.repo, repo), eq(jobHistory.analyzedSha, sha), eq(jobHistory.phase, phase)))
-    .orderBy(desc(jobHistory.startedAt))
+    .orderBy(desc(jobHistory.startedAt), desc(jobHistory.id))
     .get();
   return row?.status as "success" | "failed" | "running" | undefined;
 }
@@ -77,7 +77,16 @@ export function recordPhase(
     .run();
 }
 
-/** Latest job_history row (with result payload) for (repo, sha, phase). */
+/**
+ * Latest job_history row (with result payload) for (repo, sha, phase).
+ *
+ * Ordered by insertion id as well as start time. Discovery records a `running`
+ * row and its terminal row with the SAME startedAt, so ordering on startedAt
+ * alone leaves the pair tied and lets SQLite pick either one. When the tie
+ * resolved to `running`, phaseDone read the phase as unfinished and re-ran a
+ * discovery that had already succeeded — hours of provider spend, decided by
+ * row order.
+ */
 export function latestPhaseRun(
   db: Db,
   repo: string,
@@ -91,7 +100,7 @@ export function latestPhaseRun(
     })
     .from(jobHistory)
     .where(and(eq(jobHistory.repo, repo), eq(jobHistory.analyzedSha, sha), eq(jobHistory.phase, phase)))
-    .orderBy(desc(jobHistory.startedAt))
+    .orderBy(desc(jobHistory.startedAt), desc(jobHistory.id))
     .get();
   return row;
 }
@@ -155,9 +164,14 @@ export function reposByStatus(db: Db, status: RepositoryRow["status"]): Reposito
 }
 
 /**
- * Delete `running` phase rows for repos that are not currently being analyzed.
- * A crashed or killed run leaves these behind forever; they never resolve, and
- * they make job_history unusable for measuring throughput.
+ * Delete `running` phase rows for repos no run currently owns.
+ *
+ * Two kinds accumulate, and both are safe to drop once the repo is idle: rows
+ * superseded by the terminal row of the same phase (recordPhase inserts rather
+ * than updates, so every completed discovery leaves one), and rows from runs
+ * that were killed mid-phase and will never write a terminal row. Keeping them
+ * makes job_history useless for measuring throughput, since a phase appears
+ * both started-and-unfinished and completed.
  */
 export function purgeOrphanedJobs(db: Db, protectedRepos: Set<string>): number {
   const stale = db

@@ -130,3 +130,35 @@ describe("purgeOrphanedJobs", () => {
     close();
   });
 });
+
+describe("latestPhaseRun tie-breaking", () => {
+  it("prefers the terminal row when it shares startedAt with the running row", () => {
+    // Discovery records both rows with the same startedAt. Ordering on that
+    // column alone leaves the pair tied, and resolving the tie to `running`
+    // makes resume re-run a phase that already succeeded.
+    const started = 1_700_000_000_000;
+    upsertRepo(db, { repo: "gohugoio/hugo", status: "analyzed" });
+    recordPhase(db, { repo: "gohugoio/hugo", phase: "discovery", status: "running", startedAt: started, analyzedSha: "cafe1234" });
+    recordPhase(db, {
+      repo: "gohugoio/hugo",
+      phase: "discovery",
+      status: "success",
+      startedAt: started,
+      completedAt: started + 1000,
+      analyzedSha: "cafe1234",
+      result: '[{"message":"x"}]',
+    });
+
+    const run = latestPhaseRun(db, "gohugoio/hugo", "cafe1234", "discovery");
+    expect(run?.status).toBe("success");
+    expect(run?.result).toContain("message");
+    close();
+  });
+
+  it("still reports a genuinely unfinished phase as running", () => {
+    upsertRepo(db, { repo: "gohugoio/hugo", status: "analyzing" });
+    recordPhase(db, { repo: "gohugoio/hugo", phase: "discovery", status: "running", startedAt: 5, analyzedSha: "cafe1234" });
+    expect(latestPhaseRun(db, "gohugoio/hugo", "cafe1234", "discovery")?.status).toBe("running");
+    close();
+  });
+});
