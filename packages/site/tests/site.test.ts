@@ -143,3 +143,39 @@ describe("site build (§8.3)", () => {
     expect(robots).toContain("Sitemap: https://errors.standardbeagle.com/sitemap.xml");
   });
 });
+
+describe("404 page", () => {
+  it("emits /404.html at the dist root, not a /404/ directory", () => {
+    // Cloudflare Pages serves the not-found body from /404.html specifically.
+    // Astro's build.format is "directory", so this is the one route where the
+    // flat filename matters — /404/index.html would never be served.
+    expect(existsSync(resolve(dist, "404.html"))).toBe(true);
+    expect(existsSync(resolve(dist, "404"))).toBe(false);
+  });
+
+  it("is noindex and carries no canonical of its own", () => {
+    const html = readFileSync(resolve(dist, "404.html"), "utf8");
+    expect(html).toContain('name="robots" content="noindex, follow"');
+    // The body answers every unmatched path, so a canonical derived from the
+    // route would point crawlers at /404/, which 404s in turn.
+    expect(html).not.toContain('rel="canonical"');
+    expect(html).not.toContain('property="og:url"');
+  });
+
+  it("offers working recovery links", () => {
+    const html = readFileSync(resolve(dist, "404.html"), "utf8");
+    const hrefs = [...html.matchAll(/href="(\/[^"]*)"/g)].map((m) => m[1]!);
+    expect(hrefs).toContain("/");
+    expect(hrefs).toContain("/request-crawl/");
+    for (const href of new Set(hrefs)) {
+      const target = hrefToDistPath(href);
+      if (target === null) continue;
+      expect(existsSync(target), `dead 404-page link: ${href}`).toBe(true);
+    }
+  });
+
+  it("is not advertised in the sitemap", () => {
+    const xml = readFileSync(resolve(dist, "sitemaps", "pages.xml"), "utf8");
+    expect(xml).not.toContain("404");
+  });
+});

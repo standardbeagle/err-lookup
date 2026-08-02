@@ -1,0 +1,48 @@
+---
+import Base from "../layouts/Base.astro";
+import { getManifest } from "../data/load.js";
+const manifest = getManifest();
+---
+<Base
+  title="Page not found — ErrLookup"
+  description="That page isn't part of the ErrLookup dataset. Browse the analyzed repositories or request a crawl."
+  noCanonical
+>
+  <!-- This body is served under every unmatched path, so it must not be
+       indexed. `follow` still lets a crawler use the recovery links below. -->
+  <meta slot="head" name="robots" content="noindex, follow" />
+
+  <h1>That page isn't here.</h1>
+  <p class="lead">
+    The URL doesn't match anything in the dataset. Error pages come and go as libraries
+    change — a record that existed at one commit may be gone at the next.
+  </p>
+
+  <h2>Most likely</h2>
+  <table>
+    <tbody>
+      <tr>
+        <td><strong>The library isn't analyzed yet</strong></td>
+        <td>{manifest.counts.repos.toLocaleString()} repositories are in the dataset so far. <a href="/request-crawl/">Request a crawl</a> and it can be queued.</td>
+      </tr>
+      <tr>
+        <td><strong>The error was renamed or removed</strong></td>
+        <td>Records are pinned to the commit they were read from. Check the <a href="/">repository's page</a> for its current errors.</td>
+      </tr>
+      <tr>
+        <td><strong>The link is querying the API</strong></td>
+        <td>Error records are served as JSON from <code>/api/search</code> and <code>/api/errors/&lt;id&gt;</code> — see the <a href="/api-docs/">dataset contract</a>.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="actions">
+    <a class="btn" href="/">Browse analyzed repos</a>
+    <a class="btn-ghost" href="/request-crawl/">Request a library</a>
+  </div>
+
+  <p class="muted">
+    Looking for something specific? <a href="/api-docs/">The API</a> searches every record by
+    message text, and <a href="/llms.txt">llms.txt</a> describes the whole dataset.
+  </p>
+</Base>
