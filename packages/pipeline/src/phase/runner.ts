@@ -12,8 +12,7 @@ import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider } from "../provider/types.js";
 import { ProviderError } from "../provider/types.js";
 import { runDiscovery } from "./discovery.js";
-import { runEnrichment } from "./enrichment.js";
-import { runDefense } from "./defense.js";
+import { runAnalysis } from "./analysis.js";
 import { runVerify, applyPatches } from "./verify.js";
 import { assemble } from "./assembler.js";
 import type { DiscoveredErrorJson, EnrichedErrorJson, DefenseStrategyJson } from "./prompts.js";
@@ -144,8 +143,15 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
     return { errorCount: repoRow.errorCount ?? 0, rejects: [], skipped };
   }
 
-  // ----- Phase 2: Enrichment -----
+  // ----- Phases 2+3: Enrichment + Defense (one fused pass) -----
+  // Both phases ask about the same errors at the same file:line, so they share
+  // a call per batch. Their DB rows stay separate: resume, per-phase skip and
+  // the `--phases` selector all keep working, and a repo that already has one
+  // of them persisted only pays for the other.
   let enrichedMap = new Map<number, EnrichedErrorJson>();
+  let defenseMap = new Map<number, DefenseStrategyJson>();
+  const need = { enrichment: false, defense: false };
+
   if (wanted("enrichment")) {
     const persisted = phaseDone(db, repo, sha, "enrichment", opts.force)
       ? parseIndexedMap<EnrichedErrorJson>(latestPhaseRun(db, repo, sha, "enrichment")?.result)
@@ -155,34 +161,10 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
       skipped.push("enrichment");
       log(`phase enrichment: skipped (already succeeded for ${sha.slice(0, 8)}; reusing persisted output)`);
     } else {
-      const started = Date.now();
-      try {
-        const enr = await runEnrichment(repoPath, discovered, providers, cfg, (b, t) =>
-          log(`phase enrichment: batch ${b}/${t}`)
-        );
-        enrichedMap = enr.byIndex;
-        recordPhase(db, {
-          repo,
-          phase: "enrichment",
-          status: "success",
-          startedAt: started,
-          completedAt: Date.now(),
-          analyzedSha: sha,
-          result: JSON.stringify([...enrichedMap.entries()]),
-        });
-        log(`phase enrichment: ${enrichedMap.size}/${discovered.length} enriched via ${enr.providerUsed} (${enr.durationMs}ms)`);
-      } catch (e) {
-        const msg = e instanceof ProviderError ? `[${e.kind}] ${e.message}` : (e as Error).message;
-        recordPhase(db, { repo, phase: "enrichment", status: "failed", startedAt: started, completedAt: Date.now(), analyzedSha: sha, errorLog: msg });
-        upsertRepo(db, { repo, status: "failed", lastError: `enrichment: ${msg}` });
-        log(`phase enrichment: FAILED — ${msg}`);
-        return { errorCount: 0, rejects: [], skipped, failed: `enrichment: ${msg}` };
-      }
+      need.enrichment = true;
     }
   }
 
-  // ----- Phase 3: Defense -----
-  let defenseMap = new Map<number, DefenseStrategyJson>();
   if (wanted("defense")) {
     const persisted = phaseDone(db, repo, sha, "defense", opts.force)
       ? parseIndexedMap<DefenseStrategyJson>(latestPhaseRun(db, repo, sha, "defense")?.result)
@@ -192,12 +174,31 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
       skipped.push("defense");
       log(`phase defense: skipped (already succeeded for ${sha.slice(0, 8)}; reusing persisted output)`);
     } else {
-      const started = Date.now();
-      try {
-        const def = await runDefense(repoPath, discovered, providers, cfg, (b, t) =>
-          log(`phase defense: batch ${b}/${t}`)
-        );
-        defenseMap = def.byIndex;
+      need.defense = true;
+    }
+  }
+
+  if (need.enrichment || need.defense) {
+    const started = Date.now();
+    try {
+      const res = await runAnalysis(repoPath, discovered, providers, cfg, need, (d, t) =>
+        log(`phase analysis: ${d}/${t} batches`)
+      );
+      if (need.enrichment) {
+        enrichedMap = res.enrichedByIndex;
+        recordPhase(db, {
+          repo,
+          phase: "enrichment",
+          status: "success",
+          startedAt: started,
+          completedAt: Date.now(),
+          analyzedSha: sha,
+          result: JSON.stringify([...enrichedMap.entries()]),
+        });
+        log(`phase enrichment: ${enrichedMap.size}/${discovered.length} enriched via ${res.providerUsed}`);
+      }
+      if (need.defense) {
+        defenseMap = res.defenseByIndex;
         recordPhase(db, {
           repo,
           phase: "defense",
@@ -207,12 +208,27 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           analyzedSha: sha,
           result: JSON.stringify([...defenseMap.entries()]),
         });
-        log(`phase defense: ${defenseMap.size}/${discovered.length} strategies via ${def.providerUsed} (${def.durationMs}ms)`);
-      } catch (e) {
-        const msg = e instanceof ProviderError ? `[${e.kind}] ${e.message}` : (e as Error).message;
-        recordPhase(db, { repo, phase: "defense", status: "failed", startedAt: started, completedAt: Date.now(), analyzedSha: sha, errorLog: msg });
-        log(`phase defense: FAILED — ${msg} (continuing, defense is optional)`);
+        log(`phase defense: ${defenseMap.size}/${discovered.length} strategies via ${res.providerUsed}`);
       }
+      log(
+        `phase analysis: ${res.batches} batches, ${res.failedBatches} failed via ${res.providerUsed} (${res.durationMs}ms)`
+      );
+    } catch (e) {
+      // Only a whole-phase fault reaches here — individual batch failures are
+      // absorbed inside runAnalysis. Enrichment is required, defense is not.
+      const msg = e instanceof ProviderError ? `[${e.kind}] ${e.message}` : (e as Error).message;
+      if (need.enrichment) {
+        recordPhase(db, { repo, phase: "enrichment", status: "failed", startedAt: started, completedAt: Date.now(), analyzedSha: sha, errorLog: msg });
+      }
+      if (need.defense) {
+        recordPhase(db, { repo, phase: "defense", status: "failed", startedAt: started, completedAt: Date.now(), analyzedSha: sha, errorLog: msg });
+      }
+      if (need.enrichment) {
+        upsertRepo(db, { repo, status: "failed", lastError: `enrichment: ${msg}` });
+        log(`phase enrichment: FAILED — ${msg}`);
+        return { errorCount: 0, rejects: [], skipped, failed: `enrichment: ${msg}` };
+      }
+      log(`phase defense: FAILED — ${msg} (continuing, defense is optional)`);
     }
   }
 

@@ -37,6 +37,10 @@ async function makeLocalRepo(): Promise<{ path: string; sha: string }> {
   return { path: dir, sha: stdout.trim() };
 }
 
+// Section headers that identify which phases a single analysis prompt asks for.
+const EXPLAIN = "EXPLAIN the error";
+const DEFEND = "DEFEND against the error";
+
 function makeCfg() {
   return mapConfig(
     parseKdl(['provider "claude" { command "claude" }', "defaults {", '  primary "claude"', "}"].join("\n"))
@@ -51,8 +55,9 @@ describe("pipeline e2e (fixture-replay)", () => {
     const { db, raw } = openDb(dbPath);
     const providers = {
       claude: new ScriptedProvider("claude", [
-        { match: "Enrich each", fixturePath: fx("provider-stdout-enriched.json") },
-        { match: "recommend how a USER", fixturePath: fx("provider-stdout-defense.json") },
+        { match: [EXPLAIN, DEFEND], fixturePath: fx("provider-stdout-analysis.json") },
+        { match: EXPLAIN, fixturePath: fx("provider-stdout-enriched.json") },
+        { match: DEFEND, fixturePath: fx("provider-stdout-defense.json") },
         { match: "Review these assembled", fixturePath: fx("provider-stdout-verify.json") },
         { match: "error patterns", fixturePath: fx("provider-stdout-clean.json") },
       ]),
@@ -142,7 +147,7 @@ describe("pipeline e2e (fixture-replay)", () => {
         async invoke(prompt: string) {
           calls++;
           const p = new ScriptedProvider("claude", [
-            { match: "Enrich each", fixturePath: fx("provider-stdout-enriched.json") },
+            { match: EXPLAIN, fixturePath: fx("provider-stdout-enriched.json") },
             { match: "error patterns", fixturePath: fx("provider-stdout-clean.json") },
           ]);
           return p.invoke(prompt, { cwd: "." });
@@ -240,7 +245,7 @@ describe("pipeline e2e (fixture-replay)", () => {
         async invoke(prompt: string) {
           calls++;
           const p = new ScriptedProvider("claude", [
-            { match: "Enrich each", fixturePath: fx("provider-stdout-enriched.json") },
+            { match: EXPLAIN, fixturePath: fx("provider-stdout-enriched.json") },
             { match: "error patterns", fixturePath: fx("provider-stdout-clean.json") },
           ]);
           return p.invoke(prompt, { cwd: "." });

@@ -23,17 +23,22 @@ export class FixtureProvider implements LlmProvider {
 
 /**
  * Test double that selects a fixture by matching substrings in the prompt.
- * Used to drive both discovery + enrichment from one provider instance in e2e.
+ * Used to drive discovery + analysis + verify from one provider instance in e2e.
+ *
+ * A route matches when EVERY string in `match` is present, so a fused prompt
+ * (enrichment + defense in one call) can be routed apart from either
+ * single-phase prompt. First matching route wins — list the specific ones first.
  */
 export class ScriptedProvider implements LlmProvider {
   constructor(
     readonly name: string,
-    private readonly routes: { match: string; fixturePath: string }[]
+    private readonly routes: { match: string | string[]; fixturePath: string }[]
   ) {}
 
   async invoke(prompt: string, _opts: InvokeOptions): Promise<ProviderResult> {
     for (const r of this.routes) {
-      if (prompt.includes(r.match)) {
+      const needles = Array.isArray(r.match) ? r.match : [r.match];
+      if (needles.every((n) => prompt.includes(n))) {
         const raw = readFileSync(r.fixturePath, "utf8");
         return extractJson(raw);
       }

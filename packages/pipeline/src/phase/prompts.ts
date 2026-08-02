@@ -93,54 +93,76 @@ RULES:
 OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
 {"errors":[{"message":"exact string","type":"exception|error_code|console|http|validation|panic","file":"path/relative/to/repo.ts","line":42,"code":"ERR_CODE_OR_NULL","errorClass":"CustomErrorOrNull","httpStatus":404}]}`;
 
-/** Phase 2 — Enrichment (§4.2.2): batched context + fix guidance per error. */
-export function enrichmentPrompt(batch: DiscoveredErrorJson[], startIndex: number): string {
-  const list = batch
-    .map(
-      (e, i) =>
-        `[${startIndex + i}] message=${JSON.stringify(e.message)} file=${e.file}:${e.line ?? "?"}${e.code ? ` code=${e.code}` : ""}`
-    )
-    .join("\n");
-  return `Enrich each of these ${batch.length} errors. You are working in the repository root; read the source at the given file:line to ground your answer in real code.
+/** Which per-error outputs a single analysis call should produce. */
+export interface AnalysisNeed {
+  enrichment: boolean;
+  defense: boolean;
+}
 
-ERRORS:
-${list}
-
-For EACH error (use the bracketed index as errorIndex) provide:
-- documentation: what this error means and why this library throws it (2-4 sentences).
+const ENRICHMENT_FIELDS = `- documentation: what this error means and why this library throws it (2-4 sentences).
 - triggerScenarios: the SPECIFIC conditions / API calls that produce it (not generic).
 - commonSituations: real-world contexts developers hit (config mistakes, env issues, version changes).
 - solutions: ordered array, most likely fix FIRST, each a concrete actionable step.
 - exampleFix: before/after code block (null if not applicable).
 - severity: one of critical|error|warning|info.
-- tags: lowercase kebab-case array (e.g. ["network","typescript"]).
+- tags: lowercase kebab-case array (e.g. ["network","typescript"]).`;
 
-OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
-{"enriched":[{"errorIndex":0,"documentation":"...","triggerScenarios":"...","commonSituations":"...","solutions":["step 1","step 2"],"exampleFix":"// before\\n...\\n// after\\n...","severity":"error","tags":["x","y"]}]}`;
-}
+const DEFENSE_FIELDS = `- handlingStrategy: exactly one of try-catch|type-guard|validation|retry|fallback.
+- validationCode: code the caller can run BEFORE the API to avoid the error (null if not applicable).
+- typeGuard: a language-appropriate type guard / narrowing function (null if not applicable).
+- tryCatchPattern: the recommended catch pattern for this specific error (null if not applicable).
+- preventionTips: array of concrete habits/checks to avoid it.`;
 
-/** Phase 3 — Defense (§4.2.3): defensive-programming guidance per error, batched. */
-export function defensePrompt(batch: DiscoveredErrorJson[], startIndex: number): string {
+const ENRICHED_SHAPE = `"enriched":[{"errorIndex":0,"documentation":"...","triggerScenarios":"...","commonSituations":"...","solutions":["step 1","step 2"],"exampleFix":"// before\\n...\\n// after\\n...","severity":"error","tags":["x","y"]}]`;
+
+const DEFENSE_SHAPE = `"defenseStrategies":[{"errorIndex":0,"handlingStrategy":"try-catch","validationCode":"// ...","typeGuard":"// ...","tryCatchPattern":"// ...","preventionTips":["..."]}]`;
+
+/**
+ * Phases 2+3 — Enrichment (§4.2.2) and Defense (§4.2.3) in one call.
+ *
+ * Both phases ask about the same errors and require reading the same source at
+ * the same file:line, so asking separately made the model re-read the repo for
+ * every batch — the two phases were 79% of scan wall-clock at ~24s per error.
+ * The sections are still emitted independently so a resume that needs only one
+ * of them (a defense phase that failed after enrichment succeeded) does not pay
+ * for the other.
+ */
+export function analysisPrompt(
+  batch: DiscoveredErrorJson[],
+  startIndex: number,
+  need: AnalysisNeed
+): string {
   const list = batch
     .map(
       (e, i) =>
         `[${startIndex + i}] message=${JSON.stringify(e.message)} file=${e.file}:${e.line ?? "?"}${e.code ? ` code=${e.code}` : ""}`
     )
     .join("\n");
-  return `For each of these ${batch.length} errors, recommend how a USER of the library should defend against it. Use the bracketed index as errorIndex.
+
+  const sections: string[] = [];
+  const shapes: string[] = [];
+  if (need.enrichment) {
+    sections.push(`EXPLAIN the error (for a developer who hit it):\n${ENRICHMENT_FIELDS}`);
+    shapes.push(ENRICHED_SHAPE);
+  }
+  if (need.defense) {
+    sections.push(
+      `DEFEND against the error (how a USER of this library should guard against it):\n${DEFENSE_FIELDS}`
+    );
+    shapes.push(DEFENSE_SHAPE);
+  }
+
+  return `Analyze each of these ${batch.length} errors. You are working in the repository root; read the source at the given file:line to ground every answer in real code.
 
 ERRORS:
 ${list}
 
-For EACH error provide:
-- handlingStrategy: exactly one of try-catch|type-guard|validation|retry|fallback.
-- validationCode: code the caller can run BEFORE the API to avoid the error (null if not applicable).
-- typeGuard: a language-appropriate type guard / narrowing function (null if not applicable).
-- tryCatchPattern: the recommended catch pattern for this specific error (null if not applicable).
-- preventionTips: array of concrete habits/checks to avoid it.
+For EACH error (use the bracketed index as errorIndex) provide:
+
+${sections.join("\n\n")}
 
 OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
-{"defenseStrategies":[{"errorIndex":0,"handlingStrategy":"try-catch","validationCode":"// ...","typeGuard":"// ...","tryCatchPattern":"// ...","preventionTips":["..."]}]}`;
+{${shapes.join(",")}}`;
 }
 
 /** Phase 5 — Verify (§4.2.5): review assembled records for gaps, emit patches. */
