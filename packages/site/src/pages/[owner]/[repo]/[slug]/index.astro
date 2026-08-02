@@ -15,7 +15,13 @@ export function getStaticPaths() {
 }
 
 const { error: e, repoFullName } = Astro.props;
-const title = `${e.errorCode ?? e.errorMessage.slice(0, 40)}: ${e.errorMessage} — ${repoFullName} | ErrLookup`;
+// "CODE: message" when there is a code to lead with. Falling back to a
+// truncated copy of the message printed it twice ("Expected a function, got
+// {type}: Expected a function, got {type}"), spending the part of the title
+// search engines actually show on a stutter.
+const title = e.errorCode
+  ? `${e.errorCode}: ${e.errorMessage} — ${repoFullName} | ErrLookup`
+  : `${e.errorMessage} — ${repoFullName} | ErrLookup`;
 const description = e.documentation.slice(0, 155);
 const related = relatedErrors(repoFullName, e.slug);
 const jsonUrl = `/data/errors/${e.id}.json`;

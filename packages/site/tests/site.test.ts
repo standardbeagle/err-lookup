@@ -215,3 +215,31 @@ describe("error search", () => {
     expect(xml).not.toContain("/search/");
   });
 });
+
+describe("page titles", () => {
+  it("never repeats the error message inside a title", () => {
+    for (const e of readErrorRecords()) {
+      const html = readFileSync(resolve(dist, e.repo, e.slug, "index.html"), "utf8");
+      const title = html.match(/<title>([^<]*)<\/title>/)![1]!;
+      // A codeless error used to render "<msg truncated>: <msg>".
+      const head = title.split(" — ")[0]!;
+      const halves = head.split(": ");
+      if (halves.length > 1) {
+        expect(halves[0], `title stutters: ${title}`).not.toBe(halves.slice(1).join(": "));
+        expect(halves.slice(1).join(": ").startsWith(halves[0]!)).toBe(false);
+      }
+    }
+  });
+
+  it("gives every page a unique, non-empty title", () => {
+    const seen = new Map<string, string>();
+    for (const f of htmlFiles(dist)) {
+      const title = readFileSync(f, "utf8").match(/<title>([^<]*)<\/title>/)?.[1] ?? "";
+      expect(title.length, `empty title in ${f}`).toBeGreaterThan(0);
+      // Duplicate titles across URLs are how a site gets pages collapsed as
+      // near-duplicates in search results.
+      expect(seen.has(title), `duplicate title "${title}" in ${f} and ${seen.get(title)}`).toBe(false);
+      seen.set(title, f);
+    }
+  });
+});
