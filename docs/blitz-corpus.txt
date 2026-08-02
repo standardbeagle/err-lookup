@@ -15,11 +15,6 @@ curl/curl
 redis/redis
 hashicorp/terraform
 vercel/next.js
-golang/go
-rust-lang/rust
-kubernetes/kubernetes
-apache/kafka
-elastic/elasticsearch
 lodash/lodash
 chalk/chalk
 tj/commander.js
@@ -111,3 +106,14 @@ dotnet/aspnetcore
 dotnet/efcore
 newtonsoft/Newtonsoft.Json
 serilog/serilog
+
+# Size outliers, deliberately last. These are language runtimes and platform
+# monorepos — multi-GB clones that hold the large-repo mutex and produce error
+# counts an order of magnitude above the rest. Running them at the tail means a
+# scan delivers the whole long tail of ordinary libraries before spending hours
+# on any one of these, and a run cut short by the peak window loses only these.
+golang/go
+rust-lang/rust
+kubernetes/kubernetes
+apache/kafka
+elastic/elasticsearch
