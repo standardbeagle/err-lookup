@@ -48,9 +48,13 @@ rl.on("line", (line) => {
       },
     });
     const text = msg.params?.prompt?.[0]?.text ?? "";
+    // A MARKER in the prompt is echoed into the payload so a concurrency test can
+    // prove each call read back its OWN output file and not a sibling's.
+    const marker = text.match(/MARKER:(\w+)/);
+    const body = marker ? JSON.stringify({ fake: true, marker: marker[1] }) : payload;
     const m = text.match(/Write the final JSON to the file "([^"]+)"/);
     if (m && process.env.FAKE_ACP_SKIP_FILE !== "1") {
-      writeFileSync(m[1], payload);
+      writeFileSync(m[1], body);
     }
   } else if (msg.id === 999 && awaitingPermission) {
     // permission response from the client

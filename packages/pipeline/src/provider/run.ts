@@ -4,8 +4,20 @@ import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider, InvokeOptions, ProviderResult } from "./types.js";
 import { ProviderError } from "./types.js";
 
-/** Filename (inside the invocation cwd) where the agent must write its JSON. */
-export const OUTPUT_FILENAME = ".errlookup.out.json";
+/** Prefix for the file (inside the invocation cwd) where the agent must write its JSON. */
+export const OUTPUT_PREFIX = ".errlookup.out";
+
+let outputSeq = 0;
+
+/**
+ * Per-invocation output filename. Concurrent batches of the same phase share the
+ * clone dir as their cwd, so a fixed name would let one call read — or its
+ * cleanup delete — another call's JSON. pid + sequence is unique across both
+ * concurrent calls in this process and overlapping runs on the same machine.
+ */
+function nextOutputFile(cwd: string): string {
+  return join(cwd, `${OUTPUT_PREFIX}.${process.pid}.${outputSeq++}.json`);
+}
 
 function withOutputInstruction(prompt: string, outputFile: string): string {
   return (
@@ -46,7 +58,7 @@ export async function runProvider(
 
   // File-based output handoff: the agent writes its JSON into the invocation
   // cwd (inside the agent's write sandbox); each attempt starts from a clean slate.
-  const outputFile = join(opts.cwd, OUTPUT_FILENAME);
+  const outputFile = nextOutputFile(opts.cwd);
   const attemptOpts: InvokeOptions = { ...opts, outputFile };
   const attemptPrompt = withOutputInstruction(prompt, outputFile);
   const clean = () => rmSync(outputFile, { force: true });
