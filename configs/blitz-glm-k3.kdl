@@ -17,11 +17,13 @@ provider "k3" {
 }
 defaults {
     primary "glm"
-    // 2 repos x 4 in-phase calls = at most 8 opencode processes, on a 12-core
-    // host. Raise batch-concurrency first if the provider tolerates it; the
-    // per-phase calls are the long pole, not the repo count.
-    max-concurrent 2
-    batch-concurrency 4
+    // GLM 5.2 allows 10 concurrent requests, enforced process-wide below. The
+    // two knobs deliberately over-subscribe that (3 x 6 = 18 potential): the
+    // gate keeps the real ceiling at 10, and the slack means a repo cloning or
+    // between phases does not leave provider slots idle.
+    provider-max-concurrent 10
+    max-concurrent 3
+    batch-concurrency 6
     analysis-batch-size 20
     delay-between-phases-ms 2000
 }

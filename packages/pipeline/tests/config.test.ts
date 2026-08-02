@@ -85,6 +85,7 @@ describe("config mapping", () => {
       fallback: "claude",
       maxConcurrent: 1,
       batchConcurrency: 1,
+      providerMaxConcurrent: 0,
       analysisBatchSize: 20,
       delayBetweenPhasesMs: 5_000,
     });
@@ -107,6 +108,7 @@ describe("config mapping", () => {
     expect(cfg.defaults.maxConcurrent).toBe(3);
     expect(cfg.defaults.batchConcurrency).toBe(6);
     expect(cfg.defaults.analysisBatchSize).toBe(25);
+    expect(cfg.defaults.providerMaxConcurrent).toBe(0); // absent → no gate
 
     // A zero/negative knob would stall the pool or produce empty batches —
     // fall back to the safe default rather than honouring it.

@@ -23,6 +23,12 @@ export interface ErrlookupConfig {
     maxConcurrent: number;
     /** LLM calls in flight within one phase of one repo. */
     batchConcurrency: number;
+    /**
+     * Hard ceiling on concurrent provider calls process-wide, matching the
+     * account's rate limit. 0 disables the gate. Set this and the two knobs
+     * above may over-subscribe safely.
+     */
+    providerMaxConcurrent: number;
     /** Errors per enrichment/defense call. */
     analysisBatchSize: number;
     delayBetweenPhasesMs: number;
@@ -50,6 +56,7 @@ export const DEFAULT_CONFIG: ErrlookupConfig = {
     fallback: undefined,
     maxConcurrent: 1,
     batchConcurrency: 1,
+    providerMaxConcurrent: 0,
     analysisBatchSize: 20,
     delayBetweenPhasesMs: 5_000,
   },
@@ -109,6 +116,8 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
             : undefined,
         maxConcurrent: asConcurrency(childByName(node, "max-concurrent")?.values[0], 1),
         batchConcurrency: asConcurrency(childByName(node, "batch-concurrency")?.values[0], 1),
+        // 0 is meaningful here (no gate), so it bypasses the positive-clamp.
+        providerMaxConcurrent: Math.max(0, Math.floor(asNumber(childByName(node, "provider-max-concurrent")?.values[0], 0))),
         analysisBatchSize: asConcurrency(childByName(node, "analysis-batch-size")?.values[0], 20),
         delayBetweenPhasesMs: asNumber(childByName(node, "delay-between-phases-ms")?.values[0], 5_000),
       };

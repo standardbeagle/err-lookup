@@ -3,6 +3,9 @@ import { runAnalysis } from "../src/phase/analysis.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
 import { sleep } from "../src/util/watchdog.js";
+import { Semaphore } from "../src/util/pool.js";
+import { ThrottledProvider } from "../src/provider/throttle.js";
+import { buildProviders } from "../src/providers.js";
 import type { LlmProvider, InvokeOptions, ProviderResult } from "../src/provider/types.js";
 import type { DiscoveredErrorJson } from "../src/phase/prompts.js";
 
@@ -167,5 +170,47 @@ describe("runAnalysis: fused enrichment + defense", () => {
     const cfg = cfgFrom(["  analysis-batch-size 10"]);
     await runAnalysis("/tmp/x", discovered(40), { bulk: p }, cfg, BOTH);
     expect(p.peak).toBe(1);
+  });
+});
+
+describe("provider rate-limit gate", () => {
+  it("caps calls process-wide even when the two knobs over-subscribe", async () => {
+    // 2 repos x 4 in-phase calls could put 8 calls in flight; the account allows 5.
+    const gate = new Semaphore(5);
+    const raw = new RecordingProvider("bulk", { delayMs: 20 });
+    const throttled = new ThrottledProvider(raw, gate);
+    const cfg = cfgFrom(["  analysis-batch-size 10", "  batch-concurrency 4"]);
+
+    await Promise.all([
+      runAnalysis("/tmp/a", discovered(80), { bulk: throttled }, cfg, BOTH),
+      runAnalysis("/tmp/b", discovered(80), { bulk: throttled }, cfg, BOTH),
+    ]);
+
+    expect(raw.peak).toBeLessThanOrEqual(5);
+    expect(raw.peak).toBe(5); // and it does use the whole allowance
+    expect(gate.free).toBe(5);
+  });
+
+  it("buildProviders wires one shared gate across every provider", async () => {
+    const cfg = mapConfig(
+      parseKdl(
+        [
+          'provider "a" { command "a" }',
+          'provider "b" { command "b" }',
+          "defaults { primary \"a\"\n  provider-max-concurrent 2\n}",
+        ].join("\n")
+      )
+    );
+    const providers = buildProviders(cfg);
+    // A shared gate means holding slots via one provider blocks the other —
+    // per-provider gates would let each run at the full limit.
+    expect(Object.keys(providers).sort()).toEqual(["a", "b"]);
+    expect(providers.a).toBeInstanceOf(ThrottledProvider);
+    expect(providers.b).toBeInstanceOf(ThrottledProvider);
+  });
+
+  it("leaves providers unwrapped when no limit is configured", () => {
+    const cfg = mapConfig(parseKdl(['provider "a" { command "a" }', 'defaults { primary "a" }'].join("\n")));
+    expect(buildProviders(cfg).a).not.toBeInstanceOf(ThrottledProvider);
   });
 });

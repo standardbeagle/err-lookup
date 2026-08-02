@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { withTimeout, TimeoutError, sleep } from "../src/util/watchdog.js";
-import { mapPool, chunk } from "../src/util/pool.js";
+import { mapPool, chunk, Semaphore } from "../src/util/pool.js";
 import { computeErrorId, deriveSlug, normalizeErrorType } from "../src/util/ids.js";
 import { extractSourceRegion, githubPermalink } from "../src/util/source.js";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -135,5 +135,47 @@ describe("github repo metadata", () => {
     expect(parseRepoMeta({})).toEqual({ description: null, language: null, stars: 0, defaultBranch: "main" });
     expect(parseRepoMeta(null)).toBeNull();
     expect(parseRepoMeta("nope")).toBeNull();
+  });
+});
+
+describe("Semaphore", () => {
+  it("caps concurrent holders at the limit", async () => {
+    const gate = new Semaphore(3);
+    let live = 0;
+    let peak = 0;
+    await Promise.all(
+      Array.from({ length: 20 }, async () => {
+        const release = await gate.acquire();
+        live++;
+        peak = Math.max(peak, live);
+        await sleep(5);
+        live--;
+        release();
+      })
+    );
+    expect(peak).toBe(3);
+    expect(gate.free).toBe(3); // every slot handed back
+  });
+
+  it("hands a freed slot to the longest waiter", async () => {
+    const gate = new Semaphore(1);
+    const order: number[] = [];
+    const first = await gate.acquire();
+    const queued = [1, 2, 3].map(async (n) => {
+      const release = await gate.acquire();
+      order.push(n);
+      release();
+    });
+    first();
+    await Promise.all(queued);
+    expect(order).toEqual([1, 2, 3]);
+  });
+
+  it("ignores a double release rather than inventing a slot", async () => {
+    const gate = new Semaphore(2);
+    const release = await gate.acquire();
+    release();
+    release();
+    expect(gate.free).toBe(2);
   });
 });

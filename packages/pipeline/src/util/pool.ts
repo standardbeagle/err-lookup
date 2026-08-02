@@ -27,6 +27,40 @@ export async function mapPool<T, R>(
   return results;
 }
 
+/**
+ * Counting semaphore. Used to cap in-flight provider calls process-wide against
+ * a published rate limit, which `max-concurrent x batch-concurrency` cannot do:
+ * that product is a worst case, so respecting the limit through it means
+ * under-subscribing whenever a repo is between phases.
+ */
+export class Semaphore {
+  private available: number;
+  private readonly waiting: (() => void)[] = [];
+
+  constructor(readonly limit: number) {
+    this.available = limit;
+  }
+
+  async acquire(): Promise<() => void> {
+    if (this.available > 0) this.available--;
+    else await new Promise<void>((resolve) => this.waiting.push(resolve));
+
+    let released = false;
+    return () => {
+      if (released) return; // double-release must not hand out a phantom slot
+      released = true;
+      const next = this.waiting.shift();
+      if (next) next();
+      else this.available++;
+    };
+  }
+
+  /** Slots not currently held — for assertions and diagnostics. */
+  get free(): number {
+    return this.available;
+  }
+}
+
 /** Split an array into fixed-size chunks (last chunk may be short). */
 export function chunk<T>(arr: readonly T[], size: number): T[][] {
   const out: T[][] = [];
