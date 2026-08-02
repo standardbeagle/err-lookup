@@ -1,5 +1,5 @@
 import { eq, desc, and } from "drizzle-orm";
-import type { Db } from "./client.js";
+import { tx, type Db } from "./client.js";
 import { repositories, errors, jobHistory, type ErrorRow, type RepositoryRow } from "./schema.js";
 import type { PhaseName } from "@errlookup/schema";
 
@@ -110,4 +110,62 @@ export function replaceErrors(db: Db, repo: string, rows: Omit<ErrorRow, "update
 
 export function errorsForRepo(db: Db, repo: string): ErrorRow[] {
   return db.select().from(errors).where(eq(errors.repo, repo)).all();
+}
+
+export interface ResetSummary {
+  repo: string;
+  errorsDeleted: number;
+  jobsDeleted: number;
+}
+
+/**
+ * Return a repo to `pending`: drop its error records and phase history, clear
+ * the analyzed SHA and the recorded failure.
+ *
+ * Resetting rather than deleting the row keeps `created_at` and any GitHub
+ * metadata, so the repo stays part of the corpus and is simply re-analyzed.
+ * The phase history has to go with it — `latestPhaseRun` is what makes resume
+ * skip a phase, so leaving it behind would reset the status without actually
+ * causing any work to be redone.
+ */
+export function resetRepo(db: Db, repo: string): ResetSummary {
+  return tx(db, () => {
+    const errorsDeleted = errorsForRepo(db, repo).length;
+    const jobsDeleted = db.select().from(jobHistory).where(eq(jobHistory.repo, repo)).all().length;
+    db.delete(errors).where(eq(errors.repo, repo)).run();
+    db.delete(jobHistory).where(eq(jobHistory.repo, repo)).run();
+    db.update(repositories)
+      .set({
+        status: "pending",
+        lastError: null,
+        analyzedSha: null,
+        analyzedAt: null,
+        errorCount: 0,
+        updatedAt: Date.now(),
+      })
+      .where(eq(repositories.repo, repo))
+      .run();
+    return { repo, errorsDeleted, jobsDeleted };
+  });
+}
+
+/** Repos in a given pipeline status. */
+export function reposByStatus(db: Db, status: RepositoryRow["status"]): RepositoryRow[] {
+  return db.select().from(repositories).where(eq(repositories.status, status)).all();
+}
+
+/**
+ * Delete `running` phase rows for repos that are not currently being analyzed.
+ * A crashed or killed run leaves these behind forever; they never resolve, and
+ * they make job_history unusable for measuring throughput.
+ */
+export function purgeOrphanedJobs(db: Db, protectedRepos: Set<string>): number {
+  const stale = db
+    .select()
+    .from(jobHistory)
+    .where(eq(jobHistory.status, "running"))
+    .all()
+    .filter((j) => !protectedRepos.has(j.repo));
+  for (const j of stale) db.delete(jobHistory).where(eq(jobHistory.id, j.id)).run();
+  return stale.length;
 }

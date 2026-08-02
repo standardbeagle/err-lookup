@@ -10,6 +10,7 @@ import { publishDataset } from "../exporter/index.js";
 import { mapPool } from "../util/pool.js";
 import { msUntilOffPeak } from "../util/peak.js";
 import { sleep } from "../util/watchdog.js";
+import { resetRepo, reposByStatus, purgeOrphanedJobs } from "../db/store.js";
 import { printStatus } from "./status.js";
 
 function dbPath(): string {
@@ -95,6 +96,53 @@ async function main(): Promise<void> {
           JSON.stringify(manifest, null, 2)
         }`
       );
+    } finally {
+      raw.close();
+    }
+    return;
+  }
+
+  if (cmd === "reset") {
+    const { values } = parseArgs({
+      options: {
+        failed: { type: "boolean", default: false },
+        "dry-run": { type: "boolean", default: false },
+      },
+      allowPositionals: true,
+      args: rest,
+    });
+    const { db, raw } = openDb(dbPath());
+    try {
+      // A repo in `analyzing` is owned by a live run — resetting it would delete
+      // phase output that run is still writing to, and the run would then
+      // reassemble from a half-empty history.
+      const active = new Set(reposByStatus(db, "analyzing").map((r) => r.repo));
+      const requested = new Set(positional);
+      if (values.failed) for (const r of reposByStatus(db, "failed")) requested.add(r.repo);
+
+      if (requested.size === 0) {
+        console.error("usage: errlookup reset [--failed] [--dry-run] [owner/repo ...]");
+        process.exit(2);
+      }
+
+      const targets = [...requested].filter((r) => !active.has(r));
+      for (const skipped of [...requested].filter((r) => active.has(r))) {
+        console.log(`skip ${skipped}: currently analyzing (a run owns this repo)`);
+      }
+
+      if (values["dry-run"]) {
+        for (const repo of targets) console.log(`would reset ${repo}`);
+        console.log(`dry run: ${targets.length} repos would return to pending`);
+        return;
+      }
+
+      for (const repo of targets) {
+        const s = resetRepo(db, repo);
+        console.log(`reset ${s.repo}: ${s.errorsDeleted} errors, ${s.jobsDeleted} phase rows removed`);
+      }
+      const orphans = purgeOrphanedJobs(db, active);
+      if (orphans > 0) console.log(`purged ${orphans} orphaned running-phase rows from crashed runs`);
+      console.log(`reset ${targets.length} repos to pending`);
     } finally {
       raw.close();
     }
@@ -202,9 +250,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.error("err-lookup pipeline. commands: analyze, batch, export, status");
+  console.error("err-lookup pipeline. commands: analyze, batch, reset, export, status");
   console.error("  errlookup analyze <owner/repo> [--phases 1,2,3,4,5] [--force]");
   console.error("  errlookup batch <file.txt> [--phases 1,2,3,5] [--force]");
+  console.error("  errlookup reset [--failed] [--dry-run] [owner/repo ...]");
   console.error("  errlookup export [--out-dir <path>]");
   console.error("  errlookup status");
   process.exit(cmd ? 1 : 0);
