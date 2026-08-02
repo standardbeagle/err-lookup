@@ -1,6 +1,7 @@
 ---
 import Base from "../../../layouts/Base.astro";
 import { getRepoErrors, getRepos } from "../../../data/load.js";
+import { repoOg } from "../../../data/og.js";
 
 export function getStaticPaths() {
   return getRepos().map((r) => {
@@ -12,8 +13,20 @@ export function getStaticPaths() {
 const { repo } = Astro.props;
 const errors = getRepoErrors(repo.repo);
 const title = `${repo.repo} — ErrLookup`;
+const SITE = "https://errors.standardbeagle.com";
+// Breadcrumb only: the repo page is an index, so a trail is the useful signal.
+const ld = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    { "@type": "ListItem", position: 1, name: "ErrLookup", item: `${SITE}/` },
+    { "@type": "ListItem", position: 2, name: repo.repo, item: `${SITE}/${repo.repo}/` },
+  ],
+});
 ---
-<Base title={title} description={`Error index for ${repo.repo}: ${repo.errorCount} documented errors.`}>
+<Base ogImage={repoOg(repo.repo)} title={title} description={`Error index for ${repo.repo}: ${repo.errorCount} documented errors.`}>
+  <script slot="head" type="application/ld+json" set:html={ld} />
+  <p class="muted"><a href="/">ErrLookup</a> › {repo.repo}</p>
   <h1>{repo.repo}</h1>
   <p class="muted">{repo.description ?? ""} · {repo.language ?? "—"} · ★ {repo.stars.toLocaleString()}</p>
   <p class="muted">Analyzed at <code>{repo.analyzedSha.slice(0, 10)}</code> on {repo.analyzedAt.slice(0, 10)}. {errors.length} documented errors.</p>

@@ -1,6 +1,7 @@
 ---
 import Base from "../../../../layouts/Base.astro";
 import { getRepos, getRepoErrors, relatedErrors } from "../../../../data/load.js";
+import { repoOg } from "../../../../data/og.js";
 import type { ErrorEntry } from "@errlookup/schema";
 
 export function getStaticPaths() {
@@ -27,10 +28,27 @@ const related = relatedErrors(repoFullName, e.slug);
 const jsonUrl = `/data/errors/${e.id}.json`;
 const issuesUrl = `https://github.com/${repoFullName}/issues`;
 
-// JSON-LD: TechArticle + FAQPage (question = message, answer = top solution)
+const SITE = "https://errors.standardbeagle.com";
+// JSON-LD: BreadcrumbList + TechArticle + FAQPage (question = message, answer =
+// top solution). The breadcrumb mirrors the visible trail above the heading, so
+// search results show "errors.standardbeagle.com > repo > error" instead of a
+// bare truncated URL.
 const ld = {
   "@context": "https://schema.org",
   "@graph": [
+    {
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "ErrLookup", item: `${SITE}/` },
+        { "@type": "ListItem", position: 2, name: repoFullName, item: `${SITE}/${repoFullName}/` },
+        {
+          "@type": "ListItem",
+          position: 3,
+          name: e.errorCode ?? e.errorMessage.slice(0, 60),
+          item: `${SITE}/${repoFullName}/${e.slug}/`,
+        },
+      ],
+    },
     {
       "@type": "TechArticle",
       headline: e.errorCode ?? e.errorMessage.slice(0, 80),
@@ -55,7 +73,7 @@ const ld = {
   ],
 };
 ---
-<Base title={title} description={description}>
+<Base ogImage={repoOg(repoFullName)} title={title} description={description}>
   <Fragment slot="head">
     <link rel="alternate" type="application/json" href={jsonUrl} title="JSON dataset record" />
     <link rel="canonical" href={`https://errors.standardbeagle.com/${repoFullName}/${e.slug}/`} />

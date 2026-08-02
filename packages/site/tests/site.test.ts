@@ -243,3 +243,84 @@ describe("page titles", () => {
     }
   });
 });
+
+describe("social cards", () => {
+  it("gives every page an absolute og:image that exists in dist", () => {
+    for (const f of htmlFiles(dist)) {
+      const html = readFileSync(f, "utf8");
+      const src = html.match(/property="og:image" content="([^"]+)"/)?.[1];
+      expect(src, `no og:image on ${f}`).toBeTruthy();
+      // Scrapers fetch the card out of page context; a relative path yields no
+      // preview at all, which is indistinguishable from having no card.
+      expect(src!.startsWith("https://errors.standardbeagle.com/")).toBe(true);
+      const rel = src!.replace("https://errors.standardbeagle.com/", "");
+      expect(existsSync(resolve(dist, rel)), `missing card ${rel} for ${f}`).toBe(true);
+    }
+  });
+
+  it("uses the repo's card on its error pages and a per-post card on the blog", () => {
+    for (const e of readErrorRecords()) {
+      const html = readFileSync(resolve(dist, e.repo, e.slug, "index.html"), "utf8");
+      const [owner, name] = e.repo.split("/");
+      expect(html).toContain(`/og/repo-${owner}-${name}.png`);
+    }
+    const post = readFileSync(resolve(dist, "blog", "how-the-scanner-works", "index.html"), "utf8");
+    expect(post).toContain("/og/blog-how-the-scanner-works.png");
+  });
+
+  it("declares the large-image card type so the PNG is actually shown", () => {
+    const html = readFileSync(resolve(dist, "index.html"), "utf8");
+    expect(html).toContain('name="twitter:card" content="summary_large_image"');
+    expect(html).toContain('property="og:image:width" content="1200"');
+  });
+});
+
+describe("RSS feed", () => {
+  it("emits a feed listing every blog post, newest first", () => {
+    const xml = readFileSync(resolve(dist, "rss.xml"), "utf8");
+    const links = [...xml.matchAll(/<link>([^<]+)<\/link>/g)].map((m) => m[1]!);
+    const items = [...xml.matchAll(/<item>/g)].length;
+    // Every post the blog index shows must appear in the feed.
+    const listed = [...readFileSync(resolve(dist, "blog", "index.html"), "utf8")
+      .matchAll(/href="\/blog\/([a-z0-9-]+)\/"/g)].map((m) => m[1]!);
+    expect(items).toBe(new Set(listed).size);
+    for (const slug of new Set(listed)) {
+      expect(links.some((l) => l.endsWith(`/blog/${slug}/`)), `feed missing ${slug}`).toBe(true);
+    }
+  });
+
+  it("uses RFC-822 dates and a self link, as validators require", () => {
+    const xml = readFileSync(resolve(dist, "rss.xml"), "utf8");
+    expect(xml).toContain('rel="self"');
+    for (const d of [...xml.matchAll(/<pubDate>([^<]+)<\/pubDate>/g)].map((m) => m[1]!)) {
+      expect(Number.isNaN(Date.parse(d)), `unparseable pubDate: ${d}`).toBe(false);
+      expect(d).toMatch(/^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4}/);
+    }
+  });
+
+  it("is discoverable from every page", () => {
+    for (const f of htmlFiles(dist)) {
+      expect(readFileSync(f, "utf8"), `no feed link on ${f}`).toContain(
+        '<link rel="alternate" type="application/rss+xml"'
+      );
+    }
+  });
+});
+
+describe("breadcrumbs", () => {
+  it("puts a BreadcrumbList on repo and error pages", () => {
+    for (const e of readErrorRecords()) {
+      const html = readFileSync(resolve(dist, e.repo, e.slug, "index.html"), "utf8");
+      const blocks = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+      const graph = blocks.flatMap((m) => {
+        const ld = JSON.parse(m[1]!);
+        return ld["@graph"] ?? [ld];
+      });
+      const crumb = graph.find((g: { "@type": string }) => g["@type"] === "BreadcrumbList");
+      expect(crumb, `no breadcrumb on ${e.slug}`).toBeTruthy();
+      const positions = crumb.itemListElement.map((i: { position: number }) => i.position);
+      expect(positions).toEqual([1, 2, 3]); // site > repo > error
+      expect(crumb.itemListElement[2].item).toContain(`/${e.repo}/${e.slug}/`);
+    }
+  });
+});

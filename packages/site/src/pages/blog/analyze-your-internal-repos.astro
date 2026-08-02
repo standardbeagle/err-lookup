@@ -1,5 +1,6 @@
 ---
 import Base from "../../layouts/Base.astro";
+import { blogOg } from "../../data/og.js";
 const meta = {
   title: "Run ErrLookup on your own internal repositories",
   description:
@@ -15,7 +16,7 @@ const jsonLd = JSON.stringify({
   author: { "@type": "Organization", name: "Standard Beagle Studio", url: "https://standardbeagle.com" },
 });
 ---
-<Base title={`${meta.title} — ErrLookup`} description={meta.description}>
+<Base ogImage={blogOg("analyze-your-internal-repos")} title={`${meta.title} — ErrLookup`} description={meta.description}>
   <script slot="head" type="application/ld+json" set:html={jsonLd} />
   <p class="muted"><a href="/blog/">Blog</a> · {meta.date}</p>
   <h1>{meta.title}</h1>

@@ -1,11 +1,14 @@
 ---
-const { title, description, canonical, noCanonical } = Astro.props;
+const { title, description, canonical, noCanonical, ogImage } = Astro.props;
 const fullTitle = title ?? "ErrLookup";
 const SITE = "https://errors.standardbeagle.com";
 // noCanonical is for pages whose own URL is not a real address — the 404 body
 // is served under every unmatched path, so a canonical (or og:url) derived from
 // Astro.url would point a crawler at a URL that 404s in turn.
 const canonicalUrl = noCanonical ? null : (canonical ?? new URL(Astro.url.pathname, SITE).href);
+// Social cards must be absolute URLs — every scraper fetches them out of page
+// context, so a root-relative path silently yields no preview at all.
+const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
 ---
 <!doctype html>
 <html lang="en">
@@ -20,7 +23,12 @@ const canonicalUrl = noCanonical ? null : (canonical ?? new URL(Astro.url.pathna
     {description && <meta property="og:description" content={description} />}
     <meta property="og:type" content="website" />
     {canonicalUrl && <meta property="og:url" content={canonicalUrl} />}
-    <meta name="twitter:card" content="summary" />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content={ogImageUrl} />
+    <link rel="alternate" type="application/rss+xml" title="ErrLookup Blog" href="/rss.xml" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <slot name="head" />
     <style is:global>
@@ -214,6 +222,7 @@ enterkeyhint="search"
     </main>
     <footer class="site"><div>
       <span>Built by <a href="https://standardbeagle.com" target="_blank" rel="noopener noreferrer">Standard Beagle</a>, the AI UX agency for bold product teams.</span>
+      <a href="/rss.xml">RSS</a>
       <a href="/llms.txt">llms.txt</a>
       <a href="/data/manifest.json">dataset</a>
       <a href="https://github.com/standardbeagle/err-lookup" target="_blank" rel="noopener noreferrer">GitHub</a>
