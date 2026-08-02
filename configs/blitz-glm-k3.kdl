@@ -17,7 +17,12 @@ provider "k3" {
 }
 defaults {
     primary "glm"
-    max-concurrent 1
+    // 2 repos x 4 in-phase calls = at most 8 opencode processes, on a 12-core
+    // host. Raise batch-concurrency first if the provider tolerates it; the
+    // per-phase calls are the long pole, not the repo count.
+    max-concurrent 2
+    batch-concurrency 4
+    analysis-batch-size 20
     delay-between-phases-ms 2000
 }
 phase-providers {

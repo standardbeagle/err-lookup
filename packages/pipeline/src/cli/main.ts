@@ -7,6 +7,7 @@ import { loadConfig } from "../config/index.js";
 import { buildProviders } from "../providers.js";
 import { analyzeRepo } from "../pipeline.js";
 import { publishDataset } from "../exporter/index.js";
+import { mapPool } from "../util/pool.js";
 import { printStatus } from "./status.js";
 
 function dbPath(): string {
@@ -125,17 +126,31 @@ async function main(): Promise<void> {
     const { db, raw } = openDb(dbPath());
     let ok = 0;
     let failed = 0;
+    let skipped = 0;
     // Circuit breaker: provider quota exhaustion fails every repo the same way;
-    // stop burning clones and let the next scheduled run resume (§11.2).
+    // stop burning clones and let the next scheduled run resume (§11.2). With
+    // repos in flight concurrently, "consecutive" means consecutive completions
+    // — repos already running are allowed to finish.
     let consecutiveFailures = 0;
     const BREAKER = 5;
+    let tripped = false;
+
+    // Concurrent repos interleave their output, so every line carries its repo.
+    // The scheduled runs grep these logs; an unattributed line is useless there.
+    const say = (repo: string, msg: string) => console.log(`[${repo}] ${msg}`);
+    const complain = (repo: string, msg: string) => console.error(`[${repo}] ${msg}`);
+
     try {
-      for (const repo of repos) {
-        if (consecutiveFailures >= BREAKER) {
-          console.error(`\nbatch aborted: ${BREAKER} consecutive failures — provider likely rate-limited/exhausted`);
-          break;
+      console.log(
+        `batch: ${repos.length} repos, ${cfg.defaults.maxConcurrent} concurrent, ` +
+          `${cfg.defaults.batchConcurrency} calls/phase, ${cfg.defaults.analysisBatchSize} errors/call`
+      );
+      await mapPool(repos, cfg.defaults.maxConcurrent, async (repo) => {
+        if (tripped) {
+          skipped++;
+          return;
         }
-        console.log(`\n=== ${repo} ===`);
+        say(repo, "start");
         try {
           const r = await analyzeRepo(repo, {
             db,
@@ -143,24 +158,32 @@ async function main(): Promise<void> {
             cfg,
             phases: Object.fromEntries(wantedPhases.map((p) => [p, true])),
             force: values.force,
-            onLog: (m) => console.log(`  ${m}`),
+            onLog: (m) => say(repo, m),
           });
           if (r.failed) {
-            console.error(`  FAILED: ${r.failed}`);
+            complain(repo, `FAILED: ${r.failed}`);
             failed++;
             consecutiveFailures++;
           } else {
-            console.log(`  → ${r.errorCount} errors`);
+            say(repo, `→ ${r.errorCount} errors`);
             ok++;
             consecutiveFailures = 0;
           }
         } catch (e) {
-          console.error(`  FAILED: ${(e as Error).message}`);
+          complain(repo, `FAILED: ${(e as Error).message}`);
           failed++;
           consecutiveFailures++;
         }
-      }
-      console.log(`\nbatch done: ${ok} ok, ${failed} failed`);
+        if (consecutiveFailures >= BREAKER && !tripped) {
+          tripped = true;
+          console.error(
+            `batch aborted: ${BREAKER} consecutive failures — provider likely rate-limited/exhausted`
+          );
+        }
+      });
+      console.log(
+        `\nbatch done: ${ok} ok, ${failed} failed${tripped ? `, ${skipped} skipped (breaker tripped)` : ""}`
+      );
     } finally {
       raw.close();
     }
