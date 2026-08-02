@@ -324,3 +324,57 @@ describe("breadcrumbs", () => {
     }
   });
 });
+
+/** The global stylesheet Astro emits for the layout (minified, hashed name). */
+function siteCss(): string {
+  const dir = resolve(dist, "_astro");
+  const file = readdirSync(dir).find((f) => f.endsWith(".css"));
+  return readFileSync(resolve(dir, file!), "utf8");
+}
+
+describe("header and layout contract", () => {
+  it("keeps the header to four destinations plus search", () => {
+    const html = readFileSync(resolve(dist, "index.html"), "utf8");
+    const nav = html.match(/<nav class="top">[\s\S]*?<\/nav>/)![0];
+    const links = [...nav.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1]!);
+    // brand + About + Blog + API + GitHub. The bar also carries a search field,
+    // and every extra link steals width from it — the pre-redesign nav wrapped
+    // to two rows and stranded items on the second.
+    expect(links).toEqual(["/", "/about/", "/blog/", "/api-docs/", "https://github.com/standardbeagle/err-lookup"]);
+    expect(nav).toContain('class="navsearch"');
+  });
+
+  it("keeps the links removed from the header reachable in the footer", () => {
+    const footer = readFileSync(resolve(dist, "index.html"), "utf8").match(/<footer[\s\S]*?<\/footer>/)![0];
+    expect(footer).toContain('href="/request-crawl/"');
+    expect(footer).toContain("errlookup-mcp");
+  });
+
+  it("offers a skip link ahead of the nav on every page", () => {
+    for (const f of htmlFiles(dist)) {
+      const html = readFileSync(f, "utf8");
+      expect(html, `no skip link in ${f}`).toContain('class="skip btn" href="#main"');
+      // It must precede the nav, or it skips nothing.
+      expect(html.indexOf('href="#main"')).toBeLessThan(html.indexOf('<nav class="top">'));
+      expect(html).toContain('id="main"');
+    }
+  });
+
+  it("constrains prose to a readable measure inside the wider shell", () => {
+    // Astro extracts the global stylesheet, so these live in the CSS bundle
+    // rather than the document, and ship minified.
+    const css = siteCss();
+    // Minifiers preserve custom-property values verbatim, spaces included.
+    expect(css).toMatch(/--maxw:\s*1120px/);
+    expect(css).toMatch(/--measure:\s*\d+ch/);
+    // Without this, a 1120px shell runs body text past 150 characters a line.
+    expect(css).toMatch(/main>:is\(p,ul,ol,h1,h2,h3,blockquote\)[^}]*max-width:var\(--measure\)/);
+  });
+
+  it("lets wide tables scroll inside themselves on small screens", () => {
+    // A four-column table cannot fit 320px; unconstrained it drags the whole
+    // page sideways and breaks every other element's layout.
+    const css = siteCss();
+    expect(css).toMatch(/max-width:\s*600px\)\{[^@]*?main table\{display:block;overflow-x:auto\}/);
+  });
+});

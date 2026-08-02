@@ -35,7 +35,9 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
       :root {
         /* 8pt spacing scale */
         --s1: .5rem; --s2: 1rem; --s3: 1.5rem; --s4: 2rem; --s5: 3rem; --s6: 4rem;
-        --maxw: 760px;
+        --maxw: 1120px;
+        /* Prose stays readable while tables, code and cards use the full shell. */
+        --measure: 70ch;
         /* warm standardbeagle palette — light */
         --ink: #241c15;
         --mute: #66584d;
@@ -59,6 +61,9 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
         color: var(--ink); line-height: 1.6; font-size: 1rem; background: var(--wash);
       }
       main { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--s2) var(--s6); }
+      /* A 1120px shell would run body text past 150 characters a line. Text
+         blocks keep a comfortable measure; tables, code and video do not. */
+      main > :is(p, ul, ol, h1, h2, h3, blockquote), details > :is(p, ul, ol) { max-width: var(--measure); }
 
       /* type scale — clear stops: 2.25 / 1.375 / 1 / .875 */
       h1 { font-size: 2.25rem; line-height: 1.15; font-weight: 800; letter-spacing: -0.015em; margin: var(--s5) 0 var(--s2); }
@@ -84,8 +89,17 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
 
       /* header: brand left, actions right; 44px targets */
       nav.top { background: var(--card); border-bottom: 1px solid var(--line); }
-      nav.top > div { max-width: var(--maxw); margin: 0 auto; padding: 0 var(--s2); display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; }
-      nav.top a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 .6rem; text-decoration: none; color: var(--mute); font-size: .95rem; }
+      nav.top > div {
+        max-width: var(--maxw); margin: 0 auto; padding: .4rem var(--s2);
+        display: flex; align-items: center; gap: var(--s1) var(--s2); flex-wrap: wrap;
+      }
+      /* Links group so they wrap as a unit instead of shedding one item at a
+         time — the old bar left "MCP" and the GitHub mark stranded on row two. */
+      nav.top .navlinks { display: flex; align-items: center; gap: .1rem; }
+      /* 44x44 in BOTH axes — a 20px icon with 8px padding clears the height
+         requirement while still being a 36px-wide tap target. */
+      nav.top a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0 .6rem; text-decoration: none; color: var(--mute); font-size: .95rem; }
+      nav.top a.brand { min-width: 0; }
       nav.top a:hover { color: var(--accent-strong); }
       nav.top a.brand { font-weight: 800; font-size: 1.05rem; color: var(--ink); gap: .5rem; padding-left: 0; }
 
@@ -93,25 +107,46 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
          record. Grows to fill the bar and pushes the nav links to the right. */
       .sr-only {
         position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-        overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+        clip-path: inset(50%); white-space: nowrap; border: 0;
       }
-      form.navsearch { display: flex; align-items: center; gap: .4rem; flex: 1 1 16rem; min-width: 12rem; margin-right: auto; }
+      /* Keyboard users get a way past the header without tabbing every link. */
+      .skip { position: absolute; left: var(--s2); top: -3rem; z-index: 10; transition: top .15s; }
+      .skip:focus { top: var(--s1); }
+      form.navsearch { display: flex; align-items: center; gap: .4rem; flex: 1 1 18rem; min-width: 11rem; }
       form.navsearch input {
-        width: 100%; min-height: 38px; padding: .35rem .6rem; font: inherit; font-size: .92rem;
+        width: 100%; min-height: 44px; padding: .45rem .7rem; font: inherit; font-size: 1rem;
         color: var(--ink); background: var(--wash); border: 1px solid var(--line); border-radius: 8px;
       }
       form.navsearch input::placeholder { color: var(--mute); }
       form.navsearch input:focus { border-color: var(--accent); }
       form.navsearch button {
-        min-height: 38px; padding: 0 .8rem; border-radius: 8px; border: 1px solid var(--line);
+        min-height: 44px; padding: 0 .9rem; border-radius: 8px; border: 1px solid var(--line);
         background: var(--accent); color: #fff; font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer;
       }
       form.navsearch button:hover { background: var(--accent-strong); }
       @media (prefers-color-scheme: dark) { form.navsearch button { color: #1c0d02; } }
-      /* Below ~640px the bar wraps; search takes its own full-width row. */
-      @media (max-width: 640px) {
-        nav.top a.brand { margin-right: auto; }
-        form.navsearch { order: 99; flex-basis: 100%; margin: 0 0 .6rem; }
+      /* Under ~820px there is no room for brand + search + links on one line.
+         Search drops to its own full-width row rather than being squeezed to a
+         box too small to hold an error message. */
+      @media (max-width: 820px) {
+        nav.top .navlinks { margin-left: auto; }
+        form.navsearch { order: 99; flex-basis: 100%; margin: 0 0 .5rem; }
+      }
+      /* Narrow phones: the label text is what overflows first, so shrink the
+         submit to its icon-free minimum and let links wrap freely. */
+      @media (max-width: 380px) {
+        nav.top a { padding: 0 .35rem; font-size: .9rem; }
+        form.navsearch button { padding: 0 .7rem; }
+      }
+      /* Table rows are the main navigation on repo and listing pages, so their
+         links need thumb-sized rows on touch screens too. */
+      @media (max-width: 600px) {
+        th, td { padding: .8rem .5rem; }
+        td a { display: inline-block; min-height: 24px; }
+        /* A four-column table cannot fit a 320px screen. Let it scroll inside
+           its own box — otherwise it drags the whole page sideways, which
+           breaks every other element's layout as collateral. */
+        main table { display: block; overflow-x: auto; }
       }
       nav.top a.gh { color: var(--mute); padding: 0 .5rem; }
       nav.top a.gh:hover { color: var(--ink); }
@@ -190,6 +225,7 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
     </style>
   </head>
   <body>
+    <a class="skip btn" href="#main">Skip to content</a>
     <nav class="top"><div>
       <a class="brand" href="/">
         <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><rect x="1" y="1" width="20" height="20" rx="5" fill="#c2410c"/><path d="M6.2 8.4 9.4 11l-3.2 2.6M11.4 14.4h4.4" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -208,20 +244,22 @@ enterkeyhint="search"
         />
         <button type="submit">Search</button>
       </form>
+      <span class="navlinks">
       <a href="/about/">About</a>
       <a href="/blog/">Blog</a>
-      <a href="/request-crawl/">Request a crawl</a>
       <a href="/api-docs/">API</a>
-      <a href="https://www.npmjs.com/package/@standardbeagle/errlookup-mcp" target="_blank" rel="noopener noreferrer">MCP</a>
       <a class="gh" href="https://github.com/standardbeagle/err-lookup" target="_blank" rel="noopener noreferrer" aria-label="ErrLookup on GitHub">
         <svg width="20" height="20" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
       </a>
+      </span>
     </div></nav>
-    <main>
+    <main id="main">
       <slot />
     </main>
     <footer class="site"><div>
       <span>Built by <a href="https://standardbeagle.com" target="_blank" rel="noopener noreferrer">Standard Beagle</a>, the AI UX agency for bold product teams.</span>
+      <a href="/request-crawl/">Request a crawl</a>
+      <a href="https://www.npmjs.com/package/@standardbeagle/errlookup-mcp" target="_blank" rel="noopener noreferrer">MCP server</a>
       <a href="/rss.xml">RSS</a>
       <a href="/llms.txt">llms.txt</a>
       <a href="/data/manifest.json">dataset</a>
