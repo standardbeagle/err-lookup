@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { withTimeout, TimeoutError, sleep } from "../src/util/watchdog.js";
+import { mapPool, chunk } from "../src/util/pool.js";
 import { computeErrorId, deriveSlug, normalizeErrorType } from "../src/util/ids.js";
 import { extractSourceRegion, githubPermalink } from "../src/util/source.js";
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -13,6 +14,47 @@ describe("watchdog", () => {
 
   it("rejects with TimeoutError when exceeded", async () => {
     await expect(withTimeout(sleep(500), 30)).rejects.toBeInstanceOf(TimeoutError);
+  });
+});
+
+describe("mapPool", () => {
+  it("keeps input order while completing out of order", async () => {
+    const delays = [40, 5, 30, 1, 20];
+    const out = await mapPool(delays, 3, async (ms, i) => {
+      await sleep(ms);
+      return i;
+    });
+    expect(out).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it("never exceeds the concurrency limit", async () => {
+    let live = 0;
+    let peak = 0;
+    await mapPool(Array.from({ length: 20 }, (_, i) => i), 4, async () => {
+      live++;
+      peak = Math.max(peak, live);
+      await sleep(5);
+      live--;
+    });
+    expect(peak).toBe(4);
+  });
+
+  it("actually runs concurrently", async () => {
+    const started = Date.now();
+    await mapPool(Array.from({ length: 8 }, (_, i) => i), 8, () => sleep(50));
+    expect(Date.now() - started).toBeLessThan(200); // serial would be ~400ms
+  });
+
+  it("handles an empty list and a limit below one", async () => {
+    expect(await mapPool([], 4, async () => 1)).toEqual([]);
+    expect(await mapPool([1, 2], 0, async (n) => n * 2)).toEqual([2, 4]);
+  });
+});
+
+describe("chunk", () => {
+  it("splits into fixed-size groups with a short tail", () => {
+    expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+    expect(chunk([], 3)).toEqual([]);
   });
 });
 

@@ -19,7 +19,12 @@ export interface ErrlookupConfig {
   defaults: {
     primary: string;
     fallback: string | undefined;
+    /** Repos analyzed concurrently in a `batch` run. */
     maxConcurrent: number;
+    /** LLM calls in flight within one phase of one repo. */
+    batchConcurrency: number;
+    /** Errors per enrichment/defense call. */
+    analysisBatchSize: number;
     delayBetweenPhasesMs: number;
   };
   /**
@@ -44,9 +49,17 @@ export const DEFAULT_CONFIG: ErrlookupConfig = {
     primary: "claude",
     fallback: undefined,
     maxConcurrent: 1,
+    batchConcurrency: 1,
+    analysisBatchSize: 20,
     delayBetweenPhasesMs: 5_000,
   },
 };
+
+/** Clamp a concurrency knob to a sane positive integer. */
+function asConcurrency(v: unknown, fallback: number): number {
+  const n = typeof v === "number" && Number.isFinite(v) ? Math.floor(v) : fallback;
+  return n >= 1 ? n : fallback;
+}
 
 function childByName(node: KdlNode, name: string): KdlNode | undefined {
   return node.children.find((c) => c.name === name);
@@ -94,7 +107,9 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
           childByName(node, "fallback")?.values[0] != null
             ? asString(childByName(node, "fallback")?.values[0], "")
             : undefined,
-        maxConcurrent: asNumber(childByName(node, "max-concurrent")?.values[0], 1),
+        maxConcurrent: asConcurrency(childByName(node, "max-concurrent")?.values[0], 1),
+        batchConcurrency: asConcurrency(childByName(node, "batch-concurrency")?.values[0], 1),
+        analysisBatchSize: asConcurrency(childByName(node, "analysis-batch-size")?.values[0], 20),
         delayBetweenPhasesMs: asNumber(childByName(node, "delay-between-phases-ms")?.values[0], 5_000),
       };
     }

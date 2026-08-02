@@ -84,8 +84,39 @@ describe("config mapping", () => {
       primary: "glm",
       fallback: "claude",
       maxConcurrent: 1,
+      batchConcurrency: 1,
+      analysisBatchSize: 20,
       delayBetweenPhasesMs: 5_000,
     });
+  });
+
+  it("maps the concurrency knobs and rejects non-positive values", () => {
+    const cfg = mapConfig(
+      parseKdl(
+        [
+          'provider "glm" { command "glm" }',
+          "defaults {",
+          '  primary "glm"',
+          "  max-concurrent 3",
+          "  batch-concurrency 6",
+          "  analysis-batch-size 25",
+          "}",
+        ].join("\n")
+      )
+    );
+    expect(cfg.defaults.maxConcurrent).toBe(3);
+    expect(cfg.defaults.batchConcurrency).toBe(6);
+    expect(cfg.defaults.analysisBatchSize).toBe(25);
+
+    // A zero/negative knob would stall the pool or produce empty batches —
+    // fall back to the safe default rather than honouring it.
+    const bad = mapConfig(
+      parseKdl(
+        ['provider "glm" { command "glm" }', "defaults {", "  batch-concurrency 0", "  analysis-batch-size -5", "}"].join("\n")
+      )
+    );
+    expect(bad.defaults.batchConcurrency).toBe(1);
+    expect(bad.defaults.analysisBatchSize).toBe(20);
   });
 });
 
