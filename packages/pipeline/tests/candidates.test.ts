@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { extractCandidates, candidatesFromLciJson, lciGrepArgs, extractCandidatesLci } from "../src/phase/candidates.js";
+import { extractCandidates, candidatesFromLciJson, lciGrepArgs, extractCandidatesLci, countSourceFiles } from "../src/phase/candidates.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
 
@@ -38,6 +38,13 @@ describe("builtin candidate extractor", () => {
     expect(js.literal).toBe("Expected a function");
     const go = c.find((s) => s.file === "main.go")!;
     expect(go.literal).toContain("connect failed");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("counts source files under the same exclusion rules as extraction", () => {
+    const dir = fixtureRepo();
+    // index.js, api.py, main.go, lib.rs — index.test.js and node_modules excluded
+    expect(countSourceFiles(dir)).toBe(4);
     rmSync(dir, { recursive: true, force: true });
   });
 

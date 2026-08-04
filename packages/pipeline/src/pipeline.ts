@@ -62,6 +62,7 @@ export async function acquireLargeRepoLock(
   }
 }
 import { fetchRepoMeta } from "./vcs/github-meta.js";
+import { countSourceFiles } from "./phase/candidates.js";
 import { upsertRepo } from "./db/store.js";
 import { runPhases, type RunPhasesResult } from "./phase/runner.js";
 
@@ -132,13 +133,15 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
 
     const sha = await headSha(work.path);
     log(`HEAD sha ${sha}`);
+    const sourceFiles = countSourceFiles(work.path);
+    upsertRepo(opts.db, { repo, sourceFiles });
     // GitHub-hosted repos get description/language/stars; local clones (tests)
     // and API failures leave nulls — honest gaps, never fabricated.
     if (!opts.cloneUrlOverride) {
       const meta = await fetchRepoMeta(repo);
       if (meta) {
         upsertRepo(opts.db, { repo, ...meta });
-        log(`meta: ${meta.language ?? "?"} · ${meta.stars} stars`);
+        log(`meta: ${meta.language ?? "?"} · ${sourceFiles} source files · ${meta.stars} stars`);
       } else {
         log("meta: GitHub API unavailable (kept null)");
       }

@@ -119,6 +119,22 @@ function* walk(dir: string, root: string): Generator<string> {
   }
 }
 
+/**
+ * Count the source files candidate extraction would consider: recognized
+ * source extensions, minus skip dirs and test files. This is the repo-size
+ * signal published with each repo — it must mirror the extraction rules, or
+ * the count describes a different corpus than the one scanned.
+ */
+export function countSourceFiles(repoPath: string): number {
+  let count = 0;
+  for (const file of walk(repoPath, repoPath)) {
+    if (!EXT_TO_FAMILY[extname(file)]) continue;
+    if (TEST_FILE.test(relative(repoPath, file))) continue;
+    count++;
+  }
+  return count;
+}
+
 /** All pattern families flattened to (kind, RE2-compatible source) pairs for lci. */
 const LCI_PATTERNS: { kind: string; source: string }[] = Object.values(PATTERNS)
   .flat()

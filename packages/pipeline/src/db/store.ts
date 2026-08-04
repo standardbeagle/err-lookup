@@ -21,6 +21,7 @@ export function upsertRepo(db: Db, row: Partial<RepositoryRow> & { repo: string 
         description: row.description ?? null,
         language: row.language ?? null,
         stars: row.stars ?? 0,
+        sourceFiles: row.sourceFiles ?? null,
         defaultBranch: row.defaultBranch ?? "main",
         analyzedSha: row.analyzedSha ?? null,
         analyzedAt: row.analyzedAt ?? null,

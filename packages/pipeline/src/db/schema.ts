@@ -15,6 +15,8 @@ export const repositories = sqliteTable(
     description: text("description"),
     language: text("language"),
     stars: integer("stars").notNull().default(0),
+    /** Analyzable source files in the clone (null until a scan/backfill counts them). */
+    sourceFiles: integer("source_files"),
     defaultBranch: text("default_branch").notNull(),
     analyzedSha: text("analyzed_sha"),
     analyzedAt: text("analyzed_at"),
