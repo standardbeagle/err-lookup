@@ -34,6 +34,18 @@ const SKIP_DIRS = new Set([
 
 const TEST_FILE = /(\.test\.|\.spec\.|_test\.(go|py|rb|c|cc|cpp)$|^test_|Test\.(java|kt|cs)$)/;
 
+/** Same exclusions the built-in walk applies during traversal, as a path
+ *  predicate — the lci backend gets repo-wide hits and must filter after the
+ *  fact, or demo/example scripts (e.g. prisma's examples/…/scripts/seed.ts)
+ *  leak into candidates as if they were library error sites. */
+export function isExcludedPath(rel: string): boolean {
+  const segs = rel.split("/");
+  for (const d of segs.slice(0, -1)) {
+    if (SKIP_DIRS.has(d) || /^tests?$|^spec$/.test(d)) return true;
+  }
+  return TEST_FILE.test(rel);
+}
+
 interface Pattern {
   kind: string;
   re: RegExp;
@@ -123,6 +135,7 @@ export function candidatesFromLciJson(kind: string, repoPath: string, payload: L
     if (!r.path || !r.line) continue;
     const rel = isAbsolute(r.path) ? relative(repoPath, r.path) : r.path;
     if (rel.startsWith("..")) continue;
+    if (isExcludedPath(rel)) continue;
     const key = `${rel}:${r.line}`;
     if (seen.has(key)) continue;
     seen.add(key);

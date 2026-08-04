@@ -88,6 +88,9 @@ describe("lci JSON mapping", () => {
         },
         { path: "/repo/src/a.ts", line: 113 }, // duplicate
         { path: "/outside/other.ts", line: 5 }, // outside repo root
+        { path: "/repo/examples/prisma-8-demo-sqlite/scripts/seed.ts", line: 119 }, // demo script, not library code
+        { path: "/repo/docs/guide.ts", line: 7 }, // docs snippet
+        { path: "/repo/src/util.test.ts", line: 9 }, // test file
       ],
     };
     const seen = new Set<string>();
