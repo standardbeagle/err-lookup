@@ -12,6 +12,7 @@ function repos(n: number): RepoEntry[] {
     description: null,
     language: "TypeScript",
     stars: 100 + i,
+    sourceFiles: 500 + i,
     errorCount: n - i, // descending, so input order already matches the sort
     analyzedSha: "0".repeat(40),
     analyzedAt: "2026-08-01T00:00:00.000Z",

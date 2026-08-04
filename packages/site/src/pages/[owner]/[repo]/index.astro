@@ -28,7 +28,7 @@ const ld = JSON.stringify({
   <script slot="head" type="application/ld+json" set:html={ld} />
   <p class="muted"><a href="/">ErrLookup</a> › {repo.repo}</p>
   <h1>{repo.repo}</h1>
-  <p class="muted">{repo.description ?? ""} · {repo.language ?? "—"} · ★ {repo.stars.toLocaleString()}</p>
+  <p class="muted">{repo.description ?? ""} · {repo.language ?? "—"} · {repo.sourceFiles != null ? `${repo.sourceFiles.toLocaleString()} source files` : "source files not counted"}</p>
   <p class="muted">Analyzed at <code>{repo.analyzedSha.slice(0, 10)}</code> on {repo.analyzedAt.slice(0, 10)}. {errors.length} documented errors.</p>
 
   <table>
