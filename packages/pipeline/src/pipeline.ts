@@ -62,6 +62,7 @@ export async function acquireLargeRepoLock(
   }
 }
 import { fetchRepoMeta } from "./vcs/github-meta.js";
+import { countSourceFiles } from "./phase/candidates.js";
 import { upsertRepo } from "./db/store.js";
 import { runPhases, type RunPhasesResult } from "./phase/runner.js";
 
@@ -108,6 +109,17 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
     log(`cloning ${repo} → ${work.path}`);
     await cloneShallow(repo, work.path, opts.cloneUrlOverride);
 
+    // Memory guard (2026-08-04 host-OOM incident): cap the lci index budget
+    // per clone. Error-string discovery needs breadth, not a full index of a
+    // 500 MB corpus — lci's per-byte index cost on large repos (reference
+    // tracker) turned unbudgeted servers into 8-26 GB RSS and crashed the
+    // host. 200 MB in priority order is ample for error sites and bounds a
+    // server at low single-digit GB. "reduced" indexes what fits, loudly.
+    writeFileSync(
+      join(work.path, ".lci.kdl"),
+      'index {\n    max_total_size_mb 200\n    overflow_policy "reduced"\n}\n'
+    );
+
     // Disk budget (§11.1/§11.3). Two tiers:
     //  - hard cap (default 20GB): recorded skipped_too_large, never analyzed;
     //  - large threshold (default 2GB): analyzed, but serialized machine-wide
@@ -132,13 +144,15 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
 
     const sha = await headSha(work.path);
     log(`HEAD sha ${sha}`);
+    const sourceFiles = countSourceFiles(work.path);
+    upsertRepo(opts.db, { repo, sourceFiles });
     // GitHub-hosted repos get description/language/stars; local clones (tests)
     // and API failures leave nulls — honest gaps, never fabricated.
     if (!opts.cloneUrlOverride) {
       const meta = await fetchRepoMeta(repo);
       if (meta) {
         upsertRepo(opts.db, { repo, ...meta });
-        log(`meta: ${meta.language ?? "?"} · ${meta.stars} stars`);
+        log(`meta: ${meta.language ?? "?"} · ${sourceFiles} source files · ${meta.stars} stars`);
       } else {
         log("meta: GitHub API unavailable (kept null)");
       }
