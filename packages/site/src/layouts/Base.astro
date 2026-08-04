@@ -65,23 +65,22 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
          blocks keep a comfortable measure; tables, code and video do not. */
       main > :is(p, ul, ol, h1, h2, h3, blockquote), details > :is(p, ul, ol) { max-width: var(--measure); }
 
-      /* type scale — clear stops: 2.25 / 1.375 / 1 / .875 */
+      /* type scale — clear stops: 2.25 / 1.375 / 1; 1rem (16px) is the floor */
       h1 { font-size: 2.25rem; line-height: 1.15; font-weight: 800; letter-spacing: -0.015em; margin: var(--s5) 0 var(--s2); }
       h2 { font-size: 1.375rem; line-height: 1.3; font-weight: 700; margin: var(--s5) 0 var(--s1); }
       p { margin: var(--s1) 0 var(--s2); }
       .lead { font-size: 1.125rem; color: var(--mute); max-width: 56ch; }
-      .muted { color: var(--mute); font-size: .875rem; }
+      .muted { color: var(--mute); }
 
       a { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 2px; }
       a:hover { color: var(--accent); }
       :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
       pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-      pre { background: var(--card); border: 1px solid var(--line); padding: var(--s2); overflow: auto; border-radius: 8px; font-size: .85rem; margin: var(--s2) 0; }
-      code { font-size: .9em; }
+      pre { background: var(--card); border: 1px solid var(--line); padding: var(--s2); overflow: auto; border-radius: 8px; margin: var(--s2) 0; }
 
-      table { width: 100%; border-collapse: collapse; margin: var(--s2) 0; font-size: .92rem; }
-      th { text-transform: uppercase; letter-spacing: .04em; font-size: .75rem; color: var(--mute); }
+      table { width: 100%; border-collapse: collapse; margin: var(--s2) 0; }
+      th { text-transform: uppercase; letter-spacing: .04em; color: var(--mute); }
       th, td { text-align: left; padding: .55rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 
       details { margin: var(--s1) 0; border: 1px solid var(--line); border-radius: 8px; padding: var(--s1) var(--s2); background: var(--card); }
@@ -98,7 +97,7 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
       nav.top .navlinks { display: flex; align-items: center; gap: .1rem; }
       /* 44x44 in BOTH axes — a 20px icon with 8px padding clears the height
          requirement while still being a 36px-wide tap target. */
-      nav.top a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0 .6rem; text-decoration: none; color: var(--mute); font-size: .95rem; }
+      nav.top a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0 .6rem; text-decoration: none; color: var(--mute); }
       nav.top a.brand { min-width: 0; }
       nav.top a:hover { color: var(--accent-strong); }
       nav.top a.brand { font-weight: 800; font-size: 1.05rem; color: var(--ink); gap: .5rem; padding-left: 0; }
@@ -121,7 +120,7 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
       form.navsearch input:focus { border-color: var(--accent); }
       form.navsearch button {
         min-height: 44px; padding: 0 .9rem; border-radius: 8px; border: 1px solid var(--line);
-        background: var(--accent); color: #fff; font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer;
+        background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
       }
       form.navsearch button:hover { background: var(--accent-strong); }
       @media (prefers-color-scheme: dark) { form.navsearch button { color: #1c0d02; } }
@@ -135,7 +134,7 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
       /* Narrow phones: the label text is what overflows first, so shrink the
          submit to its icon-free minimum and let links wrap freely. */
       @media (max-width: 380px) {
-        nav.top a { padding: 0 .35rem; font-size: .9rem; }
+        nav.top a { padding: 0 .35rem; }
         form.navsearch button { padding: 0 .7rem; }
       }
       /* Table rows are the main navigation on repo and listing pages, so their
@@ -152,7 +151,7 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
       nav.top a.gh:hover { color: var(--ink); }
 
       footer.site { border-top: 1px solid var(--line); margin-top: var(--s6); background: var(--card); }
-      footer.site > div { max-width: var(--maxw); margin: 0 auto; padding: var(--s3) var(--s2); font-size: .875rem; color: var(--mute); display: flex; gap: var(--s2); flex-wrap: wrap; align-items: center; }
+      footer.site > div { max-width: var(--maxw); margin: 0 auto; padding: var(--s3) var(--s2); color: var(--mute); display: flex; gap: var(--s2); flex-wrap: wrap; align-items: center; }
       footer.site a { color: var(--mute); }
       footer.site a:hover { color: var(--accent-strong); }
 
@@ -175,16 +174,16 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
       /* stat row: number dominates, label recedes */
       .stats { display: flex; gap: var(--s4); flex-wrap: wrap; margin: var(--s3) 0; }
       .stats b { display: block; font-size: 1.75rem; font-weight: 800; line-height: 1.1; }
-      .stats span { font-size: .8125rem; text-transform: uppercase; letter-spacing: .05em; color: var(--mute); }
+      .stats span { text-transform: uppercase; letter-spacing: .05em; color: var(--mute); }
 
       input[type="text"], textarea, select {
         width: 100%; padding: .65rem .7rem; font: inherit; color: var(--ink);
         background: var(--card); border: 1px solid var(--line); border-radius: 8px;
       }
-      label { font-weight: 600; font-size: .92rem; display: block; margin: var(--s2) 0 .3rem; }
+      label { font-weight: 600; display: block; margin: var(--s2) 0 .3rem; }
 
       .pill {
-        display: inline-block; font-size: .72rem; font-weight: 600; padding: .15rem .5rem;
+        display: inline-block; font-weight: 600; padding: .15rem .5rem;
         border-radius: 99px; background: var(--card); color: var(--accent-strong); border: 1px solid var(--line);
         text-transform: uppercase; letter-spacing: .03em;
       }
@@ -204,7 +203,7 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
       @media (prefers-color-scheme: dark) { form.pagesearch button { color: #1c0d02; } }
 
       /* pager: 44px targets, current page reads as a state not a link */
-      nav.pager { display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; margin: var(--s2) 0 var(--s3); font-size: .92rem; }
+      nav.pager { display: flex; align-items: center; gap: var(--s1); flex-wrap: wrap; margin: var(--s2) 0 var(--s3); }
       nav.pager .nums { display: flex; align-items: center; gap: .15rem; margin: 0 auto; }
       nav.pager a, nav.pager .here, nav.pager .off {
         display: inline-flex; align-items: center; justify-content: center;
