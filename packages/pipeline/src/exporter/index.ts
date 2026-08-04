@@ -85,6 +85,7 @@ function rowToRepoEntry(r: typeof repositories.$inferSelect): RepoEntry {
     description: r.description,
     language: r.language,
     stars: r.stars,
+    sourceFiles: r.sourceFiles,
     defaultBranch: r.defaultBranch,
     analyzedSha: r.analyzedSha ?? "",
     analyzedAt: r.analyzedAt ?? "",
