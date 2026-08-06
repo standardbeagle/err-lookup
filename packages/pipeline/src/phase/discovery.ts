@@ -1,6 +1,6 @@
 import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider } from "../provider/types.js";
-import { runProvider } from "../provider/run.js";
+import { runProvider, watchdogBudgetMs } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
 import { mapPool, chunk } from "../util/pool.js";
 import { DISCOVERY_PROMPT, candidateDiscoveryPrompt, type DiscoveredErrorJson } from "./prompts.js";
@@ -36,8 +36,7 @@ export async function runDiscovery(
   onBatch?: (done: number, total: number) => void
 ): Promise<DiscoveryResult> {
   const started = Date.now();
-  const primary = cfg.providers[cfg.phaseProviders?.discovery ?? cfg.defaults.primary];
-  const budget = primary?.timeoutMs ?? 600_000;
+  const budget = watchdogBudgetMs(cfg, "discovery");
 
   const { candidates, backend } = extractCandidatesAuto(repoPath);
 

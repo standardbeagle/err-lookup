@@ -1,6 +1,6 @@
 import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider } from "../provider/types.js";
-import { runProvider } from "../provider/run.js";
+import { runProvider, watchdogBudgetMs } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
 import { mapPool, chunk } from "../util/pool.js";
 import {
@@ -59,7 +59,7 @@ export async function runAnalysis(
   await mapPool(units, cfg.defaults.batchConcurrency, async (unit) => {
     try {
       const routingPhase = unit.pass.enrichment ? "enrichment" : "defense";
-      const budget = cfg.providers[cfg.phaseProviders?.[routingPhase] ?? cfg.defaults.primary]?.timeoutMs ?? 600_000;
+      const budget = watchdogBudgetMs(cfg, routingPhase);
       const result = await withTimeout(
         runProvider(
           analysisPrompt(unit.batch, unit.startIndex, unit.pass),
