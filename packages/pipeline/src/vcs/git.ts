@@ -19,6 +19,21 @@ export async function cloneShallow(
   await exec("git", ["clone", "--depth", "1", url, dest], { maxBuffer: 50 * 1024 * 1024 });
 }
 
+/**
+ * Read the remote HEAD SHA without cloning (`git ls-remote`). This is what
+ * lets a re-entrant scan visit every corpus repo cheaply: an unchanged repo
+ * costs one ref lookup instead of a full shallow clone.
+ */
+export async function remoteHeadSha(repo: string, cloneUrl?: string): Promise<string> {
+  const url = cloneUrl ?? `https://github.com/${repo}.git`;
+  const { stdout } = await exec("git", ["ls-remote", url, "HEAD"], { timeout: 60_000 });
+  const sha = stdout.split(/\s/)[0];
+  if (!sha || !/^[0-9a-f]{40}$/.test(sha)) {
+    throw new Error(`ls-remote returned no HEAD sha for ${url}`);
+  }
+  return sha;
+}
+
 /** Read HEAD SHA of a git working dir. */
 export async function headSha(dir: string): Promise<string> {
   const { stdout } = await exec("git", ["rev-parse", "HEAD"], { cwd: dir });

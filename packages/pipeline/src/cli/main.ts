@@ -6,10 +6,8 @@ import { openDb } from "../db/client.js";
 import { loadConfig } from "../config/index.js";
 import { buildProviders } from "../providers.js";
 import { analyzeRepo } from "../pipeline.js";
+import { runScan } from "../scan.js";
 import { publishDataset } from "../exporter/index.js";
-import { mapPool } from "../util/pool.js";
-import { msUntilOffPeak } from "../util/peak.js";
-import { sleep } from "../util/watchdog.js";
 import { resetRepo, reposByStatus, purgeOrphanedJobs } from "../db/store.js";
 import { printStatus } from "./status.js";
 
@@ -149,21 +147,22 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (cmd === "batch") {
+  if (cmd === "scan") {
     const { values } = parseArgs({
       options: {
         phases: { type: "string", default: "1,2,3,5" },
         force: { type: "boolean", default: false },
+        "seed-only": { type: "boolean", default: false },
       },
       allowPositionals: true,
       args: rest,
     });
     const file = positional[0];
     if (!file) {
-      console.error("usage: errlookup batch <file.txt>  # one owner/repo per line");
+      console.error("usage: errlookup scan <file.txt> [--seed-only]  # one owner/repo per line");
       process.exit(2);
     }
-    const repos = readFileSync(resolve(file), "utf8")
+    const corpus = readFileSync(resolve(file), "utf8")
       .split("\n")
       .map((l) => l.trim())
       .filter((l) => l && !l.startsWith("#"));
@@ -172,87 +171,43 @@ async function main(): Promise<void> {
       .map((n) => PHASE_NUM_TO_NAME[Number.parseInt(n.trim(), 10)])
       .filter(Boolean) as string[];
     const cfg = loadConfig();
-    const providers = buildProviders(cfg);
     const { db, raw } = openDb(dbPath());
-    let ok = 0;
-    let failed = 0;
-    let skipped = 0;
-    // Circuit breaker: provider quota exhaustion fails every repo the same way;
-    // stop burning clones and let the next scheduled run resume (§11.2). With
-    // repos in flight concurrently, "consecutive" means consecutive completions
-    // — repos already running are allowed to finish.
-    let consecutiveFailures = 0;
-    const BREAKER = 5;
-    let tripped = false;
-
-    // Concurrent repos interleave their output, so every line carries its repo.
-    // The scheduled runs grep these logs; an unattributed line is useless there.
-    const say = (repo: string, msg: string) => console.log(`[${repo}] ${msg}`);
-    const complain = (repo: string, msg: string) => console.error(`[${repo}] ${msg}`);
-
     try {
-      console.log(
-        `batch: ${repos.length} repos, ${cfg.defaults.maxConcurrent} concurrent, ` +
-          `${cfg.defaults.batchConcurrency} calls/phase, ${cfg.defaults.analysisBatchSize} errors/call`
-      );
-      await mapPool(repos, cfg.defaults.maxConcurrent, async (repo) => {
-        if (tripped) {
-          skipped++;
-          return;
-        }
-        // Peak-price gate. Checked between repos, never mid-repo: interrupting a
-        // repo would abandon an in-flight phase and re-spend it on resume, which
-        // costs more than the 2x rate it was avoiding.
-        if (cfg.defaults.skipPeak) {
-          const waitMs = msUntilOffPeak(new Date());
-          if (waitMs > 0) {
-            say(repo, `peak pricing until ${new Date(Date.now() + waitMs).toISOString()} — holding`);
-            await sleep(waitMs);
-          }
-        }
-        say(repo, "start");
-        try {
-          const r = await analyzeRepo(repo, {
-            db,
-            providers,
-            cfg,
-            phases: Object.fromEntries(wantedPhases.map((p) => [p, true])),
-            force: values.force,
-            onLog: (m) => say(repo, m),
-          });
-          if (r.failed) {
-            complain(repo, `FAILED: ${r.failed}`);
-            failed++;
-            consecutiveFailures++;
-          } else {
-            say(repo, `→ ${r.errorCount} errors`);
-            ok++;
-            consecutiveFailures = 0;
-          }
-        } catch (e) {
-          complain(repo, `FAILED: ${(e as Error).message}`);
-          failed++;
-          consecutiveFailures++;
-        }
-        if (consecutiveFailures >= BREAKER && !tripped) {
-          tripped = true;
-          console.error(
-            `batch aborted: ${BREAKER} consecutive failures — provider likely rate-limited/exhausted`
-          );
-        }
+      if (!values["seed-only"]) {
+        console.log(
+          `scan: ${corpus.length} corpus repos, ${cfg.defaults.maxConcurrent} concurrent, ` +
+            `${cfg.defaults.batchConcurrency} calls/phase, ${cfg.defaults.analysisBatchSize} errors/call`
+        );
+      }
+      const summary = await runScan({
+        db,
+        providers: values["seed-only"] ? {} : buildProviders(cfg),
+        cfg,
+        corpus,
+        phases: Object.fromEntries(wantedPhases.map((p) => [p, true])),
+        force: values.force,
+        seedOnly: values["seed-only"],
+        // Concurrent repos interleave their output, so every line carries its
+        // repo. The scheduled runs grep these logs.
+        onLog: (repo, msg) => console.log(`[${repo}] ${msg}`),
       });
-      console.log(
-        `\nbatch done: ${ok} ok, ${failed} failed${tripped ? `, ${skipped} skipped (breaker tripped)` : ""}`
-      );
+      if (values["seed-only"]) {
+        console.log(`seeded: ${summary.seeded.added} added, ${summary.seeded.requeued} requeued`);
+      } else {
+        console.log(
+          `\nscan done: ${summary.ok} ok, ${summary.unchanged} unchanged, ${summary.failed} failed` +
+            (summary.leftQueued > 0 ? `, ${summary.leftQueued} left queued (breaker)` : "")
+        );
+      }
     } finally {
       raw.close();
     }
     return;
   }
 
-  console.error("err-lookup pipeline. commands: analyze, batch, reset, export, status");
+  console.error("err-lookup pipeline. commands: analyze, scan, reset, export, status");
   console.error("  errlookup analyze <owner/repo> [--phases 1,2,3,4,5] [--force]");
-  console.error("  errlookup batch <file.txt> [--phases 1,2,3,5] [--force]");
+  console.error("  errlookup scan <file.txt> [--phases 1,2,3,5] [--force] [--seed-only]");
   console.error("  errlookup reset [--failed] [--dry-run] [owner/repo ...]");
   console.error("  errlookup export [--out-dir <path>]");
   console.error("  errlookup status");
