@@ -66,7 +66,9 @@ function cfg(extraDefaults: string[] = []) {
 }
 
 describe("runDiscovery batching", () => {
-  it("preserves candidate order when batches complete out of order", async () => {
+  // 30s: two real runDiscovery calls whose candidate extraction may cold-start
+  // the lci index server; under a parallel turbo run that alone can pass 5s.
+  it("preserves candidate order when batches complete out of order", { timeout: 30_000 }, async () => {
     // Serial run establishes the reference ordering.
     const serial = new BatchProvider("bulk");
     const a = await runDiscovery(repoPath, { bulk: serial }, cfg());
