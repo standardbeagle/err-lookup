@@ -25,7 +25,7 @@ const title = e.errorCode
   : `${e.errorMessage} — ${repoFullName} | ErrLookup`;
 const description = e.documentation.slice(0, 155);
 const related = relatedErrors(repoFullName, e.slug);
-const jsonUrl = `/data/errors/${e.id}.json`;
+const jsonUrl = `/api/errors/${e.id}`;
 const issuesUrl = `https://github.com/${repoFullName}/issues`;
 
 const SITE = "https://errors.standardbeagle.com";

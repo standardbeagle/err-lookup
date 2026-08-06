@@ -41,6 +41,7 @@ function htmlFiles(dir: string): string[] {
 function hrefToDistPath(href: string): string | null {
   if (!href.startsWith("/")) return null;
   if (href.startsWith("/data/")) return null; // static JSON asset, not an HTML page
+  if (href.startsWith("/api/")) return null; // served by the Pages Function, no dist file
   const clean = href.split("#")[0]!.split("?")[0]!;
   const rel = clean.replace(/^\//, "");
   // Static assets (favicon, media, etc.) must exist in dist as plain files.
@@ -63,7 +64,7 @@ describe("site build (§8.3)", () => {
     for (const e of readErrorRecords()) {
       const html = readFileSync(resolve(dist, e.repo, e.slug, "index.html"), "utf8");
       expect(html).toContain(e.errorMessage);
-      expect(html).toContain(`/data/errors/${e.id}.json`);
+      expect(html).toContain(`/api/errors/${e.id}`);
     }
   });
 
