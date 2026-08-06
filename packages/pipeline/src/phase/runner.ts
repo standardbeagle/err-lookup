@@ -1,9 +1,9 @@
 import type { Db } from "../db/client.js";
 import {
-  upsertRepo,
   recordPhase,
   latestPhaseRun,
-  replaceErrors,
+  integrateAnalyzedVersion,
+  recordAnalysisFailure,
   getRepo,
 } from "../db/store.js";
 import type { PhaseName, ErrorEntry } from "@errlookup/schema";
@@ -56,6 +56,22 @@ function parseIndexedMap<T>(result: string | null | undefined): Map<number, T> |
   }
 }
 
+/** Parse + revalidate the persisted post-patch records of a verify run. */
+function parseVerifyResult(result: string | null | undefined): ErrorEntry[] | null {
+  if (!result) return null;
+  try {
+    const arr = JSON.parse(result) as unknown[];
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+    const valid = arr
+      .map((r) => validateErrorEntry(r))
+      .filter((r): r is { ok: true; value: ErrorEntry } => r.ok)
+      .map((r) => r.value);
+    return valid.length > 0 ? valid : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Orchestrate discovery → enrichment → assemble for one repo, with idempotent
  * resume per phase (§4.5) and job_history instrumentation (§4.4). Records the
@@ -81,7 +97,9 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
       log(`phase discovery: skipped (already succeeded for ${sha.slice(0, 8)})`);
     } else {
       const started = Date.now();
-      upsertRepo(db, { repo, status: "analyzing", analyzedSha: sha });
+      // In-flight state lives in job_history only: the repository row keeps
+      // pointing at the last published version until the new one is complete,
+      // so a re-scan (or its failure) never knocks a repo out of the export.
       recordPhase(db, { repo, phase: "discovery", status: "running", startedAt: started, analyzedSha: sha });
       try {
         const r = await runDiscovery(repoPath, providers, cfg, (b, t) =>
@@ -109,7 +127,7 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           analyzedSha: sha,
           errorLog: msg,
         });
-        upsertRepo(db, { repo, status: "failed", lastError: `discovery: ${msg}` });
+        recordAnalysisFailure(db, repo, `discovery: ${msg}`);
         log(`phase discovery: FAILED — ${msg}`);
         return { errorCount: 0, rejects: [], skipped, failed: `discovery: ${msg}` };
       }
@@ -117,14 +135,7 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
   }
 
   if (discovered.length === 0) {
-    replaceErrors(db, repo, []);
-    upsertRepo(db, {
-      repo,
-      status: "analyzed",
-      analyzedSha: sha,
-      analyzedAt: new Date().toISOString(),
-      errorCount: 0,
-    });
+    integrateAnalyzedVersion(db, repo, sha, []);
     log("phase discovery: no errors found; repo marked analyzed");
     return { errorCount: 0, rejects: [], skipped };
   }
@@ -224,7 +235,7 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         recordPhase(db, { repo, phase: "defense", status: "failed", startedAt: started, completedAt: Date.now(), analyzedSha: sha, errorLog: msg });
       }
       if (need.enrichment) {
-        upsertRepo(db, { repo, status: "failed", lastError: `enrichment: ${msg}` });
+        recordAnalysisFailure(db, repo, `enrichment: ${msg}`);
         log(`phase enrichment: FAILED — ${msg}`);
         return { errorCount: 0, rejects: [], skipped, failed: `enrichment: ${msg}` };
       }
@@ -232,15 +243,19 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
     }
   }
 
-  // ----- Assemble + write -----
-  // Reached when the repo write never completed (fresh analysis, or a prior run
-  // whose write failed). Assembly is deterministic from the phase outputs above.
+  // ----- Assemble -----
+  // Deterministic from the persisted phase outputs above; nothing is written to
+  // the errors table until the whole version (verify included) is complete.
   const assembled = assemble({ repo, sha, repoPath, discovered, enriched: enrichedMap, defense: defenseMap });
-  replaceErrors(db, repo, assembled.records.map(toRow));
 
   // ----- Phase 5: Verify (patch loop, max 2 rounds) -----
   if (wanted("verify") && assembled.records.length > 0) {
     if (phaseDone(db, repo, sha, "verify", opts.force)) {
+      // Reuse the persisted post-patch records — reassembly alone would silently
+      // drop the verify patches on resume. Older verify rows predate the result
+      // payload; for those the reassembled records are the best available.
+      const persisted = parseVerifyResult(latestPhaseRun(db, repo, sha, "verify")?.result);
+      if (persisted) assembled.records = persisted;
       skipped.push("verify");
       log(`phase verify: skipped (already succeeded for ${sha.slice(0, 8)})`);
     } else {
@@ -258,19 +273,20 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         records = revalidated;
         log(`phase verify: round ${round + 1} applied ${applied} patches → ${records.length} valid records`);
       }
-      replaceErrors(db, repo, records.map(toRow));
       assembled.records = records;
-      recordPhase(db, { repo, phase: "verify", status: "success", startedAt: started, completedAt: Date.now(), analyzedSha: sha });
+      recordPhase(db, {
+        repo,
+        phase: "verify",
+        status: "success",
+        startedAt: started,
+        completedAt: Date.now(),
+        analyzedSha: sha,
+        result: JSON.stringify(records),
+      });
     }
   }
 
-  upsertRepo(db, {
-    repo,
-    status: "analyzed",
-    analyzedSha: sha,
-    analyzedAt: new Date().toISOString(),
-    errorCount: assembled.records.length,
-  });
+  integrateAnalyzedVersion(db, repo, sha, assembled.records.map(toRow));
   log(`done: ${assembled.records.length} records (${assembled.rejects.length} rejects)`);
   return { errorCount: assembled.records.length, rejects: assembled.rejects, skipped };
 }

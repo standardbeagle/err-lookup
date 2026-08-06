@@ -63,7 +63,7 @@ export async function acquireLargeRepoLock(
 }
 import { fetchRepoMeta } from "./vcs/github-meta.js";
 import { countSourceFiles } from "./phase/candidates.js";
-import { upsertRepo } from "./db/store.js";
+import { upsertRepo, recordAnalysisFailure } from "./db/store.js";
 import { runPhases, type RunPhasesResult } from "./phase/runner.js";
 
 export interface AnalyzeOptions {
@@ -118,7 +118,7 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
     const sizeMb = await dirSizeMb(work.path);
     if (sizeMb > hardCapMb) {
       const msg = `skipped_too_large: clone ${sizeMb}MB > cap ${hardCapMb}MB`;
-      upsertRepo(opts.db, { repo, status: "failed", lastError: msg });
+      recordAnalysisFailure(opts.db, repo, msg);
       log(msg);
       return { errorCount: 0, rejects: [], skipped: [], failed: msg };
     }

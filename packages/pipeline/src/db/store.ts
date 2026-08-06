@@ -122,6 +122,54 @@ export function errorsForRepo(db: Db, repo: string): ErrorRow[] {
   return db.select().from(errors).where(eq(errors.repo, repo)).all();
 }
 
+/**
+ * Integrate a COMPLETE analysis for `sha` as the repo's published version:
+ * replace the records and advance the version pointer (status/analyzedSha/
+ * errorCount) in one transaction. This is the only place a version becomes
+ * visible to the exporter, so the errors table and the pointer can never
+ * disagree — a re-analysis that dies partway leaves the prior version intact.
+ */
+export function integrateAnalyzedVersion(
+  db: Db,
+  repo: string,
+  sha: string,
+  rows: Omit<ErrorRow, "updatedAt">[]
+): void {
+  tx(db, () => {
+    db.delete(errors).where(eq(errors.repo, repo)).run();
+    if (rows.length > 0) {
+      db.insert(errors)
+        .values(rows as (typeof errors.$inferInsert)[])
+        .run();
+    }
+    upsertRepo(db, {
+      repo,
+      status: "analyzed",
+      analyzedSha: sha,
+      analyzedAt: new Date().toISOString(),
+      errorCount: rows.length,
+      lastError: null,
+    });
+  });
+}
+
+/**
+ * Record a failed (re-)analysis without disturbing the published version: a
+ * repo that already has one keeps exporting it (lastError notes the failed
+ * attempt); only a repo with nothing published is demoted to `failed`.
+ */
+export function recordAnalysisFailure(db: Db, repo: string, lastError: string): void {
+  const existing = getRepo(db, repo);
+  const hasPublishedVersion =
+    (existing?.status === "analyzed" || existing?.status === "exported") &&
+    existing.analyzedSha != null;
+  if (hasPublishedVersion) {
+    upsertRepo(db, { repo, lastError });
+  } else {
+    upsertRepo(db, { repo, status: "failed", lastError });
+  }
+}
+
 export interface ResetSummary {
   repo: string;
   errorsDeleted: number;
