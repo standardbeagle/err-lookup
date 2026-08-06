@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro";
 import { getManifest, getRepos } from "../data/load.js";
+import { GUIDES, guideHref } from "../data/guides.js";
 
 // AEO manifest (§6.2): site purpose + dataset URLs for answer engines.
 export const GET: APIRoute = () => {
@@ -18,6 +19,11 @@ export const GET: APIRoute = () => {
   lines.push("- [index](https://errors.standardbeagle.com/data/index.json): compact search index");
   lines.push("- [repos](https://errors.standardbeagle.com/data/repos.json): repo list");
   lines.push("- [schema](https://errors.standardbeagle.com/schema.json): JSON Schema (Draft-07)");
+  lines.push("");
+  lines.push("## Failure class guides");
+  for (const g of GUIDES) {
+    lines.push(`- [${g.title}](https://errors.standardbeagle.com${guideHref(g.slug)}): ${g.description}`);
+  }
   lines.push("");
   lines.push("## Per-repo datasets");
   for (const r of repos) {

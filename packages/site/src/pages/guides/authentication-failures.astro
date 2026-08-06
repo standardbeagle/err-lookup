@@ -1,0 +1,51 @@
+---
+import Guide from "../../layouts/Guide.astro";
+---
+<Guide slug="authentication-failures">
+  <p class="lead">
+    Auth failures split into two questions the server asks in order: <em>who are you?</em>
+    (authentication — fails as 401 or "invalid token") and <em>are you allowed?</em>
+    (authorization — fails as 403 or "access denied"). Fixing the wrong one wastes the
+    afternoon, so classify first.
+  </p>
+
+  <h2>401 family: the server doesn't believe you</h2>
+  <p>
+    Missing header, malformed header (<code>Bearer</code> prefix absent or doubled), an expired
+    token, a token signed with the wrong key, or a token for the wrong audience/issuer. JWTs
+    make this concrete — decode the payload (it is only base64, no secret needed) and read it:
+  </p>
+  <pre>{`echo "$TOKEN" | cut -d. -f2 | base64 -d 2>/dev/null | jq '{exp: (.exp | todate), aud, iss, scope}'`}</pre>
+  <p>
+    Check <code>exp</code> against the current time, and <code>aud</code>/<code>iss</code>
+    against what the receiving service validates. Two non-obvious causes worth ruling out early:
+    clock skew (a machine minutes off makes valid tokens "expired" or "not yet valid"), and
+    rotated signing keys with a service still caching the old JWKS.
+  </p>
+
+  <h2>403 family: it believes you, and the answer is no</h2>
+  <p>
+    Credentials are valid but lack the specific permission: missing OAuth scope, IAM policy gap,
+    role not granted, or resource-level rules (private repo, another tenant's object). The fix
+    lives in the provider's permission model, not in your code — request the scope during
+    authorization, grant the role, or use the identity that owns the resource. Note that some
+    APIs return 404 instead of 403 for resources you can't see, to avoid leaking existence.
+  </p>
+
+  <h2>Failures that masquerade as bugs</h2>
+  <p>
+    API keys pasted with trailing newlines or wrapped in quotes; env vars set in your shell but
+    not in the service's environment (CI, systemd, container); keys for the wrong environment
+    (test vs live — Stripe-style prefixes make this checkable); OAuth refresh tokens silently
+    revoked when a user changes their password. When a request works in curl but not in code,
+    print the exact header your code sends — byte for byte — before suspecting the provider.
+  </p>
+
+  <h2>Handling it properly</h2>
+  <p>
+    On 401 with a refresh token: refresh once, retry once, and if that fails surface a
+    re-authentication error — a refresh loop against a revoked grant is a rate-limit incident.
+    On 403: never retry; log identity, resource, and required permission so the operator can fix
+    the grant. And keep secrets out of logs — log the key's name or prefix, never the value.
+  </p>
+</Guide>

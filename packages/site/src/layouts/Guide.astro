@@ -1,0 +1,83 @@
+---
+import Base from "./Base.astro";
+import { guideBySlug, guideErrors, guideHref, GUIDES } from "../data/guides.js";
+import { repoPaths } from "../data/load.js";
+
+interface Props {
+  slug: string;
+}
+const { slug } = Astro.props;
+const guide = guideBySlug(slug);
+
+// Occurrences from the live dataset, grouped by repo, largest first. The list
+// regenerates on every publish, so guides deepen as the corpus grows.
+const matches = guideErrors(guide);
+const byRepo = new Map<string, typeof matches>();
+for (const e of matches) {
+  const list = byRepo.get(e.repo) ?? [];
+  list.push(e);
+  byRepo.set(e.repo, list);
+}
+const repoGroups = [...byRepo.entries()].sort((a, b) => b[1].length - a[1].length);
+const TOP_REPOS = 10;
+const PER_REPO = 5;
+
+const others = GUIDES.filter((g) => g.slug !== slug);
+
+const jsonLd = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  headline: guide.title,
+  description: guide.description,
+  author: { "@type": "Organization", name: "Standard Beagle Studio", url: "https://standardbeagle.com" },
+});
+---
+<Base title={`${guide.title} — ErrLookup`} description={guide.description}>
+  <script slot="head" type="application/ld+json" set:html={jsonLd} />
+  <p class="muted"><a href="/guides/">Guides</a></p>
+  <h1>{guide.title}</h1>
+  <slot />
+
+  {matches.length > 0 && (
+    <>
+      <h2>Documented occurrences</h2>
+      <p class="muted">
+        {matches.length.toLocaleString()} analyzed {matches.length === 1 ? "error" : "errors"} across{" "}
+        {repoGroups.length.toLocaleString()} {repoGroups.length === 1 ? "library" : "libraries"} match this
+        failure class. Each links to the thrown message, its source line, and documented fixes.
+      </p>
+      {repoGroups.slice(0, TOP_REPOS).map(([repo, list]) => {
+        const { owner, name } = repoPaths(repo);
+        return (
+          <>
+            <h3><a href={`/${repo}/`}>{repo}</a></h3>
+            <ul>
+              {list.slice(0, PER_REPO).map((e) => (
+                <li>
+                  <a href={`/${repo}/${e.slug}/`}>{e.code ? `${e.code}: ${e.msg}` : e.msg}</a>
+                </li>
+              ))}
+              {list.length > PER_REPO && (
+                <li class="muted">
+                  <a href={`/${repo}/`}>+{list.length - PER_REPO} more in {name}</a>
+                </li>
+              )}
+            </ul>
+          </>
+        );
+      })}
+      {repoGroups.length > TOP_REPOS && (
+        <p class="muted">
+          …and {repoGroups.length - TOP_REPOS} more libraries — <a href="/search/">search</a> for your exact message.
+        </p>
+      )}
+    </>
+  )}
+
+  <h2>Other failure classes</h2>
+  <ul>
+    {others.map((g) => (
+      <li><a href={guideHref(g.slug)}>{g.title}</a></li>
+    ))}
+  </ul>
+</Base>

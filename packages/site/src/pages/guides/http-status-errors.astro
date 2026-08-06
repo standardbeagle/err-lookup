@@ -1,0 +1,42 @@
+---
+import Guide from "../../layouts/Guide.astro";
+---
+<Guide slug="http-status-errors">
+  <p class="lead">
+    A status error means the HTTP round trip <em>worked</em> — connection, TLS, request,
+    response all succeeded — and the server used the status code to tell you something. Whether
+    your client throws for it (axios rejects outside 2xx by default; fetch does not) is library
+    policy, not protocol.
+  </p>
+
+  <h2>Whose bug is it?</h2>
+  <table>
+    <tbody>
+      <tr><td><code>400</code> Bad Request</td><td>Yours: malformed body, wrong content type, failed validation. Read the response body — most APIs say exactly which field.</td></tr>
+      <tr><td><code>401</code> / <code>403</code></td><td>Yours: missing/expired credentials (401) or valid credentials without permission (403). See the authentication guide.</td></tr>
+      <tr><td><code>404</code></td><td>Ambiguous: wrong URL or genuinely absent resource. APIs also use it to hide resources you can't access.</td></tr>
+      <tr><td><code>409</code> / <code>422</code></td><td>Yours, semantically: version conflict or well-formed-but-invalid input.</td></tr>
+      <tr><td><code>429</code> Too Many Requests</td><td>You're being rate limited. Honor <code>Retry-After</code>; back off, don't hammer.</td></tr>
+      <tr><td><code>500</code></td><td>Theirs: an unhandled server error. Retrying rarely helps; report with a request ID if the API returns one.</td></tr>
+      <tr><td><code>502</code> / <code>503</code> / <code>504</code></td><td>Infrastructure: a proxy couldn't reach a healthy backend (502), the service is overloaded or deploying (503), or the upstream timed out (504). Transient by nature — the retryable family.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Get the whole story</h2>
+  <p>
+    The status code is the headline; the response <em>body</em> and headers carry the actual
+    diagnosis. Log them on failure — an error handler that logs only "Request failed with status
+    code 400" discards the field-level detail the server already sent you. In axios that body is
+    <code>error.response.data</code>; in fetch you must read it before throwing your own error.
+  </p>
+
+  <h2>Retry policy in one paragraph</h2>
+  <p>
+    Retry <code>429</code> (respecting <code>Retry-After</code>), <code>503</code>, and
+    <code>502</code>/<code>504</code> for idempotent requests, with exponential backoff and a
+    cap. Never auto-retry 4xx — the request is wrong, and resending it is a louder way to be
+    wrong. Treat an unexpected 4xx in production as a bug report about your own request
+    construction, and an unexpected 5xx spike as the other side's incident: alert, degrade
+    gracefully, and stop sending non-essential traffic while it lasts.
+  </p>
+</Guide>

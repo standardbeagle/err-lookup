@@ -3,19 +3,27 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { GUIDES, guidesFor } from "../src/data/guides.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const siteRoot = resolve(__dirname, "..");
 const dist = resolve(siteRoot, "dist");
 const publicData = resolve(siteRoot, "public", "data");
 
-function readErrorRecords(): { repo: string; slug: string; errorMessage: string; id: string }[] {
+function readErrorRecords(): {
+  repo: string;
+  slug: string;
+  errorMessage: string;
+  errorCode: string | null;
+  id: string;
+}[] {
   const repos = JSON.parse(readFileSync(resolve(publicData, "repos.json"), "utf8")) as { repo: string }[];
-  const out: { repo: string; slug: string; errorMessage: string; id: string }[] = [];
+  const out: ReturnType<typeof readErrorRecords> = [];
   for (const r of repos) {
     const [owner, name] = r.repo.split("/");
     const errors = JSON.parse(readFileSync(resolve(publicData, `repos/${owner}/${name}.json`), "utf8"));
-    for (const e of errors) out.push({ repo: r.repo, slug: e.slug, errorMessage: e.errorMessage, id: e.id });
+    for (const e of errors)
+      out.push({ repo: r.repo, slug: e.slug, errorMessage: e.errorMessage, errorCode: e.errorCode ?? null, id: e.id });
   }
   return out;
 }
@@ -104,6 +112,28 @@ describe("site build (§8.3)", () => {
       }
     }
     expect(broken, broken.join("\n")).toEqual([]);
+  });
+
+  it("every registered guide builds a page, plus the hub", () => {
+    expect(existsSync(resolve(dist, "guides", "index.html"))).toBe(true);
+    for (const g of GUIDES) {
+      expect(existsSync(resolve(dist, "guides", g.slug, "index.html")), g.slug).toBe(true);
+    }
+    // guides are in the static-pages sitemap
+    const xml = readFileSync(resolve(dist, "sitemaps", "pages.xml"), "utf8");
+    for (const g of GUIDES) expect(xml).toContain(`/guides/${g.slug}/`);
+  });
+
+  it("error pages link the guides their code/message matches", () => {
+    for (const e of readErrorRecords()) {
+      const html = readFileSync(resolve(dist, e.repo, e.slug, "index.html"), "utf8");
+      for (const g of guidesFor(e.errorCode, e.errorMessage)) {
+        expect(html, `${e.slug} → ${g.slug}`).toContain(`/guides/${g.slug}/`);
+      }
+    }
+    // the fixture dataset must exercise the matcher at least once
+    const linked = readErrorRecords().some((e) => guidesFor(e.errorCode, e.errorMessage).length > 0);
+    expect(linked).toBe(true);
   });
 
   it("robots.txt + sitemap-index + llms.txt are emitted", () => {

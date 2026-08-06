@@ -1,0 +1,50 @@
+---
+import Guide from "../../layouts/Guide.astro";
+---
+<Guide slug="dns-resolution">
+  <p class="lead">
+    Before any connection, the hostname has to become an IP address. When that step fails you
+    get <code>getaddrinfo ENOTFOUND</code>, <code>EAI_AGAIN</code>, or "could not resolve host"
+    — and the two big cases need opposite fixes: either the <em>name</em> is wrong, or the
+    <em>resolver</em> is broken.
+  </p>
+
+  <h2>Wrong name vs broken resolver</h2>
+  <table>
+    <tbody>
+      <tr><td><code>ENOTFOUND</code></td><td>The resolver answered: that name does not exist (NXDOMAIN). Typo, missing DNS record, wrong environment (staging name in prod config), or a Docker service name used outside its network.</td></tr>
+      <tr><td><code>EAI_AGAIN</code></td><td>The resolver did not answer — a <em>temporary</em> resolution failure. The name may be fine; DNS infrastructure (local resolver, VPN DNS, container DNS, rate-limited upstream) is the problem.</td></tr>
+      <tr><td><code>ESERVFAIL</code></td><td>The upstream nameserver returned an error for the zone — commonly DNSSEC misconfiguration or a broken authoritative server.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Isolate the layer</h2>
+  <pre>dig api.example.com          # ask the configured resolver directly
+dig @1.1.1.1 api.example.com # bypass it — does a public resolver know the name?
+cat /etc/resolv.conf         # what resolver is this machine/container using?</pre>
+  <p>
+    If <code>dig</code> succeeds but your program still fails, the difference is usually
+    <em>which resolver each one uses</em>: browsers may use DNS-over-HTTPS, musl-based
+    containers (Alpine) resolve differently from glibc, and Node's
+    <code>dns.lookup</code> uses the system resolver while <code>dns.resolve</code> talks to
+    nameservers directly. VPNs are a classic split-horizon trap — internal names only resolve
+    while the VPN is up, and only through the VPN's DNS.
+  </p>
+
+  <h2>Containers and orchestrators</h2>
+  <p>
+    Inside Docker Compose or Kubernetes, service names (<code>db</code>,
+    <code>redis.default.svc</code>) resolve through the platform's internal DNS — from the host
+    or outside the network they are ENOTFOUND by design. The reverse also bites: a container
+    with a broken <code>/etc/resolv.conf</code> (host VPN changes are a frequent cause) gets
+    EAI_AGAIN for names that resolve fine on the host.
+  </p>
+
+  <h2>Handling it properly</h2>
+  <p>
+    Treat <code>ENOTFOUND</code> as a configuration bug: fail fast and loudly — retrying a name
+    that does not exist just delays the report. Treat <code>EAI_AGAIN</code> as transient:
+    bounded retry with backoff is correct. Don't hardcode IPs as a "fix"; you trade a visible
+    DNS error for silent breakage at the next infrastructure change.
+  </p>
+</Guide>

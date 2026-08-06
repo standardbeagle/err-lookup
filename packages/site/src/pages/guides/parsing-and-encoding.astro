@@ -1,0 +1,44 @@
+---
+import Guide from "../../layouts/Guide.astro";
+---
+<Guide slug="parsing-and-encoding">
+  <p class="lead">
+    "Unexpected token", "unexpected end of input", "invalid UTF-8", "malformed" — a parser
+    rejected its input. The parser is almost never wrong; the interesting question is why the
+    input isn't what you think it is, and the answer is usually one layer earlier than the
+    error.
+  </p>
+
+  <h2>Read the message like a parser</h2>
+  <table>
+    <tbody>
+      <tr><td>"Unexpected token &lt; in JSON at position 0"</td><td>The input starts with <code>&lt;</code> — it's HTML, not JSON. An error page, a login redirect, or a 404 came back where the API response should be. Log the raw body and the status code.</td></tr>
+      <tr><td>"Unexpected end of JSON input"</td><td>Truncated: an empty response body, a connection cut mid-transfer, or a partially written file. Valid JSON doesn't stop early.</td></tr>
+      <tr><td>"Unexpected token" mid-document</td><td>Genuinely malformed at that spot: trailing commas, single quotes, unescaped newline in a string, NaN/undefined serialized by hand-built formatting, or two JSON objects concatenated.</td></tr>
+      <tr><td>"Invalid UTF-8" / mojibake (Ã©, â€™)</td><td>Bytes in one encoding decoded as another — a Latin-1 database column read as UTF-8, a file saved in the wrong encoding, or binary data pushed through a text path.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Look at the actual bytes</h2>
+  <pre>curl -s https://api.example.com/data | head -c 200        # what actually comes back?
+head -c 64 payload.json | xxd                              # BOM? binary? wrong file?</pre>
+  <p>
+    Most parse errors dissolve the moment you look at the raw input instead of the parsed
+    result: the "JSON" that is an HTML error page, the file with a UTF-8 BOM
+    (<code>EF BB BF</code>) that a strict parser rejects, the config saved as UTF-16 by a
+    Windows editor. If the error names a position, count to it — the byte offset points at the
+    exact problem in a way re-reading the code never will.
+  </p>
+
+  <h2>The layer-before rule</h2>
+  <p>
+    Treat a parse error as a symptom and find the producer: the API that returns HTML on error
+    (fix: check <code>content-type</code> and status before parsing), the shell pipeline that
+    mixed stderr into stdout, the template that string-concatenates JSON instead of using a
+    serializer, the double-encoded payload (<code>JSON.stringify</code> applied twice — the
+    tell is a quoted string full of <code>\"</code>). Hand-built serialization is the root
+    cause behind a remarkable share of these; use the library serializer, always name the file
+    and offset in your own error messages, and validate at the boundary so bad input fails
+    where it enters, not three modules later.
+  </p>
+</Guide>

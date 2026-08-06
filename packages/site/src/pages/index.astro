@@ -3,6 +3,7 @@ import Base from "../layouts/Base.astro";
 import RepoTable from "../components/RepoTable.astro";
 import { getManifest } from "../data/load.js";
 import { getRepoPage } from "../data/paging.js";
+import { GUIDES, guideHref } from "../data/guides.js";
 const manifest = getManifest();
 // Page 1 of the analyzed-repos list; /repos/2/ onward carry the rest.
 const page = getRepoPage(1);
@@ -52,6 +53,17 @@ const jsonLd = JSON.stringify({
     )
   }</pre>
   <p class="muted">The MCP server caches the dataset locally: offline-capable, no API keys, answers <code>search_error</code> straight from disk.</p>
+
+  <h2>Failure class guides</h2>
+  <p class="muted">
+    Most production errors belong to a handful of failure classes. Each <a href="/guides/">guide</a>
+    explains one from the mechanism up and links every documented occurrence:
+  </p>
+  <ul>
+    {GUIDES.map((g) => (
+      <li><a href={guideHref(g.slug)}>{g.title}</a></li>
+    ))}
+  </ul>
 
   <h2>Analyzed repos</h2>
   <p class="muted">

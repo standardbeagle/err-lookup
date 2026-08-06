@@ -1,0 +1,44 @@
+---
+import Guide from "../../layouts/Guide.astro";
+---
+<Guide slug="ssl-tls-certificates">
+  <p class="lead">
+    TLS errors come from one of two phases: the <em>handshake</em> (protocol and cipher
+    negotiation) or <em>certificate validation</em> (is this really the server I asked for?).
+    Validation errors are the common ones, and every one of them has a correct fix that is not
+    "turn verification off."
+  </p>
+
+  <h2>The validation failures</h2>
+  <table>
+    <tbody>
+      <tr><td><code>CERT_HAS_EXPIRED</code></td><td>Past its notAfter date. Renewals didn't run — or a machine's clock is wrong, which produces the same error with a valid cert.</td></tr>
+      <tr><td><code>SELF_SIGNED_CERT_IN_CHAIN</code> / <code>DEPTH_ZERO_SELF_SIGNED_CERT</code></td><td>The chain ends in a certificate your trust store doesn't contain — internal CA, corporate TLS-inspecting proxy, or a genuinely self-signed dev cert.</td></tr>
+      <tr><td><code>UNABLE_TO_VERIFY_LEAF_SIGNATURE</code></td><td>The server sent its leaf certificate but not the intermediate — browsers paper over this (AIA fetching), CLI tools and libraries do not.</td></tr>
+      <tr><td><code>ERR_TLS_CERT_ALTNAME_INVALID</code> / hostname mismatch</td><td>Valid certificate, wrong name: the cert's SANs don't include the hostname you dialed. Connecting by IP, by internal alias, or SNI misrouting on shared hosting.</td></tr>
+      <tr><td>Handshake failure / protocol version</td><td>No overlap in TLS versions or ciphers — typically an old client (TLS 1.0/1.1) against a modern server, or vice versa.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>See what the server actually serves</h2>
+  <pre>openssl s_client -connect api.example.com:443 -servername api.example.com | \
+  openssl x509 -noout -dates -subject -ext subjectAltName</pre>
+  <p>
+    That one command answers most tickets: the real expiry dates, the names the cert covers, and
+    (in the full s_client output) whether the intermediate is in the served chain. Compare
+    against what your code dials — including the port and the exact hostname, since SNI means
+    different names can get different certificates from the same IP.
+  </p>
+
+  <h2>Fix the trust, don't disable it</h2>
+  <p>
+    <code>NODE_TLS_REJECT_UNAUTHORIZED=0</code>, <code>verify=False</code>,
+    <code>InsecureSkipVerify: true</code> — every stack has the same trapdoor, and it turns
+    "TLS error in staging" into "silent man-in-the-middle in production" the day the snippet
+    gets copied. The correct moves: renew (and automate renewal), add your internal CA to the
+    trust store (<code>NODE_EXTRA_CA_CERTS</code>, <code>REQUESTS_CA_BUNDLE</code>,
+    <code>SSL_CERT_FILE</code>, or the OS store), serve the full chain from the server, and dial
+    the name the certificate is actually for. Scope any dev-only exception to a single explicit
+    host, never process-wide.
+  </p>
+</Guide>
