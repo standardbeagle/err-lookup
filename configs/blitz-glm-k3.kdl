@@ -22,7 +22,10 @@ defaults {
     // gate keeps the real ceiling at 10, and the slack means a repo cloning or
     // between phases does not leave provider slots idle.
     provider-max-concurrent 10
-    max-concurrent 3
+    // 6 repos in flight (was 3): the shared gate caps real provider calls at
+    // 10, so extra repos only fill slots left idle by clones, candidate
+    // extraction, and assembly — and ls-remote skips make idle workers cheap.
+    max-concurrent 6
     batch-concurrency 6
     analysis-batch-size 20
     // Off-peak only: the plan bills peak (Mon-Fri 06:00-10:00 UTC) at twice the

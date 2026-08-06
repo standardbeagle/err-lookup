@@ -11,9 +11,21 @@ import { queue, type QueueRow } from "./schema.js";
  */
 
 /**
+ * A failed repo re-enters the queue only after this cooloff. Failed discovery
+ * burned 48h of provider time in one week (vs 23h of successful discovery)
+ * by re-attempting the same failing repos every run; with 6h scan cadence a
+ * chronic failer would otherwise re-bill 4x daily.
+ */
+export const FAILED_REQUEUE_COOLOFF_MS = Number.parseInt(
+  process.env.ERRLOOKUP_FAILED_COOLOFF_MS ?? String(24 * 3600 * 1000),
+  10
+);
+
+/**
  * Make every corpus repo eligible again: insert unknown repos as `queued`,
- * requeue terminal rows (done/failed/skipped). `queued` and `running` rows are
- * left alone — seeding never steals in-flight work.
+ * requeue terminal rows (done/skipped immediately, failed after the cooloff).
+ * `queued` and `running` rows are left alone — seeding never steals in-flight
+ * work.
  */
 export function seedQueue(db: Db, repos: string[]): { added: number; requeued: number } {
   return tx(db, () => {
@@ -24,13 +36,17 @@ export function seedQueue(db: Db, repos: string[]): { added: number; requeued: n
       if (!existing) {
         db.insert(queue).values({ repo, status: "queued" }).run();
         added++;
-      } else if (existing.status !== "queued" && existing.status !== "running") {
-        db.update(queue)
-          .set({ status: "queued", lastError: null, updatedAt: Date.now() })
-          .where(and(eq(queue.repo, repo), eq(queue.status, existing.status)))
-          .run();
-        requeued++;
+        continue;
       }
+      if (existing.status === "queued" || existing.status === "running") continue;
+      if (existing.status === "failed" && Date.now() - existing.updatedAt < FAILED_REQUEUE_COOLOFF_MS) {
+        continue;
+      }
+      db.update(queue)
+        .set({ status: "queued", lastError: null, updatedAt: Date.now() })
+        .where(and(eq(queue.repo, repo), eq(queue.status, existing.status)))
+        .run();
+      requeued++;
     }
     return { added, requeued };
   });

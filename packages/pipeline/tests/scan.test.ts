@@ -13,6 +13,7 @@ import {
   reclaimRunningQueue,
   settleQueueItem,
   queueByStatus,
+  FAILED_REQUEUE_COOLOFF_MS,
 } from "../src/db/queue.js";
 import { runScan } from "../src/scan.js";
 import { ScriptedProvider } from "../src/provider/fixture.js";
@@ -25,12 +26,14 @@ const fx = (n: string) => resolve(__dirname, "..", "fixtures", n);
 
 const dbPath = resolve(".tmp-test", `scan-${process.pid}.db`);
 let db: Db;
+let raw: ReturnType<typeof openDb>["raw"];
 let close: () => void;
 
 beforeEach(() => {
   rmSync(dbPath, { force: true });
   const opened = openDb(dbPath);
   db = opened.db;
+  raw = opened.raw;
   close = () => opened.raw.close();
 });
 
@@ -81,6 +84,25 @@ describe("re-entrant queue", () => {
     // Terminal rows become eligible again on the next seed — this is what makes
     // each invocation pick up updates for every project.
     expect(seedQueue(db, [claimed.repo])).toEqual({ added: 0, requeued: 1 });
+    close();
+  });
+
+  it("failed repos wait out the cooloff before requeueing; done repos do not", () => {
+    seedQueue(db, ["a/fails", "a/works"]);
+    claimNextQueued(db);
+    claimNextQueued(db);
+    settleQueueItem(db, "a/fails", "failed", "discovery: boom");
+    settleQueueItem(db, "a/works", "done");
+
+    // Fresh failure: inside the cooloff window, only the done repo requeues.
+    expect(seedQueue(db, ["a/fails", "a/works"])).toEqual({ added: 0, requeued: 1 });
+    expect(queueByStatus(db, "failed").map((r) => r.repo)).toEqual(["a/fails"]);
+
+    // Age the failure past the cooloff → it requeues again.
+    raw
+      .prepare("UPDATE queue SET updated_at = ? WHERE repo = 'a/fails'")
+      .run(Date.now() - FAILED_REQUEUE_COOLOFF_MS - 1000);
+    expect(seedQueue(db, ["a/fails"])).toEqual({ added: 0, requeued: 1 });
     close();
   });
 

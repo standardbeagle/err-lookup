@@ -15,7 +15,11 @@ export interface DiscoveryResult {
   mode: "candidates-lci" | "candidates-builtin" | "agentic";
 }
 
-const CANDIDATE_BATCH = 80;
+// 40, down from 80: heavyweight candidate sites made 80-per-call discovery
+// batches overrun the 600s per-call provider timeout on large repos (every
+// one of the 37 failed repos died there). Half-size calls fit the budget,
+// spread across more gate slots, and leave retry/fallback something to save.
+const CANDIDATE_BATCH = 40;
 
 function parseErrors(parsed: unknown): DiscoveredErrorJson[] {
   const p = parsed as { errors?: DiscoveredErrorJson[] };
