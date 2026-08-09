@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stopLciServer } from "../util/lci-server.js";
 
 const exec = promisify(execFile);
 
@@ -46,8 +47,28 @@ export async function defaultBranch(dir: string): Promise<string> {
   return stdout.trim();
 }
 
-/** Create a temp working dir; returns { path, cleanup }. */
+/**
+ * Create a temp working dir; returns { path, cleanup }.
+ *
+ * cleanup stops the lci index server for this root before removing the
+ * directory. The candidates phase indexes whatever we clone here, and an lci
+ * server outlives its client by design — so removing the directory first strands
+ * that server forever, rooted at a path that no longer exists. See
+ * `util/lci-server.ts` for what that cost in practice.
+ */
 export async function tempWorkDir(prefix = "errlookup-"): Promise<{ path: string; cleanup: () => Promise<void> }> {
   const path = await mkdtemp(join(tmpdir(), prefix));
-  return { path, cleanup: () => rm(path, { recursive: true, force: true }) };
+  return {
+    path,
+    cleanup: async () => {
+      const stranded = stopLciServer(path);
+      if (stranded.length > 0) {
+        console.error(
+          `[err-lookup] lci server(s) ${stranded.join(",")} still hold ${path}; ` +
+            `reap with: kill -9 ${stranded.join(" ")}`,
+        );
+      }
+      await rm(path, { recursive: true, force: true });
+    },
+  };
 }

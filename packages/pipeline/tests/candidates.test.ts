@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpRepo, disposeRepo } from "./tmp-repo.js";
 import { extractCandidates, candidatesFromLciJson, lciGrepArgs, extractCandidatesLci, countSourceFiles } from "../src/phase/candidates.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
 
 function fixtureRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), "cand-"));
+  const dir = tmpRepo("cand-");
   writeFileSync(join(dir, "index.js"), `function f(x) {\n  if (!x) throw new TypeError('Expected a function');\n}\n`);
   writeFileSync(join(dir, "api.py"), `def g():\n    raise ValueError("bad input: %s" % x)\n`);
   writeFileSync(join(dir, "main.go"), `func h() error {\n\treturn fmt.Errorf("connect failed: %w", err)\n}\n`);
@@ -38,23 +38,23 @@ describe("builtin candidate extractor", () => {
     expect(js.literal).toBe("Expected a function");
     const go = c.find((s) => s.file === "main.go")!;
     expect(go.literal).toContain("connect failed");
-    rmSync(dir, { recursive: true, force: true });
+    disposeRepo(dir);
   });
 
   it("counts source files under the same exclusion rules as extraction", () => {
     const dir = fixtureRepo();
     // index.js, api.py, main.go, lib.rs — index.test.js and node_modules excluded
     expect(countSourceFiles(dir)).toBe(4);
-    rmSync(dir, { recursive: true, force: true });
+    disposeRepo(dir);
   });
 
   it("honors caps", () => {
-    const dir = mkdtempSync(join(tmpdir(), "cand-cap-"));
+    const dir = tmpRepo("cand-cap-");
     const lines = Array.from({ length: 100 }, (_, i) => `throw new Error('e${i}');`).join("\n");
     writeFileSync(join(dir, "many.js"), lines);
     expect(extractCandidates(dir, { maxPerFile: 10 })).toHaveLength(10);
     expect(extractCandidates(dir, { maxCandidates: 5 })).toHaveLength(5);
-    rmSync(dir, { recursive: true, force: true });
+    disposeRepo(dir);
   });
 });
 
@@ -75,7 +75,7 @@ describe("lci invocation", () => {
       // acceptable only when the binary is genuinely absent on this host
       expect((e as NodeJS.ErrnoException).code).toBe("ENOENT");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      disposeRepo(dir);
     }
   });
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpRepo, disposeRepo } from "./tmp-repo.js";
 import { runDiscovery } from "../src/phase/discovery.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
@@ -16,12 +16,12 @@ const SITES = 200;
 let repoPath: string;
 
 beforeAll(() => {
-  repoPath = mkdtempSync(join(tmpdir(), "discovery-test-"));
+  repoPath = tmpRepo("discovery-test-");
   const lines = Array.from({ length: SITES }, (_, i) => `if (x === ${i}) throw new Error("boom ${i}");`);
   writeFileSync(join(repoPath, "index.js"), lines.join("\n"));
 });
 
-afterAll(() => rmSync(repoPath, { recursive: true, force: true }));
+afterAll(() => disposeRepo(repoPath));
 
 /** Answers each classification batch with one error naming the first candidate line. */
 class BatchProvider implements LlmProvider {
