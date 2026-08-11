@@ -106,8 +106,12 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
       // so a re-scan (or its failure) never knocks a repo out of the export.
       recordPhase(db, { repo, phase: "discovery", status: "running", startedAt: started, analyzedSha: sha });
       try {
-        const r = await runDiscovery(repoPath, providers, cfg, (b, t) =>
-          log(`phase discovery: batch ${b}/${t}`)
+        const r = await runDiscovery(
+          repoPath,
+          providers,
+          cfg,
+          (b, t) => log(`phase discovery: batch ${b}/${t}`),
+          (m) => log(`phase discovery: ${m}`)
         );
         discovered = r.errors;
         recordPhase(db, {

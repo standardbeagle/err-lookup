@@ -49,12 +49,13 @@ export async function runDiscovery(
   repoPath: string,
   providers: Record<string, LlmProvider>,
   cfg: ErrlookupConfig,
-  onBatch?: (done: number, total: number) => void
+  onBatch?: (done: number, total: number) => void,
+  onLog?: (msg: string) => void
 ): Promise<DiscoveryResult> {
   const started = Date.now();
   const budget = watchdogBudgetMs(cfg, "discovery");
 
-  const { candidates, backend } = extractCandidatesAuto(repoPath);
+  const { candidates, backend } = extractCandidatesAuto(repoPath, {}, onLog);
   // Candidate extraction is the index server's only consumer, but left alone
   // it survives until clone cleanup — on a symfony-class repo that is ~750MB
   // of index RAM held through 20-50min of LLM phases that never touch it.

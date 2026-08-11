@@ -228,12 +228,19 @@ export function extractCandidatesLci(repoPath: string, opts: ExtractOptions = {}
 }
 
 /** Pick the best available backend: lci when installed, else the built-in walk. */
-export function extractCandidatesAuto(repoPath: string, opts: ExtractOptions = {}): { candidates: CandidateSite[]; backend: "lci" | "builtin" } {
+export function extractCandidatesAuto(
+  repoPath: string,
+  opts: ExtractOptions = {},
+  onLog?: (msg: string) => void
+): { candidates: CandidateSite[]; backend: "lci" | "builtin" } {
   if (process.env.ERRLOOKUP_EXTRACTOR !== "builtin") {
     try {
       return { candidates: extractCandidatesLci(repoPath, opts), backend: "lci" };
-    } catch {
-      // lci missing or errored — the built-in walk is the portable baseline
+    } catch (e) {
+      // The built-in walk is the portable baseline, but a fallback nobody sees
+      // is a fallback nobody fixes — elasticsearch quietly lost lci's richer
+      // exclusions for a whole run. Name the reason.
+      onLog?.(`lci extraction failed (${(e as Error).message.split("\n")[0]}) — using builtin walker`);
     }
   }
   return { candidates: extractCandidates(repoPath, opts), backend: "builtin" };
