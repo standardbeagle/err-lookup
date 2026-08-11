@@ -14,6 +14,8 @@ export interface DiscoveryResult {
   durationMs: number;
   /** How candidates were sourced: lci / builtin extractor, or agentic scan. */
   mode: "candidates-lci" | "candidates-builtin" | "agentic";
+  /** Candidates abandoned after batch-splitting retries — logged, not fatal. */
+  skippedCandidates: number;
 }
 
 // 40, down from 80: heavyweight candidate sites made 80-per-call discovery
@@ -61,6 +63,7 @@ export async function runDiscovery(
       providerUsed: result.providerUsed,
       durationMs: Date.now() - started,
       mode: "agentic",
+      skippedCandidates: 0,
     };
   }
 
@@ -72,7 +75,13 @@ export async function runDiscovery(
   let done = 0;
   let providerUsed = "";
   let raw = "";
-  const perBatch = await mapPool(batches, cfg.defaults.batchConcurrency, async (batch) => {
+  let skippedCandidates = 0;
+
+  // A batch that exhausts retry + fallback (golang/go: dense stdlib sites blew
+  // the per-call timeout even at 40) splits in half and each half tries again —
+  // smaller calls fit the budget. A stub that still fails abandons only its own
+  // candidates: one indigestible batch must not fail a 20,000-site repo.
+  const classify = async (batch: typeof candidates): Promise<DiscoveredErrorJson[]> => {
     try {
       const result = await withTimeout(
         runProvider(candidateDiscoveryPrompt(batch), { cwd: repoPath }, providers, cfg, "discovery"),
@@ -81,6 +90,20 @@ export async function runDiscovery(
       providerUsed = result.providerUsed;
       raw = result.raw;
       return parseErrors(result.parsed);
+    } catch (e) {
+      if (batch.length >= 10) {
+        const mid = Math.ceil(batch.length / 2);
+        const [a, b] = [batch.slice(0, mid), batch.slice(mid)];
+        return [...(await classify(a)), ...(await classify(b))];
+      }
+      skippedCandidates += batch.length;
+      return [];
+    }
+  };
+
+  const perBatch = await mapPool(batches, cfg.defaults.batchConcurrency, async (batch) => {
+    try {
+      return await classify(batch);
     } finally {
       onBatch?.(++done, batches.length);
     }
@@ -92,5 +115,6 @@ export async function runDiscovery(
     providerUsed,
     durationMs: Date.now() - started,
     mode: backend === "lci" ? "candidates-lci" : "candidates-builtin",
+    skippedCandidates,
   };
 }

@@ -119,6 +119,9 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           analyzedSha: sha,
           result: JSON.stringify(discovered),
         });
+        if (r.skippedCandidates > 0) {
+          log(`phase discovery: ${r.skippedCandidates} candidates abandoned after batch-splitting retries`);
+        }
         log(`phase discovery: ${discovered.length} errors via ${r.providerUsed} [${r.mode}] (${r.durationMs}ms)`);
       } catch (e) {
         const msg = e instanceof ProviderError ? `[${e.kind}] ${e.message}` : (e as Error).message;

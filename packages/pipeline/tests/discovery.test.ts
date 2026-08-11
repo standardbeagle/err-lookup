@@ -42,8 +42,12 @@ class BatchProvider implements LlmProvider {
       if (this.opts.failPrompts?.(prompt)) {
         return { ok: false, kind: "empty", error: "simulated discovery failure" };
       }
-      // Echo back every candidate line in this batch, in the order given.
-      const lines = [...prompt.matchAll(/"line":(\d+)/g)].map((m) => Number(m[1]));
+      // Echo back this batch's candidates in the order given, parsed from the
+      // prompt's CANDIDATES block. (A regex over the whole prompt over-counts:
+      // context excerpts can repeat "line": patterns.)
+      const block = prompt.slice(prompt.indexOf("CANDIDATES:") + "CANDIDATES:".length, prompt.indexOf("RULES:"));
+      const candidates = JSON.parse(block.trim()) as { line: number }[];
+      const lines = candidates.map((c) => c.line);
       const errors = lines.map((line) => ({
         message: `boom line ${line}`,
         type: "exception",
@@ -95,11 +99,36 @@ describe("runDiscovery batching", () => {
     expect(held).toBe(false);
   });
 
-  it("fails the phase when a batch exhausts its retries — discovery gaps are not silently accepted", async () => {
-    // Every attempt at the batch holding line 99 fails, so runProvider's retry
-    // cannot rescue it and the whole phase must surface the failure.
+  it("splits an over-budget batch in half and recovers every candidate", async () => {
+    // Any call carrying more than 20 candidates "times out" (golang/go: dense
+    // stdlib sites blew the 600s call budget at the full batch size). Halved
+    // calls fit, so discovery must deliver the complete candidate set.
+    const tooDense = (t: string) =>
+      (JSON.parse(t.slice(t.indexOf("CANDIDATES:") + "CANDIDATES:".length, t.indexOf("RULES:")).trim()) as unknown[])
+        .length > 20;
+    const p = new BatchProvider("bulk", { failPrompts: tooDense });
+    const full = await runDiscovery(repoPath, { bulk: p }, cfg(["  batch-concurrency 2"]));
+    const reference = await runDiscovery(repoPath, { bulk: new BatchProvider("bulk") }, cfg());
+
+    expect(full.skippedCandidates).toBe(0);
+    // Complete and in order despite every full-size call failing — downstream
+    // error indices depend on the ordering.
+    expect(full.errors.map((e) => e.line)).toEqual(reference.errors.map((e) => e.line));
+  });
+
+  it("abandons only the indigestible candidates and reports the gap", async () => {
+    // The batch holding line 99 fails at every size, so splitting bottoms out
+    // and its final sub-batch is dropped — counted, while the rest of the repo
+    // still discovers. One bad batch must not erase a 20,000-site repo.
     const p = new BatchProvider("bulk", { failPrompts: (t) => t.includes('"line":99,') });
-    await expect(runDiscovery(repoPath, { bulk: p }, cfg(["  batch-concurrency 2"]))).rejects.toThrow();
+    const r = await runDiscovery(repoPath, { bulk: p }, cfg(["  batch-concurrency 2"]));
+    const reference = await runDiscovery(repoPath, { bulk: new BatchProvider("bulk") }, cfg());
+
+    expect(r.skippedCandidates).toBeGreaterThan(0);
+    expect(r.skippedCandidates).toBeLessThan(10); // a minimal stub, not the batch
+    expect(r.errors.length + r.skippedCandidates).toBe(reference.errors.length);
+    expect(r.errors.some((e) => e.line === 99)).toBe(false);
+    expect(r.errors.some((e) => e.line === 1)).toBe(true);
   });
 
   it("recovers a batch that fails once, via the provider retry", async () => {
