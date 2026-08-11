@@ -130,13 +130,16 @@ const DEFENSE_SHAPE = `"defenseStrategies":[{"errorIndex":0,"handlingStrategy":"
 export function analysisPrompt(
   batch: DiscoveredErrorJson[],
   startIndex: number,
-  need: AnalysisNeed
+  need: AnalysisNeed,
+  /** Per-error throwing region, extracted procedurally; aligned with `batch`. */
+  sources?: (string | null)[]
 ): string {
   const list = batch
-    .map(
-      (e, i) =>
-        `[${startIndex + i}] message=${JSON.stringify(e.message)} file=${e.file}:${e.line ?? "?"}${e.code ? ` code=${e.code}` : ""}`
-    )
+    .map((e, i) => {
+      const head = `[${startIndex + i}] message=${JSON.stringify(e.message)} file=${e.file}:${e.line ?? "?"}${e.code ? ` code=${e.code}` : ""}`;
+      const src = sources?.[i];
+      return src ? `${head}\nSOURCE:\n${src}\n---` : head;
+    })
     .join("\n");
 
   const sections: string[] = [];
@@ -152,7 +155,7 @@ export function analysisPrompt(
     shapes.push(DEFENSE_SHAPE);
   }
 
-  return `Analyze each of these ${batch.length} errors. You are working in the repository root; read the source at the given file:line to ground every answer in real code.
+  return `Analyze each of these ${batch.length} errors. You are working in the repository root. Each error includes its throwing SOURCE region — ground every answer in it. Open the file at the given file:line only when an error lacks a SOURCE block or the region is not enough (e.g. the relevant API surface sits elsewhere).
 
 ERRORS:
 ${list}
