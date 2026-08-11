@@ -109,12 +109,17 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
     log(`cloning ${repo} → ${work.path}`);
     await cloneShallow(repo, work.path, opts.cloneUrlOverride);
 
-    // Disk budget (§11.1/§11.3). Two tiers:
+    // Resource budget (§11.1/§11.3). Two tiers:
     //  - hard cap (default 20GB): recorded skipped_too_large, never analyzed;
-    //  - large threshold (default 2GB): analyzed, but serialized machine-wide
-    //    so at most one large clone is in flight across overlapping runs.
+    //  - large threshold: analyzed, but serialized machine-wide so at most one
+    //    large repo is in flight across overlapping runs. "Large" is either
+    //    proxy: clone size (disk) OR source-file count (memory — the lci index
+    //    and per-batch agent footprints scale with files, and a symfony-class
+    //    repo ships a ~750MB index from a modest shallow clone that the MB
+    //    check alone waves through).
     const hardCapMb = Number.parseInt(process.env.ERRLOOKUP_MAX_CLONE_MB ?? "20480", 10);
     const largeMb = Number.parseInt(process.env.ERRLOOKUP_LARGE_CLONE_MB ?? "2048", 10);
+    const largeFiles = Number.parseInt(process.env.ERRLOOKUP_LARGE_SOURCE_FILES ?? "2000", 10);
     const sizeMb = await dirSizeMb(work.path);
     if (sizeMb > hardCapMb) {
       const msg = `skipped_too_large: clone ${sizeMb}MB > cap ${hardCapMb}MB`;
@@ -122,9 +127,11 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
       log(msg);
       return { errorCount: 0, rejects: [], skipped: [], failed: msg };
     }
-    if (sizeMb > largeMb) {
+    const sourceFiles = countSourceFiles(work.path);
+    if (sizeMb > largeMb || sourceFiles > largeFiles) {
+      const why = sizeMb > largeMb ? `${sizeMb}MB > ${largeMb}MB` : `${sourceFiles} source files > ${largeFiles}`;
       const lockDir = process.env.ERRLOOKUP_LARGE_LOCK_DIR ?? join(tmpdir(), "errlookup-large-repo.lock");
-      log(`large repo (${sizeMb}MB > ${largeMb}MB): acquiring large-repo slot`);
+      log(`large repo (${why}): acquiring large-repo slot`);
       releaseLargeLock = await acquireLargeRepoLock(lockDir, (holder) =>
         log(`large-repo slot held by pid ${holder ?? "?"} — waiting`)
       );
@@ -133,7 +140,6 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
 
     const sha = await headSha(work.path);
     log(`HEAD sha ${sha}`);
-    const sourceFiles = countSourceFiles(work.path);
     upsertRepo(opts.db, { repo, sourceFiles });
     // GitHub-hosted repos get description/language/stars; local clones (tests)
     // and API failures leave nulls — honest gaps, never fabricated.
