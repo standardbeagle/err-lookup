@@ -84,6 +84,17 @@ describe("runDiscovery batching", () => {
     expect(b.errors.map((e) => e.line)).toEqual(a.errors.map((e) => e.line));
   });
 
+  it("releases the lci index server as soon as extraction is done", { timeout: 30_000 }, async () => {
+    const { execFileSync } = await import("node:child_process");
+    const p = new BatchProvider("bulk");
+    await runDiscovery(repoPath, { bulk: p }, cfg());
+    // The server must not outlive extraction and sit on index RAM through the
+    // LLM phases. (Also holds when lci is absent — no server ever starts.)
+    const listing = execFileSync("ps", ["-eo", "args="], { encoding: "utf8" });
+    const held = listing.split("\n").some((l) => /(^|\/)lci\s/.test(l) && l.includes(repoPath));
+    expect(held).toBe(false);
+  });
+
   it("fails the phase when a batch exhausts its retries — discovery gaps are not silently accepted", async () => {
     // Every attempt at the batch holding line 99 fails, so runProvider's retry
     // cannot rescue it and the whole phase must surface the failure.

@@ -5,6 +5,7 @@ import { withTimeout } from "../util/watchdog.js";
 import { mapPool, chunk } from "../util/pool.js";
 import { DISCOVERY_PROMPT, candidateDiscoveryPrompt, type DiscoveredErrorJson } from "./prompts.js";
 import { extractCandidatesAuto } from "./candidates.js";
+import { stopLciServer } from "../util/lci-server.js";
 
 export interface DiscoveryResult {
   errors: DiscoveredErrorJson[];
@@ -43,6 +44,11 @@ export async function runDiscovery(
   const budget = watchdogBudgetMs(cfg, "discovery");
 
   const { candidates, backend } = extractCandidatesAuto(repoPath);
+  // Candidate extraction is the index server's only consumer, but left alone
+  // it survives until clone cleanup — on a symfony-class repo that is ~750MB
+  // of index RAM held through 20-50min of LLM phases that never touch it.
+  // Release it here; the cleanup-time stop stays as the backstop.
+  if (backend === "lci") stopLciServer(repoPath);
 
   if (candidates.length === 0) {
     const result = await withTimeout(
