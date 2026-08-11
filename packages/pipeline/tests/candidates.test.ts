@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpRepo, disposeRepo } from "./tmp-repo.js";
 import { extractCandidates, candidatesFromLciJson, lciGrepArgs, extractCandidatesLci, countSourceFiles } from "../src/phase/candidates.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
 
 function fixtureRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), "cand-"));
+  const dir = tmpRepo("cand-");
   writeFileSync(join(dir, "index.js"), `function f(x) {\n  if (!x) throw new TypeError('Expected a function');\n}\n`);
   writeFileSync(join(dir, "api.py"), `def g():\n    raise ValueError("bad input: %s" % x)\n`);
   writeFileSync(join(dir, "main.go"), `func h() error {\n\treturn fmt.Errorf("connect failed: %w", err)\n}\n`);
@@ -36,25 +36,28 @@ describe("builtin candidate extractor", () => {
     expect(js.line).toBe(2);
     expect(js.kind).toBe("throw");
     expect(js.literal).toBe("Expected a function");
+    // builtin walk slices its own context window around the match
+    expect(js.context).toContain("function f(x)");
+    expect(js.context).toContain("Expected a function");
     const go = c.find((s) => s.file === "main.go")!;
     expect(go.literal).toContain("connect failed");
-    rmSync(dir, { recursive: true, force: true });
+    disposeRepo(dir);
   });
 
   it("counts source files under the same exclusion rules as extraction", () => {
     const dir = fixtureRepo();
     // index.js, api.py, main.go, lib.rs — index.test.js and node_modules excluded
     expect(countSourceFiles(dir)).toBe(4);
-    rmSync(dir, { recursive: true, force: true });
+    disposeRepo(dir);
   });
 
   it("honors caps", () => {
-    const dir = mkdtempSync(join(tmpdir(), "cand-cap-"));
+    const dir = tmpRepo("cand-cap-");
     const lines = Array.from({ length: 100 }, (_, i) => `throw new Error('e${i}');`).join("\n");
     writeFileSync(join(dir, "many.js"), lines);
     expect(extractCandidates(dir, { maxPerFile: 10 })).toHaveLength(10);
     expect(extractCandidates(dir, { maxCandidates: 5 })).toHaveLength(5);
-    rmSync(dir, { recursive: true, force: true });
+    disposeRepo(dir);
   });
 });
 
@@ -63,6 +66,13 @@ describe("lci invocation", () => {
     const args = lciGrepArgs("/repo", "throw", 100);
     expect(args.indexOf("-r")).toBeLessThan(args.indexOf("grep"));
     expect(args[args.length - 1]).toBe("throw");
+  });
+
+  it("requests context lines so discovery ships them instead of re-reading files", () => {
+    const args = lciGrepArgs("/repo", "throw", 100);
+    const c = args.indexOf("-C");
+    expect(c).toBeGreaterThan(args.indexOf("grep"));
+    expect(Number(args[c + 1])).toBeGreaterThan(0);
   });
 
   it("extracts real candidates end-to-end when the lci binary is available", () => {
@@ -75,7 +85,7 @@ describe("lci invocation", () => {
       // acceptable only when the binary is genuinely absent on this host
       expect((e as NodeJS.ErrnoException).code).toBe("ENOENT");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      disposeRepo(dir);
     }
   });
 });
@@ -104,6 +114,9 @@ describe("lci JSON mapping", () => {
     const c = candidatesFromLciJson("throw", "/repo", payload, seen);
     expect(c).toHaveLength(1);
     expect(c[0]).toMatchObject({ file: "src/a.ts", line: 113, kind: "throw", literal: "GET failed" });
+    // context.lines ride along verbatim — discovery classifies without re-reads
+    expect(c[0]!.context).toContain("await fetch(url)");
+    expect(c[0]!.context).toContain("GET failed");
   });
 });
 

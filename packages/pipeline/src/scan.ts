@@ -9,6 +9,7 @@ import {
   reclaimRunningQueue,
   claimNextQueued,
   settleQueueItem,
+  requeueInfraFailure,
   queueByStatus,
 } from "./db/queue.js";
 import { remoteHeadSha } from "./vcs/git.js";
@@ -37,7 +38,22 @@ export interface ScanSummary {
   unchanged: number;
   /** Left queued because the failure breaker tripped. */
   leftQueued: number;
+  /** Requeued without a failed mark because the host, not the repo, was sick. */
+  infraRequeued: number;
   seeded: { added: number; requeued: number };
+}
+
+/**
+ * Failures caused by the host or the provider process, not the repo under
+ * analysis: process/thread exhaustion, OOM, disk-full, DNS worker start, or a
+ * provider agent that died before it could take the prompt. Blaming the repo
+ * for these charged it a failed attempt plus the 24h cooloff — one fork storm
+ * on 2026-08-10 benched ~50 healthy repos that way.
+ */
+export function isInfraFailure(msg: string): boolean {
+  return /Resource temporarily unavailable|unable to create thread|cannot fork|getaddrinfo\(\) thread failed|\bEAGAIN\b|\bENOMEM\b|\bEMFILE\b|\bENFILE\b|\bENOSPC\b|no space left on device|\[spawn\]/i.test(
+    msg
+  );
 }
 
 /** Consecutive-failure breaker: provider quota exhaustion fails every repo the
@@ -57,7 +73,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
   const log = opts.onLog ?? (() => {});
 
   const seeded = seedQueue(db, opts.corpus);
-  const summary: ScanSummary = { ok: 0, failed: 0, unchanged: 0, leftQueued: 0, seeded };
+  const summary: ScanSummary = { ok: 0, failed: 0, unchanged: 0, leftQueued: 0, infraRequeued: 0, seeded };
   if (opts.seedOnly) return summary;
 
   // Under the drain lock any `running` row belongs to a dead scan.
@@ -67,10 +83,32 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
   let consecutiveFailures = 0;
   let tripped = false;
 
-  const worker = async (): Promise<void> => {
+  // Both failure paths (phase-level and thrown) settle through here so infra
+  // classification cannot drift between them. Infra failures escalate instead
+  // of failing: the limits exist for system stability, so a repo that hit them
+  // retries with more of the machine to itself — first holding the large-repo
+  // slot (level 1), then with no other repos running at all (level 2). Only a
+  // level-2 infra failure settles as failed. Every failure still counts toward
+  // the breaker — a sick host should stop the drain quickly.
+  const settleFailure = (repo: string, msg: string, ranAt: number, heldLargeSlot: boolean): void => {
+    if (isInfraFailure(msg) && ranAt < 2) {
+      // A run that already held the large slot skips straight to exclusive.
+      const next = ranAt >= 1 || heldLargeSlot ? 2 : 1;
+      requeueInfraFailure(db, repo, msg, next);
+      summary.infraRequeued++;
+      log(repo, `INFRA FAILURE — requeued at escalation level ${next} (no cooloff): ${msg}`);
+    } else {
+      settleQueueItem(db, repo, "failed", msg);
+      summary.failed++;
+      log(repo, ranAt >= 2 && isInfraFailure(msg) ? `FAILED even running alone: ${msg}` : `FAILED: ${msg}`);
+    }
+    consecutiveFailures++;
+  };
+
+  const worker = async (which: "concurrent" | "exclusive"): Promise<void> => {
     for (;;) {
       if (tripped) return;
-      const item = claimNextQueued(db);
+      const item = claimNextQueued(db, which);
       if (!item) return;
       const repo = item.repo;
 
@@ -104,7 +142,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
         }
       }
 
-      log(repo, "start");
+      log(repo, item.solo > 0 ? `start (escalation level ${item.solo})` : "start");
       try {
         const r = await analyzeRepo(repo, {
           db,
@@ -113,13 +151,11 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
           phases: opts.phases,
           force: opts.force,
           cloneUrlOverride: cloneUrl,
+          solo: item.solo >= 1,
           onLog: (m) => log(repo, m),
         });
         if (r.failed) {
-          settleQueueItem(db, repo, "failed", r.failed);
-          summary.failed++;
-          consecutiveFailures++;
-          log(repo, `FAILED: ${r.failed}`);
+          settleFailure(repo, r.failed, item.solo, r.heldLargeSlot ?? false);
         } else {
           settleQueueItem(db, repo, "done");
           summary.ok++;
@@ -127,10 +163,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
           log(repo, `→ ${r.errorCount} errors`);
         }
       } catch (e) {
-        settleQueueItem(db, repo, "failed", (e as Error).message);
-        summary.failed++;
-        consecutiveFailures++;
-        log(repo, `FAILED: ${(e as Error).message}`);
+        settleFailure(repo, (e as Error).message, item.solo, (e as { heldLargeSlot?: boolean }).heldLargeSlot ?? false);
       }
       if (consecutiveFailures >= BREAKER && !tripped) {
         tripped = true;
@@ -140,8 +173,17 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
   };
 
   await Promise.all(
-    Array.from({ length: Math.max(1, cfg.defaults.maxConcurrent) }, () => worker())
+    Array.from({ length: Math.max(1, cfg.defaults.maxConcurrent) }, () => worker("concurrent"))
   );
+
+  // Exclusive pass: level-2 repos run only after every concurrent worker has
+  // drained out, one at a time, with the whole machine to themselves. Rows
+  // escalated to level 2 during the pass above are picked up here in the same
+  // run.
+  if (!tripped && queueByStatus(db, "queued").some((r) => r.solo >= 2)) {
+    log("*", "exclusive pass: retrying resource-failed repos with no other repos running");
+    await worker("exclusive");
+  }
 
   summary.leftQueued = queueByStatus(db, "queued").length;
   return summary;

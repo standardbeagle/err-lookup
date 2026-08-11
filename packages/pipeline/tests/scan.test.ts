@@ -12,10 +12,11 @@ import {
   claimNextQueued,
   reclaimRunningQueue,
   settleQueueItem,
+  requeueInfraFailure,
   queueByStatus,
   FAILED_REQUEUE_COOLOFF_MS,
 } from "../src/db/queue.js";
-import { runScan } from "../src/scan.js";
+import { runScan, isInfraFailure } from "../src/scan.js";
 import { ScriptedProvider } from "../src/provider/fixture.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
@@ -103,6 +104,62 @@ describe("re-entrant queue", () => {
       .prepare("UPDATE queue SET updated_at = ? WHERE repo = 'a/fails'")
       .run(Date.now() - FAILED_REQUEUE_COOLOFF_MS - 1000);
     expect(seedQueue(db, ["a/fails"])).toEqual({ added: 0, requeued: 1 });
+    close();
+  });
+
+  it("infra failures requeue immediately — no failed mark, no cooloff wait", () => {
+    seedQueue(db, ["a/victim"]);
+    const claimed = claimNextQueued(db)!;
+    requeueInfraFailure(db, claimed.repo, "fatal: unable to create thread: Resource temporarily unavailable", 1);
+
+    // Back to queued at level 1 with the error recorded — claimable in the
+    // same drain, next attempt holds the large-repo slot.
+    const row = queueByStatus(db, "queued")[0]!;
+    expect(row.repo).toBe("a/victim");
+    expect(row.solo).toBe(1);
+    expect(row.lastError).toContain("unable to create thread");
+    expect(queueByStatus(db, "failed")).toHaveLength(0);
+    expect(claimNextQueued(db)?.repo).toBe("a/victim");
+    close();
+  });
+
+  it("level-2 rows are invisible to the concurrent drain and reset on reseed", () => {
+    seedQueue(db, ["a/exclusive"]);
+    claimNextQueued(db);
+    requeueInfraFailure(db, "a/exclusive", "spawn opencode EAGAIN", 2);
+
+    // Concurrent workers must never claim an exclusive-retry row; only the
+    // post-drain exclusive pass may, so the repo truly runs alone.
+    expect(claimNextQueued(db)).toBeNull();
+    const solo = claimNextQueued(db, "exclusive")!;
+    expect(solo.repo).toBe("a/exclusive");
+    expect(solo.solo).toBe(2);
+
+    // A terminal settle + fresh seed returns the repo to best effort.
+    settleQueueItem(db, "a/exclusive", "done");
+    seedQueue(db, ["a/exclusive"]);
+    expect(queueByStatus(db, "queued")[0]!.solo).toBe(0);
+    close();
+  });
+
+  it("classifies host-resource and provider-spawn errors as infra, repo faults as not", () => {
+    const infra = [
+      "Command failed: git clone …\nfatal: unable to create thread: Resource temporarily unavailable",
+      "error: cannot fork() for git-remote-https: Resource temporarily unavailable",
+      "fatal: unable to access 'https://…': getaddrinfo() thread failed to start",
+      "spawn opencode EAGAIN",
+      "discovery: [spawn] glm ACP failure: Internal error: OpenCode service failure",
+      "ENOSPC: no space left on device, write",
+    ];
+    for (const msg of infra) expect(isInfraFailure(msg), msg).toBe(true);
+
+    const repoFault = [
+      "discovery: [timeout] glm exceeded 600000ms (killed ACP process group)",
+      "discovery: [parse] no JSON object in provider output",
+      "fatal: could not read Username for 'https://github.com': No such device or address",
+      "enrichment: [empty] provider returned nothing",
+    ];
+    for (const msg of repoFault) expect(isInfraFailure(msg), msg).toBe(false);
     close();
   });
 

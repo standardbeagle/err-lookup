@@ -3,6 +3,7 @@ import type { LlmProvider } from "../provider/types.js";
 import { runProvider, watchdogBudgetMs } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
 import { mapPool, chunk } from "../util/pool.js";
+import { extractSourceRegion } from "../util/source.js";
 import {
   analysisPrompt,
   type AnalysisNeed,
@@ -50,7 +51,20 @@ export async function runAnalysis(
   const passes = resolvePasses(cfg, need);
   const batchSize = cfg.defaults.analysisBatchSize;
   const batches = chunk(discovered, batchSize);
-  const units = passes.flatMap((pass) => batches.map((batch, i) => ({ pass, batch, startIndex: i * batchSize })));
+  // Throwing regions are extracted procedurally once per batch and embedded in
+  // the prompt — dense input instead of one file-read tool round trip per
+  // error, which dominated the phase's wall-clock. ±12 lines keeps a 20-error
+  // batch around 500 source lines.
+  const sourcesByBatch = batches.map((batch) =>
+    batch.map((e) =>
+      typeof e.line === "number" && e.line > 0
+        ? extractSourceRegion(repoPath, e.file, e.line, 12)?.sourceCode ?? null
+        : null
+    )
+  );
+  const units = passes.flatMap((pass) =>
+    batches.map((batch, i) => ({ pass, batch, startIndex: i * batchSize, sources: sourcesByBatch[i]! }))
+  );
 
   let lastProvider = "n/a";
   let failedBatches = 0;
@@ -62,7 +76,7 @@ export async function runAnalysis(
       const budget = watchdogBudgetMs(cfg, routingPhase);
       const result = await withTimeout(
         runProvider(
-          analysisPrompt(unit.batch, unit.startIndex, unit.pass),
+          analysisPrompt(unit.batch, unit.startIndex, unit.pass, unit.sources),
           { cwd: repoPath },
           providers,
           cfg,

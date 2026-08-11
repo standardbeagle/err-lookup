@@ -107,6 +107,26 @@ describe("runAnalysis: fused enrichment + defense", () => {
     expect(res.defenseByIndex.has(24)).toBe(true);
   });
 
+  it("embeds the procedurally extracted throwing region in the prompt", async () => {
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpRepo, disposeRepo } = await import("./tmp-repo.js");
+    const dir = tmpRepo("ana-src-");
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "src", "a.js"), `const guard = 'visible-neighbor-line';\nthrow new Error('boom 0');\n`);
+
+    const p = new RecordingProvider("bulk");
+    const cfg = cfgFrom(["  analysis-batch-size 10"]);
+    await runAnalysis(dir, discovered(2), { bulk: p }, cfg, BOTH);
+
+    // Error 0 points at a real line → its region rides along; error 1 points
+    // past EOF... extractSourceRegion still clamps into the file, so both get
+    // SOURCE blocks. The model reads code from the prompt, not via tool calls.
+    expect(p.prompts[0]).toContain("SOURCE:");
+    expect(p.prompts[0]).toContain("visible-neighbor-line");
+    disposeRepo(dir);
+  });
+
   it("asks for only the phase that is still missing", async () => {
     const p = new RecordingProvider("bulk");
     const cfg = cfgFrom(["  analysis-batch-size 10"]);

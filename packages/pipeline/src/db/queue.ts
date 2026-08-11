@@ -1,4 +1,4 @@
-import { eq, and, asc, desc } from "drizzle-orm";
+import { eq, and, asc, desc, lt } from "drizzle-orm";
 import { tx, type Db } from "./client.js";
 import { queue, type QueueRow } from "./schema.js";
 
@@ -42,14 +42,33 @@ export function seedQueue(db: Db, repos: string[]): { added: number; requeued: n
       if (existing.status === "failed" && Date.now() - existing.updatedAt < FAILED_REQUEUE_COOLOFF_MS) {
         continue;
       }
+      // A fresh seed is a fresh start: terminal rows come back best-effort,
+      // dropping any solo mark from a previous incident.
       db.update(queue)
-        .set({ status: "queued", lastError: null, updatedAt: Date.now() })
+        .set({ status: "queued", solo: 0, lastError: null, updatedAt: Date.now() })
         .where(and(eq(queue.repo, repo), eq(queue.status, existing.status)))
         .run();
       requeued++;
     }
     return { added, requeued };
   });
+}
+
+/**
+ * Return a claimed repo to `queued` after a host-infrastructure failure
+ * (fork/thread exhaustion, OOM, provider process that never started). The repo
+ * did nothing wrong, so it must not eat the failed-status cooloff — but the
+ * fresh `updatedAt` sends it to the back of the claim order, so the current
+ * drain finishes the healthy queue before retrying it. `solo` records the
+ * escalation the retry runs at: the limits exist for system stability, so a
+ * repo that hit them gets its next try with more of the machine to itself —
+ * level 1 holds the large-repo slot, level 2 runs with no other repos at all.
+ */
+export function requeueInfraFailure(db: Db, repo: string, lastError: string, solo: 1 | 2): void {
+  db.update(queue)
+    .set({ status: "queued", solo, lastError, updatedAt: Date.now() })
+    .where(eq(queue.repo, repo))
+    .run();
 }
 
 /**
@@ -66,14 +85,18 @@ export function reclaimRunningQueue(db: Db): number {
 
 /**
  * Claim the next queued repo (optimistic update, looped on a lost race so
- * concurrent claimers stay correct without a lock).
+ * concurrent claimers stay correct without a lock). The concurrent drain
+ * claims levels 0-1 only; level-2 (exclusive) rows are claimed by the
+ * exclusive pass after every worker has drained out, so they truly run alone.
  */
-export function claimNextQueued(db: Db): QueueRow | null {
+export function claimNextQueued(db: Db, which: "concurrent" | "exclusive" = "concurrent"): QueueRow | null {
   for (;;) {
     const next = db
       .select()
       .from(queue)
-      .where(eq(queue.status, "queued"))
+      .where(
+        and(eq(queue.status, "queued"), which === "exclusive" ? eq(queue.solo, 2) : lt(queue.solo, 2))
+      )
       .orderBy(desc(queue.priority), asc(queue.updatedAt))
       .get();
     if (!next) return null;
