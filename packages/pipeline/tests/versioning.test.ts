@@ -121,6 +121,28 @@ describe("version-aware analysis integration", () => {
     close();
   });
 
+  it("integrates a repo whose record count exceeds one statement's variable limit", () => {
+    // elasticsearch produced 1,352 records; at ~30 bound variables per row a
+    // single INSERT blew SQLite's 32,766-variable cap and the whole analysis
+    // was discarded ("too many SQL variables"). 1,400 rows must integrate.
+    seedPublishedRepo("elastic/elasticsearch");
+    const rows = Array.from({ length: 1400 }, (_, i) =>
+      errorRow("elastic/elasticsearch", V2_SHA, `es-err-${String(i).padStart(4, "0")}`)
+    );
+
+    integrateAnalyzedVersion(db, "elastic/elasticsearch", V2_SHA, rows);
+
+    const row = getRepo(db, "elastic/elasticsearch")!;
+    expect(row.status).toBe("analyzed");
+    expect(row.errorCount).toBe(1400);
+    expect(errorsForRepo(db, "elastic/elasticsearch")).toHaveLength(1400);
+
+    // replaceErrors shares the chunked path — the direct call must survive too.
+    replaceErrors(db, "elastic/elasticsearch", rows.slice(0, 1100));
+    expect(errorsForRepo(db, "elastic/elasticsearch")).toHaveLength(1100);
+    close();
+  });
+
   it("integrating an empty result is a valid published version", () => {
     seedPublishedRepo("clean/repo");
 

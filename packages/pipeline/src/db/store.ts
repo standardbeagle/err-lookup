@@ -1,5 +1,6 @@
 import { eq, desc, and } from "drizzle-orm";
 import { tx, type Db } from "./client.js";
+import { chunk } from "../util/pool.js";
 import { repositories, errors, jobHistory, type ErrorRow, type RepositoryRow } from "./schema.js";
 import type { PhaseName } from "@errlookup/schema";
 
@@ -106,15 +107,26 @@ export function latestPhaseRun(
   return row;
 }
 
+/**
+ * Rows per INSERT statement. The errors table binds ~30 variables per row and
+ * SQLite caps a statement at 32,766 — elasticsearch's 1,352 records blew that
+ * as a single statement ("too many SQL variables") and threw away the whole
+ * analysis. 500 rows ≈ 15k variables: half the ceiling, one statement for the
+ * common repo.
+ */
+const INSERT_CHUNK_ROWS = 500;
+
+function insertErrorRows(db: Db, rows: Omit<ErrorRow, "updatedAt">[]): void {
+  for (const slice of chunk(rows as (typeof errors.$inferInsert)[], INSERT_CHUNK_ROWS)) {
+    db.insert(errors).values(slice).run();
+  }
+}
+
 /** Replace all errors for a repo inside a single transaction (§3.2). */
 export function replaceErrors(db: Db, repo: string, rows: Omit<ErrorRow, "updatedAt">[]): void {
-  db.transaction((tx) => {
-    tx.delete(errors).where(eq(errors.repo, repo)).run();
-    if (rows.length > 0) {
-      tx.insert(errors)
-        .values(rows as (typeof errors.$inferInsert)[])
-        .run();
-    }
+  tx(db, () => {
+    db.delete(errors).where(eq(errors.repo, repo)).run();
+    insertErrorRows(db, rows);
   });
 }
 
@@ -137,11 +149,7 @@ export function integrateAnalyzedVersion(
 ): void {
   tx(db, () => {
     db.delete(errors).where(eq(errors.repo, repo)).run();
-    if (rows.length > 0) {
-      db.insert(errors)
-        .values(rows as (typeof errors.$inferInsert)[])
-        .run();
-    }
+    insertErrorRows(db, rows);
     upsertRepo(db, {
       repo,
       status: "analyzed",
