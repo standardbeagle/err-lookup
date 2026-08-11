@@ -10,6 +10,28 @@ const siteRoot = resolve(__dirname, "..");
 const dist = resolve(siteRoot, "dist");
 const publicData = resolve(siteRoot, "public", "data");
 
+import type { ErrorEntry } from "@errlookup/schema";
+import { renderErrorPage } from "./render-error-page.js";
+
+function fullErrorsByRepo(): Map<string, ErrorEntry[]> {
+  const repos = JSON.parse(readFileSync(resolve(publicData, "repos.json"), "utf8")) as { repo: string }[];
+  const out = new Map<string, ErrorEntry[]>();
+  for (const r of repos) {
+    const [owner, name] = r.repo.split("/");
+    out.set(r.repo, JSON.parse(readFileSync(resolve(publicData, `repos/${owner}/${name}.json`), "utf8")));
+  }
+  return out;
+}
+
+/** Render every fixture error page the way the worker would, keyed repo/slug. */
+async function renderedErrorPages(): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const [repo, all] of fullErrorsByRepo()) {
+    for (const e of all) out.set(`${repo}/${e.slug}`, await renderErrorPage(e, all));
+  }
+  return out;
+}
+
 function readErrorRecords(): {
   repo: string;
   slug: string;
@@ -49,7 +71,10 @@ function htmlFiles(dir: string): string[] {
 function hrefToDistPath(href: string): string | null {
   if (!href.startsWith("/")) return null;
   if (href.startsWith("/data/")) return null; // static JSON asset, not an HTML page
-  if (href.startsWith("/api/")) return null; // served by the Pages Function, no dist file
+  if (href.startsWith("/api/")) return null; // served by the worker, no dist file
+  // Error detail pages are on-demand worker routes; validate against the
+  // dataset instead of dist.
+  if (VALID_ERROR_HREFS.has(href.split("#")[0]!.split("?")[0]!)) return null;
   const clean = href.split("#")[0]!.split("?")[0]!;
   const rel = clean.replace(/^\//, "");
   // Static assets (favicon, media, etc.) must exist in dist as plain files.
@@ -60,25 +85,37 @@ function hrefToDistPath(href: string): string | null {
   return resolve(dist, rel, "index.html");
 }
 
+const VALID_ERROR_HREFS = new Set(
+  readErrorRecords().map((e) => `/${e.repo}/${e.slug}/`)
+);
+
 describe("site build (§8.3)", () => {
-  it("produces every error page", () => {
+  it("ships error pages as on-demand worker routes, not dist files", () => {
+    // The corpus outgrew one-static-page-per-error (Pages file cap + build
+    // clock); the worker renders them from /data shards instead.
+    expect(existsSync(resolve(dist, "_worker.js")), "dist/_worker.js missing").toBe(true);
+    const routes = JSON.parse(readFileSync(resolve(dist, "_routes.json"), "utf8"));
+    expect(routes.include).toContain("/*"); // one splat: wrangler rejects overlapping include rules
+    expect(routes.include.length + routes.exclude.length, "over Cloudflare's 100-rule cap").toBeLessThanOrEqual(100);
     for (const e of readErrorRecords()) {
       const p = resolve(dist, e.repo, e.slug, "index.html");
-      expect(existsSync(p), `missing ${p}`).toBe(true);
+      expect(existsSync(p), `${p} should be on-demand, not prerendered`).toBe(false);
     }
   });
 
-  it("each error page contains the exact error message + JSON twin link", () => {
-    for (const e of readErrorRecords()) {
-      const html = readFileSync(resolve(dist, e.repo, e.slug, "index.html"), "utf8");
+  it("each error page contains the exact error message + JSON twin link", async () => {
+    for (const [key, html] of await renderedErrorPages()) {
+      const [repo, slug] = [key.split("/").slice(0, 2).join("/"), key.split("/")[2]!];
+      const e = fullErrorsByRepo().get(repo)!.find((x) => x.slug === slug)!;
       expect(html).toContain(e.errorMessage);
       expect(html).toContain(`/api/errors/${e.id}`);
     }
   });
 
-  it("JSON-LD on error pages parses and carries TechArticle + FAQPage", () => {
+  it("JSON-LD on error pages parses and carries TechArticle + FAQPage", async () => {
+    const pages = await renderedErrorPages();
     for (const e of readErrorRecords()) {
-      const html = readFileSync(resolve(dist, e.repo, e.slug, "index.html"), "utf8");
+      const html = pages.get(`${e.repo}/${e.slug}`)!;
       const m = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
       expect(m, `no JSON-LD on ${e.slug}`).not.toBeNull();
       const ld = JSON.parse(m![1]);
@@ -88,10 +125,9 @@ describe("site build (§8.3)", () => {
     }
   });
 
-  it("no error page exceeds 50 KB (§6.2 page weight)", () => {
-    for (const e of readErrorRecords()) {
-      const stat = statSync(resolve(dist, e.repo, e.slug, "index.html"));
-      expect(stat.size, `${e.slug} is ${stat.size}B`).toBeLessThan(50_000);
+  it("no error page exceeds 50 KB (§6.2 page weight)", async () => {
+    for (const [key, html] of await renderedErrorPages()) {
+      expect(html.length, `${key} is ${html.length}B`).toBeLessThan(50_000);
     }
   });
 
@@ -124,9 +160,10 @@ describe("site build (§8.3)", () => {
     for (const g of GUIDES) expect(xml).toContain(`/guides/${g.slug}/`);
   });
 
-  it("error pages link the guides their code/message matches", () => {
+  it("error pages link the guides their code/message matches", async () => {
+    const pages = await renderedErrorPages();
     for (const e of readErrorRecords()) {
-      const html = readFileSync(resolve(dist, e.repo, e.slug, "index.html"), "utf8");
+      const html = pages.get(`${e.repo}/${e.slug}`)!;
       for (const g of guidesFor(e.errorCode, e.errorMessage)) {
         expect(html, `${e.slug} → ${g.slug}`).toContain(`/guides/${g.slug}/`);
       }
@@ -248,9 +285,10 @@ describe("error search", () => {
 });
 
 describe("page titles", () => {
-  it("never repeats the error message inside a title", () => {
+  it("never repeats the error message inside a title", async () => {
+    const pages = await renderedErrorPages();
     for (const e of readErrorRecords()) {
-      const html = readFileSync(resolve(dist, e.repo, e.slug, "index.html"), "utf8");
+      const html = pages.get(`${e.repo}/${e.slug}`)!;
       const title = html.match(/<title>([^<]*)<\/title>/)![1]!;
       // A codeless error used to render "<msg truncated>: <msg>".
       const head = title.split(" — ")[0]!;
@@ -289,9 +327,10 @@ describe("social cards", () => {
     }
   });
 
-  it("uses the repo's card on its error pages and a per-post card on the blog", () => {
+  it("uses the repo's card on its error pages and a per-post card on the blog", async () => {
+    const pages = await renderedErrorPages();
     for (const e of readErrorRecords()) {
-      const html = readFileSync(resolve(dist, e.repo, e.slug, "index.html"), "utf8");
+      const html = pages.get(`${e.repo}/${e.slug}`)!;
       const [owner, name] = e.repo.split("/");
       expect(html).toContain(`/og/repo-${owner}-${name}.png`);
     }
@@ -339,9 +378,10 @@ describe("RSS feed", () => {
 });
 
 describe("breadcrumbs", () => {
-  it("puts a BreadcrumbList on repo and error pages", () => {
+  it("puts a BreadcrumbList on repo and error pages", async () => {
+    const pages = await renderedErrorPages();
     for (const e of readErrorRecords()) {
-      const html = readFileSync(resolve(dist, e.repo, e.slug, "index.html"), "utf8");
+      const html = pages.get(`${e.repo}/${e.slug}`)!;
       const blocks = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
       const graph = blocks.flatMap((m) => {
         const ld = JSON.parse(m[1]!);

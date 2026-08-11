@@ -1,0 +1,154 @@
+---
+import Base from "../layouts/Base.astro";
+import { guidesFor, guideHref } from "../data/guides.js";
+import { repoOg } from "../data/og.js";
+import type { ErrorEntry } from "@errlookup/schema";
+
+interface Props {
+  error: ErrorEntry;
+  repoFullName: string;
+  related: ErrorEntry[];
+}
+
+const { error: e, repoFullName, related } = Astro.props;
+// "CODE: message" when there is a code to lead with. Falling back to a
+// truncated copy of the message printed it twice ("Expected a function, got
+// {type}: Expected a function, got {type}"), spending the part of the title
+// search engines actually show on a stutter.
+const title = e.errorCode
+  ? `${e.errorCode}: ${e.errorMessage} — ${repoFullName} | ErrLookup`
+  : `${e.errorMessage} — ${repoFullName} | ErrLookup`;
+const description = e.documentation.slice(0, 155);
+const guides = guidesFor(e.errorCode, e.errorMessage);
+const jsonUrl = `/api/errors/${e.id}`;
+const issuesUrl = `https://github.com/${repoFullName}/issues`;
+
+const SITE = "https://errors.standardbeagle.com";
+// JSON-LD: BreadcrumbList + TechArticle + FAQPage (question = message, answer =
+// top solution). The breadcrumb mirrors the visible trail above the heading, so
+// search results show "errors.standardbeagle.com > repo > error" instead of a
+// bare truncated URL.
+const ld = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "ErrLookup", item: `${SITE}/` },
+        { "@type": "ListItem", position: 2, name: repoFullName, item: `${SITE}/${repoFullName}/` },
+        {
+          "@type": "ListItem",
+          position: 3,
+          name: e.errorCode ?? e.errorMessage.slice(0, 60),
+          item: `${SITE}/${repoFullName}/${e.slug}/`,
+        },
+      ],
+    },
+    {
+      "@type": "TechArticle",
+      headline: e.errorCode ?? e.errorMessage.slice(0, 80),
+      description: e.documentation,
+      about: `${repoFullName} — ${e.errorMessage}`,
+      url: `https://errors.standardbeagle.com/${repoFullName}/${e.slug}/`,
+      proficiencyLevel: "Expert",
+    },
+    {
+      "@type": "FAQPage",
+      mainEntity: [
+        {
+          "@type": "Question",
+          name: `What causes "${e.errorMessage}" in ${repoFullName}?`,
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: e.solutions[0] ?? e.documentation,
+          },
+        },
+      ],
+    },
+  ],
+};
+---
+<Base ogImage={repoOg(repoFullName)} title={title} description={description}>
+  <Fragment slot="head">
+    <link rel="alternate" type="application/json" href={jsonUrl} title="JSON dataset record" />
+    <link rel="canonical" href={`https://errors.standardbeagle.com/${repoFullName}/${e.slug}/`} />
+    <script type="application/ld+json" set:html={JSON.stringify(ld)} />
+  </Fragment>
+
+  <p class="muted"><a href={`/${repoFullName}/`}>{repoFullName}</a> · <span class="pill">{e.severity}</span> {e.errorClass && <>· <code>{e.errorClass}</code></>}</p>
+  <h1>{e.errorCode ?? e.errorMessage.slice(0, 60)}</h1>
+  {e.errorCode && <p class="muted"><code>{e.errorCode}</code></p>}
+
+  <h2>Error message</h2>
+  <pre>{e.errorMessage}</pre>
+
+  <h2>What it means</h2>
+  <p>{e.documentation}</p>
+
+  <h2>Source</h2>
+  <p class="muted">Thrown at <code>{e.filePath}{e.lineNumber ? `:${e.lineNumber}` : ""}</code></p>
+  {e.sourceCode && <pre>{e.sourceCode}</pre>}
+  <p><a href={e.githubUrl} target="_blank" rel="noopener noreferrer">View on GitHub</a> (pinned to <code>{e.analyzedSha.slice(0, 10)}</code>)</p>
+
+  {e.solutions.length > 0 && (
+    <>
+      <h2>Solutions</h2>
+      <ol>
+        {e.solutions.map((s) => <li>{s}</li>)}
+      </ol>
+    </>
+  )}
+  {e.exampleFix && (
+    <>
+      <h3>Example fix</h3>
+      <pre>{e.exampleFix}</pre>
+    </>
+  )}
+
+  {(e.handlingStrategy || e.validationCode || e.typeGuard || e.tryCatchPattern || e.preventionTips.length > 0) && (
+    <details open>
+      <summary>Defensive patterns</summary>
+      {e.handlingStrategy && <p>Strategy: <span class="pill">{e.handlingStrategy}</span></p>}
+      {e.validationCode && <><h3>Validate before calling</h3><pre>{e.validationCode}</pre></>}
+      {e.typeGuard && <><h3>Type guard</h3><pre>{e.typeGuard}</pre></>}
+      {e.tryCatchPattern && <><h3>Try / catch</h3><pre>{e.tryCatchPattern}</pre></>}
+      {e.preventionTips.length > 0 && (
+        <>
+          <h3>Prevention</h3>
+          <ul>{e.preventionTips.map((t) => <li>{t}</li>)}</ul>
+        </>
+      )}
+    </details>
+  )}
+
+  <h2>When it happens</h2>
+  <p><strong>Trigger:</strong> {e.triggerScenarios}</p>
+  <p><strong>Common situations:</strong> {e.commonSituations}</p>
+
+  {guides.length > 0 && (
+    <>
+      <h2>Understand the failure class</h2>
+      <ul>
+        {guides.map((g) => (
+          <li><a href={guideHref(g.slug)}>{g.title}</a> — {g.short}.</li>
+        ))}
+      </ul>
+    </>
+  )}
+
+  {related.length > 0 && (
+    <>
+      <h2>Related errors</h2>
+      <ul>
+        {related.map((r) => <li><a href={`/${repoFullName}/${r.slug}/`}>{r.errorCode ?? r.errorMessage.slice(0, 60)}</a></li>)}
+      </ul>
+    </>
+  )}
+
+  <hr />
+  <p class="muted">
+    AI-assisted analysis of <code>{repoFullName}@{e.analyzedSha.slice(0, 10)}</code> ({e.analyzedAt.slice(0, 10)}).
+    Data as JSON: <a href={jsonUrl}>{jsonUrl}</a>.
+    Report an issue: <a href={issuesUrl} target="_blank" rel="noopener noreferrer">GitHub</a>.
+  </p>
+</Base>

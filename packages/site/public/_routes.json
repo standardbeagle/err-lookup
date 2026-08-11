@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "description": "Hand-authored: the adapter's generated file enumerates every prerendered path and static asset, which breaks Cloudflare's 100-rule cap as the corpus grows. Everything matching an exclude is served static; the rest (the API and the on-demand error pages) hits the worker, which falls back to the ASSETS binding for prerendered paths it doesn't own.",
+  "include": [
+    "/*"
+  ],
+  "exclude": [
+    "/",
+    "/_astro/*",
+    "/data/*",
+    "/og/*",
+    "/sitemaps/*",
+    "/blog/*",
+    "/guides/*",
+    "/repos/*",
+    "/about/*",
+    "/api-docs/*",
+    "/search/*",
+    "/request-crawl/*",
+    "/favicon.svg",
+    "/robots.txt",
+    "/rss.xml",
+    "/sitemap.xml",
+    "/sitemap-index.xml",
+    "/llms.txt"
+  ]
+}

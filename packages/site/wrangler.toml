@@ -1,0 +1,9 @@
+# Cloudflare Pages project config, read by `wrangler pages deploy` / `pages dev`
+# (scripts/deploy-site.sh runs from this directory). nodejs_compat: prerendered
+# routes bundle node:fs-using data loaders into _worker.js; the flag keeps the
+# runtime from rejecting those imports even though on-demand routes never call
+# them.
+name = "errlookup"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]

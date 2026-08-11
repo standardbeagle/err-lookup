@@ -23,7 +23,8 @@ fi
 
 cd "$REPO_ROOT"
 pnpm --filter @errlookup/site build
-# run from packages/site so wrangler picks up ./functions (Pages Functions API)
+# run from packages/site so wrangler reads wrangler.toml (nodejs_compat flag);
+# the API + on-demand pages ship inside dist/_worker.js built by Astro
 cd "$REPO_ROOT/packages/site"
 npx --yes wrangler@4 pages deploy dist \
   --project-name "${ERRLOOKUP_PAGES_PROJECT:-errlookup}" \

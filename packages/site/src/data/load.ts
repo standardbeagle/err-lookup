@@ -1,9 +1,22 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ErrorEntry, RepoEntry } from "@errlookup/schema";
 
-const siteRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+// Build-time only (prerendered routes and sitemaps). Resolved from cwd, not
+// import.meta.url: under the Cloudflare adapter these modules prerender from
+// inside dist/_worker.js/, which is nowhere near public/data. astro build and
+// the test runners all execute with cwd at the site package root; the upward
+// walk covers callers that start deeper.
+function findSiteRoot(): string {
+  let dir = process.cwd();
+  for (;;) {
+    if (existsSync(resolve(dir, "public", "data")) || existsSync(resolve(dir, "astro.config.mjs"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) return process.cwd();
+    dir = parent;
+  }
+}
+const siteRoot = findSiteRoot();
 
 function readJson<T>(rel: string): T {
   return JSON.parse(readFileSync(resolve(siteRoot, "public", "data", rel), "utf8")) as T;
@@ -68,9 +81,8 @@ export function allErrorParams(): { owner: string; name: string; slug: string; r
   return out;
 }
 
-/** Related errors: same repo, sharing ≥1 tag, capped. */
-export function relatedErrors(repo: string, slug: string, cap = 5): ErrorEntry[] {
-  const all = getRepoErrors(repo);
+/** Related errors within an already-loaded record set: sharing ≥1 tag, capped. */
+export function relatedFrom(all: ErrorEntry[], slug: string, cap = 5): ErrorEntry[] {
   const me = all.find((e) => e.slug === slug);
   if (!me) return [];
   return all
@@ -80,4 +92,9 @@ export function relatedErrors(repo: string, slug: string, cap = 5): ErrorEntry[]
     .sort((a, b) => b.overlap - a.overlap)
     .slice(0, cap)
     .map((x) => x.e);
+}
+
+/** Related errors: same repo, sharing ≥1 tag, capped. */
+export function relatedErrors(repo: string, slug: string, cap = 5): ErrorEntry[] {
+  return relatedFrom(getRepoErrors(repo), slug, cap);
 }

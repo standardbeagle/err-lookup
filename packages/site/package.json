@@ -13,12 +13,14 @@
     "gen-og": "tsx scripts/gen-og-images.ts"
   },
   "dependencies": {
+    "@astrojs/cloudflare": "^12.6.13",
     "astro": "^5.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "sharp": "^0.35.3",
     "tsx": "^4.19.2",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.7",
+    "wrangler": "^4.59.2"
   }
 }
