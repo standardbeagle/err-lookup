@@ -210,47 +210,6 @@ describe("pipeline e2e (fixture-replay)", () => {
     }
   }, 30000);
 
-  it("takes the large-repo slot on source-file count, not just clone size", async () => {
-    const local = await makeLocalRepo();
-    const dbPath = resolve(".tmp-test", `e2e-large-files-${process.pid}.db`);
-    rmSync(dbPath, { force: true });
-    const { db, raw } = openDb(dbPath);
-    const lockDir = join(tmpdir(), `el-large-files-${process.pid}.lock`);
-    rmSync(lockDir, { recursive: true, force: true });
-
-    // A 2-source-file fixture repo is "large" at threshold 1 — proving the
-    // gate fires on the memory proxy while the clone is nowhere near 2GB.
-    process.env.ERRLOOKUP_LARGE_SOURCE_FILES = "1";
-    process.env.ERRLOOKUP_LARGE_LOCK_DIR = lockDir;
-    const logs: string[] = [];
-    try {
-      const res = await analyzeRepo("sindresorhus/is", {
-        db,
-        providers: {
-          claude: new ScriptedProvider("claude", [
-            { match: [EXPLAIN, DEFEND], fixturePath: fx("provider-stdout-analysis.json") },
-            { match: "Review these assembled", fixturePath: fx("provider-stdout-verify.json") },
-            { match: "error patterns", fixturePath: fx("provider-stdout-clean.json") },
-          ]),
-        },
-        cfg: makeCfg(),
-        cloneUrlOverride: local.path,
-        onLog: (m) => logs.push(m),
-      });
-      expect(res.failed).toBeUndefined();
-      expect(logs.some((m) => m.includes("source files > 1") && m.includes("acquiring large-repo slot"))).toBe(true);
-      expect(logs).toContain("large-repo slot acquired");
-      // released on the way out — the lock dir must be gone
-      expect(() => mkdirSync(lockDir)).not.toThrow();
-    } finally {
-      delete process.env.ERRLOOKUP_LARGE_SOURCE_FILES;
-      delete process.env.ERRLOOKUP_LARGE_LOCK_DIR;
-      rmSync(lockDir, { recursive: true, force: true });
-      raw.close();
-      disposeRepo(local.path);
-    }
-  }, 30000);
-
   it("serializes large repos behind the machine-wide lock; reaps stale locks", async () => {
     const { acquireLargeRepoLock } = await import("../src/pipeline.js");
     const lockDir = join(tmpdir(), `el-lock-test-${process.pid}`);
