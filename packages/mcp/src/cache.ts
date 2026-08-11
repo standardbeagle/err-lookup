@@ -28,18 +28,8 @@ export interface Manifest {
   files: Record<string, { path: string; bytes: number; sha256: string }>;
 }
 
-export interface IndexError {
-  id: string;
-  repo: string;
-  slug: string;
-  code: string | null;
-  msg: string;
-  pattern: string;
-  type: string;
-  cls: string | null;
-  tags: string[];
-  sev: string;
-}
+export type { IndexError } from "@errlookup/schema";
+import type { IndexError } from "@errlookup/schema";
 
 export interface IndexFile {
   schemaVersion: number;

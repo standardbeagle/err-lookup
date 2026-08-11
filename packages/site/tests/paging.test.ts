@@ -103,7 +103,7 @@ describe("rendered repo pager", () => {
 
   beforeAll(() => {
     if (!existsSync(resolve(publicData, "manifest.json"))) {
-      execFileSync("node", ["scripts/seed-dataset.mjs"], { cwd: siteRoot });
+      execFileSync("pnpm", ["exec", "tsx", "scripts/seed-dataset.ts"], { cwd: siteRoot });
     }
     repoCount = (JSON.parse(readFileSync(resolve(publicData, "repos.json"), "utf8")) as unknown[]).length;
     execFileSync("pnpm", ["exec", "astro", "build"], {

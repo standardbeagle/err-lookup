@@ -4,6 +4,7 @@
  * these files; this script stands in so the site can build without the DB.
  */
 import { writeFileSync, mkdirSync } from "node:fs";
+import { buildSearchIndex } from "../../schema/src/search-core.js";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -186,6 +187,8 @@ for (const r of repos) {
   write(`repos/${owner}/${name}.json`, errors.filter((e) => e.repo === r.repo));
 }
 for (const e of errors) write(`errors/${e.id}.json`, e);
+
+for (const f of buildSearchIndex(indexErrors)) write(f.relPath, f.content);
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 const manifest = {

@@ -21,7 +21,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const siteRoot = resolve(__dirname, "..", "..", "site");
 const sitePublicData = resolve(siteRoot, "public", "data");
 if (!existsSync(resolve(sitePublicData, "manifest.json"))) {
-  execFileSync("node", ["scripts/seed-dataset.mjs"], { cwd: siteRoot, stdio: "pipe" });
+  execFileSync("pnpm", ["exec", "tsx", "scripts/seed-dataset.ts"], { cwd: siteRoot, stdio: "pipe" });
 }
 void searchErrors;
 

@@ -31,7 +31,7 @@ function readErrorRecords(): {
 beforeAll(() => {
   // Ensure a seeded dataset exists, then (re)build the site for assertions.
   if (!existsSync(resolve(publicData, "manifest.json"))) {
-    execFileSync("node", ["scripts/seed-dataset.mjs"], { cwd: siteRoot });
+    execFileSync("pnpm", ["exec", "tsx", "scripts/seed-dataset.ts"], { cwd: siteRoot });
   }
   execFileSync("pnpm", ["exec", "astro", "build"], { cwd: siteRoot, stdio: "pipe" });
 }, 60_000);

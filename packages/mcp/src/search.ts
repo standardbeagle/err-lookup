@@ -1,4 +1,5 @@
 import type { IndexError } from "./cache.js";
+import { extractCodeTokens, normalizeForFuzzy } from "@errlookup/schema";
 import { siteErrorUrl } from "./base-url.js";
 
 export interface SearchHit {
@@ -18,14 +19,6 @@ export interface SearchOptions {
 
 const PATTERN_BUDGET_MS = 50;
 const FUZZY_THRESHOLD = 0.4;
-
-/** Extract SCREAMING_SNAKE and E[A-Z]+ tokens (error-code candidates) from input. */
-function extractCodeTokens(input: string): Set<string> {
-  const tokens = new Set<string>();
-  for (const m of input.matchAll(/\b[A-Z][A-Z0-9_]{2,}\b/g)) tokens.add(m[0]);
-  for (const m of input.matchAll(/\bE[A-Z]+\b/g)) tokens.add(m[0]);
-  return tokens;
-}
 
 /** Tier 1 — exact-code: an input token equals an entry's errorCode. */
 function tierExactCode(input: string, errors: IndexError[]): IndexError[] {
@@ -51,19 +44,6 @@ function tierPattern(input: string, errors: IndexError[]): IndexError[] {
     }
   }
   return hits;
-}
-
-/** Normalize text for fuzzy matching: lowercase, strip digits/paths/hex/quotes. */
-function normalizeForFuzzy(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/\/[\w./-]+/g, " ") // paths
-    .replace(/0x[0-9a-f]+/g, " ") // hex
-    .replace(/\b\d+\b/g, " ") // numbers
-    .replace(/'[^']*'|"[^"]*"/g, " ") // quoted strings
-    .replace(/[^a-z ]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 /** Precompute IDF over the index for rare-token boosting. */
