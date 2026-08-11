@@ -4,7 +4,7 @@ import { runProvider, watchdogBudgetMs } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
 import { mapPool, chunk } from "../util/pool.js";
 import { DISCOVERY_PROMPT, candidateDiscoveryPrompt, type DiscoveredErrorJson } from "./prompts.js";
-import { extractCandidatesAuto } from "./candidates.js";
+import { extractCandidatesAuto, countSourceFiles } from "./candidates.js";
 import { stopLciServer } from "../util/lci-server.js";
 
 export interface DiscoveryResult {
@@ -12,10 +12,19 @@ export interface DiscoveryResult {
   raw: string;
   providerUsed: string;
   durationMs: number;
-  /** How candidates were sourced: lci / builtin extractor, or agentic scan. */
-  mode: "candidates-lci" | "candidates-builtin" | "agentic";
+  /** How candidates were sourced: lci / builtin extractor, or agentic scan —
+   *  or skipped-low-source when the repo has too little code to justify one. */
+  mode: "candidates-lci" | "candidates-builtin" | "agentic" | "skipped-low-source";
   /** Candidates abandoned after batch-splitting retries — logged, not fatal. */
   skippedCandidates: number;
+}
+
+/** Below this many source files, a candidate-less repo skips the agentic scan
+ *  (default 5). Docs/list/config repos sit at 0-2; the whole-repo LLM crawl on
+ *  them costs a full provider call to confirm there is nothing to find. */
+function minAgenticSourceFiles(): number {
+  const n = Number(process.env.ERRLOOKUP_MIN_AGENTIC_SOURCE_FILES ?? 5);
+  return Number.isFinite(n) && n >= 0 ? n : 5;
 }
 
 // 40, down from 80: heavyweight candidate sites made 80-per-call discovery
@@ -53,6 +62,20 @@ export async function runDiscovery(
   if (backend === "lci") stopLciServer(repoPath);
 
   if (candidates.length === 0) {
+    // Active ingestion filter: no extracted candidates AND next to no source
+    // files means a docs-shaped repo. Confirming the obvious with a whole-repo
+    // agentic crawl is the single most wasteful call in the pipeline — skip it.
+    const sourceFiles = countSourceFiles(repoPath);
+    if (sourceFiles < minAgenticSourceFiles()) {
+      return {
+        errors: [],
+        raw: "",
+        providerUsed: "none",
+        durationMs: Date.now() - started,
+        mode: "skipped-low-source",
+        skippedCandidates: 0,
+      };
+    }
     const result = await withTimeout(
       runProvider(DISCOVERY_PROMPT, { cwd: repoPath }, providers, cfg, "discovery"),
       budget

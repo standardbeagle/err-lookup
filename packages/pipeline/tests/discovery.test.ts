@@ -131,6 +131,20 @@ describe("runDiscovery batching", () => {
     expect(r.errors.some((e) => e.line === 1)).toBe(true);
   });
 
+  it("skips the agentic crawl on a docs-shaped repo — zero provider calls", async () => {
+    // No extractable candidates and almost no source files: the whole-repo
+    // agentic scan would spend a full provider call to confirm nothing.
+    const docsRepo = tmpRepo("discovery-docs-");
+    writeFileSync(join(docsRepo, "README.md"), "# just docs\n");
+    writeFileSync(join(docsRepo, "GUIDE.md"), "# more docs\n");
+    const p = new BatchProvider("bulk");
+    const r = await runDiscovery(docsRepo, { bulk: p }, cfg());
+    expect(r.mode).toBe("skipped-low-source");
+    expect(r.errors).toEqual([]);
+    expect(p.calls).toBe(0);
+    disposeRepo(docsRepo);
+  });
+
   it("recovers a batch that fails once, via the provider retry", async () => {
     let failed = false;
     const p = new BatchProvider("bulk", {

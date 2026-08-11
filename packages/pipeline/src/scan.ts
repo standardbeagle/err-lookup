@@ -31,11 +31,19 @@ export interface ScanOptions {
   cloneUrlFor?: (repo: string) => string | undefined;
 }
 
+/** How long a zero-error analysis suppresses re-scans (default 14 days). */
+function zeroYieldRescanMs(): number {
+  const days = Number(process.env.ERRLOOKUP_ZERO_YIELD_RESCAN_DAYS ?? 14);
+  return (Number.isFinite(days) && days >= 0 ? days : 14) * 24 * 60 * 60 * 1000;
+}
+
 export interface ScanSummary {
   ok: number;
   failed: number;
   /** Remote HEAD unchanged since the published analysis — no clone spent. */
   unchanged: number;
+  /** Zero-yield repos inside their damped re-scan window — no ls-remote spent. */
+  dampened: number;
   /** Left queued because the failure breaker tripped. */
   leftQueued: number;
   /** Requeued without a failed mark because the host, not the repo, was sick. */
@@ -73,7 +81,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
   const log = opts.onLog ?? (() => {});
 
   const seeded = seedQueue(db, opts.corpus);
-  const summary: ScanSummary = { ok: 0, failed: 0, unchanged: 0, leftQueued: 0, infraRequeued: 0, seeded };
+  const summary: ScanSummary = { ok: 0, failed: 0, unchanged: 0, dampened: 0, leftQueued: 0, infraRequeued: 0, seeded };
   if (opts.seedOnly) return summary;
 
   // Under the drain lock any `running` row belongs to a dead scan.
@@ -127,6 +135,22 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
       const cloneUrl = opts.cloneUrlFor?.(repo);
       if (!opts.force) {
         const row = getRepo(db, repo);
+        // Zero-yield damping: a published analysis that found nothing marks a
+        // repo as docs/config-shaped, and those repos churn HEAD on README
+        // edits. Re-analyzing on every HEAD move re-spends the whole LLM
+        // pipeline for another zero; hold them to a slow cadence instead.
+        if (
+          row?.analyzedSha &&
+          (row.status === "analyzed" || row.status === "exported") &&
+          row.errorCount === 0 &&
+          row.analyzedAt &&
+          Date.now() - Date.parse(row.analyzedAt) < zeroYieldRescanMs()
+        ) {
+          settleQueueItem(db, repo, "skipped");
+          summary.dampened++;
+          log(repo, `zero-yield damping: re-scan not due until ${new Date(Date.parse(row.analyzedAt) + zeroYieldRescanMs()).toISOString().slice(0, 10)}`);
+          continue;
+        }
         if (row?.analyzedSha && (row.status === "analyzed" || row.status === "exported")) {
           try {
             const remote = await remoteHeadSha(repo, cloneUrl);

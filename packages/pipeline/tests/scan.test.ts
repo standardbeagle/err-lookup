@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { openDb, type Db } from "../src/db/client.js";
-import { getRepo } from "../src/db/store.js";
+import { getRepo, upsertRepo } from "../src/db/store.js";
 import {
   seedQueue,
   claimNextQueued,
@@ -202,6 +202,35 @@ describe("re-entrant scan", () => {
     expect(second.ok).toBe(0);
     expect(second.failed).toBe(0);
     expect(queueByStatus(db, "skipped")).toHaveLength(1);
+    close();
+  });
+
+  it("dampens zero-yield repos: HEAD moves, but no ls-remote or re-analysis is spent", async () => {
+    // A published zero-error analysis (docs-shaped repo) inside the damping
+    // window skips even when HEAD changed. providers {} and no cloneUrlFor:
+    // any network or provider touch would throw.
+    upsertRepo(db, {
+      repo: "docs/only",
+      status: "analyzed",
+      analyzedSha: "a".repeat(40),
+      analyzedAt: new Date().toISOString(),
+      errorCount: 0,
+      defaultBranch: "main",
+    });
+    const summary = await runScan({ db, cfg: makeCfg(), corpus: ["docs/only"], providers: {}, onLog: () => {} });
+    expect(summary.dampened).toBe(1);
+    expect(summary.ok).toBe(0);
+    expect(summary.failed).toBe(0);
+
+    // Outside the window the damping releases (ls-remote then fails loudly
+    // here because there is no real remote — the repo is attempted again).
+    process.env.ERRLOOKUP_ZERO_YIELD_RESCAN_DAYS = "0";
+    try {
+      const again = await runScan({ db, cfg: makeCfg(), corpus: ["docs/only"], providers: {}, onLog: () => {} });
+      expect(again.dampened).toBe(0);
+    } finally {
+      delete process.env.ERRLOOKUP_ZERO_YIELD_RESCAN_DAYS;
+    }
     close();
   });
 
