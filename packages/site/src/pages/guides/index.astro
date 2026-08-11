@@ -1,0 +1,27 @@
+---
+import Base from "../../layouts/Base.astro";
+import { GUIDES, guideErrors, guideHref } from "../../data/guides.js";
+
+const rows = GUIDES.map((g) => ({ g, count: guideErrors(g).length }));
+---
+<Base
+  title="Failure class guides — ErrLookup"
+  description="Explainer guides for the failure classes behind most production errors: connection failures, DNS, TLS certificates, timeouts, HTTP status codes, auth, and parsing."
+>
+  <h1>Failure class guides</h1>
+  <p class="lead">
+    Most production errors belong to a small number of failure classes. Each guide explains one
+    class from the mechanism up — what actually breaks, how to tell look-alikes apart, and how to
+    debug it — then links every documented occurrence across the analyzed libraries.
+  </p>
+  <ul>
+    {rows.map(({ g, count }) => (
+      <li>
+        <a href={guideHref(g.slug)}><strong>{g.title}</strong></a>
+        <br />
+        {g.description}
+        {count > 0 && <span class="muted"> ({count.toLocaleString()} documented occurrences)</span>}
+      </li>
+    ))}
+  </ul>
+</Base>

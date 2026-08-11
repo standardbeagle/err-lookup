@@ -1,0 +1,42 @@
+---
+import Guide from "../../layouts/Guide.astro";
+---
+<Guide slug="timeouts">
+  <p class="lead">
+    "Timed out" never says <em>what</em> timed out. Every request crosses several separately
+    timed stages — DNS, TCP connect, TLS, sending, waiting for first byte, reading the body —
+    and the fix depends entirely on which timer fired.
+  </p>
+
+  <h2>Which timer fired?</h2>
+  <table>
+    <tbody>
+      <tr><td>Connect timeout (<code>ETIMEDOUT</code> during dial)</td><td>SYN packets went unanswered. Unlike ECONNREFUSED (fast, active rejection), this is silence — usually a firewall dropping packets, a wrong IP, or an unreachable network. More time will not help.</td></tr>
+      <tr><td>Read / response timeout</td><td>Connected fine, then the server took too long to answer: slow query, cold start, overload, or a genuinely long operation with too small a budget.</td></tr>
+      <tr><td>Idle/socket timeout</td><td>Data stopped flowing mid-body. Long streams and large downloads through proxies hit this — every hop (client, proxy, load balancer, server) has its own idle limit and the smallest one wins.</td></tr>
+      <tr><td>Deadline exceeded (gRPC, context)</td><td>A whole-operation budget expired, possibly propagated from a caller. The timeout you see may have been set several services upstream.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Diagnose with stage timings</h2>
+  <pre>{`curl -w 'dns %{time_namelookup}  connect %{time_connect}  tls %{time_appconnect}  ttfb %{time_starttransfer}  total %{time_total}\\n' \\
+  -o /dev/null -s https://api.example.com/slow`}</pre>
+  <p>
+    One line tells you where the time went. High <code>connect</code>: network/firewall. High
+    <code>ttfb</code>: the server is slow — profile it, don't tune the client. Total fine but
+    your app times out anyway: your client's budget is smaller than reality, or an intermediate
+    proxy (common default: 30–60s) is cutting in before your own timer.
+  </p>
+
+  <h2>Choosing budgets</h2>
+  <p>
+    No timeout is a defect — a hung dependency then hangs you, and thread or connection pools
+    drain until everything is "down" from one slow backend. Set explicit budgets on every
+    external call: tight for connect (1–3s — dialing is fast when it works), generous only for
+    the specific slow operations that earn it. Retry only on failures that happened
+    <em>before</em> the server could act (connect timeouts), or on idempotent requests — a
+    response timeout does not mean the work didn't happen, and blind retries double-charge and
+    pile load onto an already-slow server. Under sustained latency, prefer failing fast
+    (circuit breaking) over queueing more waiting requests.
+  </p>
+</Guide>

@@ -85,6 +85,7 @@ function rowToRepoEntry(r: typeof repositories.$inferSelect): RepoEntry {
     description: r.description,
     language: r.language,
     stars: r.stars,
+    sourceFiles: r.sourceFiles,
     defaultBranch: r.defaultBranch,
     analyzedSha: r.analyzedSha ?? "",
     analyzedAt: r.analyzedAt ?? "",
@@ -141,9 +142,11 @@ export function buildDataset(
     else rejected++;
   }
 
+  // No per-error files: Cloudflare Pages caps a deployment at 20k files and
+  // one file per error blew past it at ~12k errors. Single records are served
+  // by /api/errors/:id, which reads the per-repo file.
   const allErrors: ErrorEntry[] = [];
   const repoFiles: FileOut[] = [];
-  const errorFiles: FileOut[] = [];
   for (const r of validRepos) {
     const rows = errorsByRepo.get(r.repo) ?? [];
     const valid: ErrorEntry[] = [];
@@ -158,9 +161,6 @@ export function buildDataset(
       relPath: `repos/${owner}/${name}.json`,
       content: JSON.stringify(valid),
     });
-    for (const e of valid) {
-      errorFiles.push({ relPath: `errors/${e.id}.json`, content: JSON.stringify(e) });
-    }
   }
 
   // index.json — compact search index (§5.2)
@@ -191,7 +191,6 @@ export function buildDataset(
     { relPath: "index.json", content: indexStr },
     { relPath: "repos.json", content: reposStr },
     ...repoFiles,
-    ...errorFiles,
   ];
 
   const inventory: Record<string, { path: string; bytes: number; sha256: string }> = {

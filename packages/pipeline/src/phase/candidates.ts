@@ -18,6 +18,22 @@ export interface CandidateSite {
   kind: string; // which pattern family matched
   snippet: string; // the matched line, trimmed
   literal: string | null; // first quoted string on the line, if any
+  /** Surrounding source lines, extracted procedurally. Carried into the
+   *  discovery prompt so the model classifies in place instead of spending an
+   *  agent tool round trip re-reading the file per candidate. */
+  context: string | null;
+}
+
+const CONTEXT_LINES = 8; // each side of the match
+const CONTEXT_MAX_CHARS = 1200;
+const CONTEXT_MAX_LINE = 200;
+
+function clipContext(lines: string[]): string | null {
+  if (lines.length === 0) return null;
+  const joined = lines.map((l) => (l.length > CONTEXT_MAX_LINE ? l.slice(0, CONTEXT_MAX_LINE) : l)).join("\n");
+  const trimmed = joined.trim();
+  if (trimmed.length === 0) return null;
+  return trimmed.length > CONTEXT_MAX_CHARS ? trimmed.slice(0, CONTEXT_MAX_CHARS) : trimmed;
 }
 
 export interface ExtractOptions {
@@ -119,6 +135,22 @@ function* walk(dir: string, root: string): Generator<string> {
   }
 }
 
+/**
+ * Count the source files candidate extraction would consider: recognized
+ * source extensions, minus skip dirs and test files. This is the repo-size
+ * signal published with each repo — it must mirror the extraction rules, or
+ * the count describes a different corpus than the one scanned.
+ */
+export function countSourceFiles(repoPath: string): number {
+  let count = 0;
+  for (const file of walk(repoPath, repoPath)) {
+    if (!EXT_TO_FAMILY[extname(file)]) continue;
+    if (TEST_FILE.test(relative(repoPath, file))) continue;
+    count++;
+  }
+  return count;
+}
+
 /** All pattern families flattened to (kind, RE2-compatible source) pairs for lci. */
 const LCI_PATTERNS: { kind: string; source: string }[] = Object.values(PATTERNS)
   .flat()
@@ -150,6 +182,7 @@ export function candidatesFromLciJson(kind: string, repoPath: string, payload: L
       kind,
       snippet: lineText.trim().slice(0, 300),
       literal: lit ? lit[1]!.slice(0, 200) : null,
+      context: clipContext(r.context?.lines ?? []),
     });
   }
   return out;
@@ -162,7 +195,9 @@ export function candidatesFromLciJson(kind: string, repoPath: string, payload: L
  */
 /** Build the lci invocation. `-r/--root` is a GLOBAL flag: it must precede the subcommand. */
 export function lciGrepArgs(repoPath: string, patternSource: string, maxResults: number): string[] {
-  return ["-r", repoPath, "grep", "-E", "-j", "--exclude-tests", "--exclude-comments", "-n", String(maxResults), patternSource];
+  // -C: context lines ride along in the same JSON payload — free relative to
+  // the LLM re-reading each file during discovery.
+  return ["-r", repoPath, "grep", "-E", "-j", "-C", String(CONTEXT_LINES), "--exclude-tests", "--exclude-comments", "-n", String(maxResults), patternSource];
 }
 
 export function extractCandidatesLci(repoPath: string, opts: ExtractOptions = {}): CandidateSite[] {
@@ -234,6 +269,7 @@ export function extractCandidates(repoPath: string, opts: ExtractOptions = {}): 
           kind: p.kind,
           snippet: line.trim().slice(0, 300),
           literal: lit ? lit[1]!.slice(0, 200) : null,
+          context: clipContext(lines.slice(Math.max(0, i - CONTEXT_LINES), i + CONTEXT_LINES + 1)),
         });
         fromFile++;
         break; // one candidate per line

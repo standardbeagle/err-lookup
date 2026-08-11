@@ -28,6 +28,22 @@ function withOutputInstruction(prompt: string, outputFile: string): string {
   );
 }
 
+/**
+ * Phase-level watchdog budget for one runProvider call. The real per-call
+ * timeout lives inside each provider and starts AFTER the shared throttle gate
+ * is acquired, so the outer net must cover two primary attempts, one fallback
+ * attempt, and time spent queued on the gate — 4x the configured call timeout.
+ * A tighter budget (it used to equal the call timeout) fires before retry or
+ * fallback ever run, turning ordinary congestion into phase failures.
+ */
+export function watchdogBudgetMs(
+  cfg: ErrlookupConfig,
+  phase?: "discovery" | "enrichment" | "defense" | "verify"
+): number {
+  const primaryName = (phase && cfg.phaseProviders?.[phase]) || cfg.defaults.primary;
+  return (cfg.providers[primaryName]?.timeoutMs ?? 600_000) * 4;
+}
+
 export interface RunResult {
   parsed: unknown;
   raw: string;

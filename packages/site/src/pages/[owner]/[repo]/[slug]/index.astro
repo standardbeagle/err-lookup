@@ -1,6 +1,7 @@
 ---
 import Base from "../../../../layouts/Base.astro";
 import { getRepos, getRepoErrors, relatedErrors } from "../../../../data/load.js";
+import { guidesFor, guideHref } from "../../../../data/guides.js";
 import { repoOg } from "../../../../data/og.js";
 import type { ErrorEntry } from "@errlookup/schema";
 
@@ -25,7 +26,8 @@ const title = e.errorCode
   : `${e.errorMessage} — ${repoFullName} | ErrLookup`;
 const description = e.documentation.slice(0, 155);
 const related = relatedErrors(repoFullName, e.slug);
-const jsonUrl = `/data/errors/${e.id}.json`;
+const guides = guidesFor(e.errorCode, e.errorMessage);
+const jsonUrl = `/api/errors/${e.id}`;
 const issuesUrl = `https://github.com/${repoFullName}/issues`;
 
 const SITE = "https://errors.standardbeagle.com";
@@ -129,6 +131,17 @@ const ld = {
   <h2>When it happens</h2>
   <p><strong>Trigger:</strong> {e.triggerScenarios}</p>
   <p><strong>Common situations:</strong> {e.commonSituations}</p>
+
+  {guides.length > 0 && (
+    <>
+      <h2>Understand the failure class</h2>
+      <ul>
+        {guides.map((g) => (
+          <li><a href={guideHref(g.slug)}>{g.title}</a> — {g.short}.</li>
+        ))}
+      </ul>
+    </>
+  )}
 
   {related.length > 0 && (
     <>

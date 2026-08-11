@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# Scheduled scanner run: analyze the starter corpus, then export the static dataset.
-# Safe to run unattended: flock prevents overlap, pipeline resumes at first
-# incomplete phase per repo (spec §4.5), failures are logged and non-fatal.
+# Scheduled scanner run — re-entrant per project (§11.1):
+#   1. SEED (always, no lock): upsert the corpus into the work queue. New or
+#      requeued repos become eligible immediately — an already-running drain
+#      picks them up because its workers claim until the queue is empty.
+#   2. DRAIN (flock-held, single scanner so the provider gate stays honest):
+#      claim → ls-remote HEAD check (unchanged repos cost no clone) → analyze →
+#      integrate per repo. Killing a drain loses nothing but unclaimed repos.
+# Every repo integrates independently, so the hourly publisher ships each
+# project as it completes — no monolithic end-of-batch export gate.
 set -u -o pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,9 +18,13 @@ CORPUS="${ERRLOOKUP_CORPUS:-$REPO_ROOT/docs/blitz-corpus.txt}"
 export ERRLOOKUP_CONFIG="${ERRLOOKUP_CONFIG:-$REPO_ROOT/configs/blitz-glm-k3.kdl}"
 
 mkdir -p "$LOG_DIR"
+
+cd "$REPO_ROOT"
+pnpm --filter @errlookup/pipeline dev scan "$CORPUS" --seed-only >>"$LOG_DIR/scan.log" 2>&1
+
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
-  echo "$(date -u +%FT%TZ) previous run still active, exiting" >>"$LOG_DIR/scan.log"
+  echo "$(date -u +%FT%TZ) drain active — seeded only; active drain picks up the queue" >>"$LOG_DIR/scan.log"
   exit 0
 fi
 
@@ -33,9 +43,9 @@ RUN_LOG="$LOG_DIR/scan-$(date -u +%Y%m%d-%H%M%S).log"
 {
   echo "=== scan run start $(date -u +%FT%TZ) corpus=$CORPUS"
   cd "$REPO_ROOT"
-  pnpm --filter @errlookup/pipeline dev batch "$CORPUS"
-  batch_exit=$?
-  echo "=== batch exit=$batch_exit"
+  pnpm --filter @errlookup/pipeline dev scan "$CORPUS"
+  scan_exit=$?
+  echo "=== scan exit=$scan_exit"
   pnpm --filter @errlookup/pipeline dev export
   export_exit=$?
   echo "=== export exit=$export_exit"

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpRepo, disposeRepo } from "./tmp-repo.js";
 import { runDiscovery } from "../src/phase/discovery.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
@@ -16,12 +16,12 @@ const SITES = 200;
 let repoPath: string;
 
 beforeAll(() => {
-  repoPath = mkdtempSync(join(tmpdir(), "discovery-test-"));
+  repoPath = tmpRepo("discovery-test-");
   const lines = Array.from({ length: SITES }, (_, i) => `if (x === ${i}) throw new Error("boom ${i}");`);
   writeFileSync(join(repoPath, "index.js"), lines.join("\n"));
 });
 
-afterAll(() => rmSync(repoPath, { recursive: true, force: true }));
+afterAll(() => disposeRepo(repoPath));
 
 /** Answers each classification batch with one error naming the first candidate line. */
 class BatchProvider implements LlmProvider {
@@ -66,7 +66,9 @@ function cfg(extraDefaults: string[] = []) {
 }
 
 describe("runDiscovery batching", () => {
-  it("preserves candidate order when batches complete out of order", async () => {
+  // 30s: two real runDiscovery calls whose candidate extraction may cold-start
+  // the lci index server; under a parallel turbo run that alone can pass 5s.
+  it("preserves candidate order when batches complete out of order", { timeout: 30_000 }, async () => {
     // Serial run establishes the reference ordering.
     const serial = new BatchProvider("bulk");
     const a = await runDiscovery(repoPath, { bulk: serial }, cfg());
@@ -80,6 +82,17 @@ describe("runDiscovery batching", () => {
     // Same errors, same order — downstream error indices must not depend on
     // which batch happened to return first.
     expect(b.errors.map((e) => e.line)).toEqual(a.errors.map((e) => e.line));
+  });
+
+  it("releases the lci index server as soon as extraction is done", { timeout: 30_000 }, async () => {
+    const { execFileSync } = await import("node:child_process");
+    const p = new BatchProvider("bulk");
+    await runDiscovery(repoPath, { bulk: p }, cfg());
+    // The server must not outlive extraction and sit on index RAM through the
+    // LLM phases. (Also holds when lci is absent — no server ever starts.)
+    const listing = execFileSync("ps", ["-eo", "args="], { encoding: "utf8" });
+    const held = listing.split("\n").some((l) => /(^|\/)lci\s/.test(l) && l.includes(repoPath));
+    expect(held).toBe(false);
   });
 
   it("fails the phase when a batch exhausts its retries — discovery gaps are not silently accepted", async () => {

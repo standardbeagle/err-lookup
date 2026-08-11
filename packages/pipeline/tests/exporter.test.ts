@@ -73,10 +73,12 @@ describe("exporter", () => {
       "index.json",
       "repos.json",
       "repos/axios/axios.json",
-      "errors/a1b2c3d4e5f60718.json",
     ]) {
       expect(existsSync(resolve(outDir, rel)), rel).toBe(true);
     }
+    // No per-error files: they blew the Pages 20k-file deploy cap; single
+    // records are served by /api/errors/:id from the per-repo file.
+    expect(existsSync(resolve(outDir, "errors")), "errors/ dir").toBe(false);
 
     // manifest shape
     const m = JSON.parse(readFileSync(resolve(outDir, "manifest.json"), "utf8"));
@@ -91,8 +93,9 @@ describe("exporter", () => {
     expect(index.errors[0].code).toBe("ERR_BAD_RESPONSE");
 
     // every published error record re-validates against the schema
-    const errFile = JSON.parse(readFileSync(resolve(outDir, "errors/a1b2c3d4e5f60718.json"), "utf8"));
-    expect(validateErrorEntry(errFile).ok).toBe(true);
+    const repoFile = JSON.parse(readFileSync(resolve(outDir, "repos/axios/axios.json"), "utf8"));
+    expect(repoFile).toHaveLength(1);
+    expect(validateErrorEntry(repoFile[0]).ok).toBe(true);
 
     // repos.json validates
     const repos = JSON.parse(readFileSync(resolve(outDir, "repos.json"), "utf8"));

@@ -1,6 +1,6 @@
 import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider } from "../provider/types.js";
-import { runProvider } from "../provider/run.js";
+import { runProvider, watchdogBudgetMs } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
 import { verifyPrompt, type VerifyPatchJson } from "./prompts.js";
 import type { ErrorEntry } from "@errlookup/schema";
@@ -30,8 +30,16 @@ export async function runVerify(
     hasSource: r.sourceCode !== null && r.sourceCode.trim().length > 0,
     hasDefense: r.handlingStrategy !== null || r.preventionTips.length > 0,
   }));
-  const primary = cfg.providers[cfg.defaults.primary];
-  const budget = primary?.timeoutMs ?? 600_000;
+  // The provider's only job here is filling gaps; when the compact view shows
+  // none, the call would return zero patches by instruction. Skip it — on a
+  // healthy run this makes verify free.
+  if (compact.every((c) => c.hasDoc && c.hasSolutions && c.hasSource && c.hasDefense)) {
+    onLog?.("verify: no gaps — provider call skipped");
+    return { patches: [], durationMs: Date.now() - started, providerUsed: "none" };
+  }
+  // Budget keyed to the verify-phase provider (it used to read the default
+  // primary's timeout while routing the call to the verify provider).
+  const budget = watchdogBudgetMs(cfg, "verify");
   try {
     const result = await withTimeout(
       runProvider(verifyPrompt(compact), { cwd: repoPath }, providers, cfg, "verify"),

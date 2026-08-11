@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
+import { tmpRepo, disposeRepo } from "./tmp-repo.js";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -21,7 +22,7 @@ const fixtureDir = resolve(__dirname, "..", "fixtures");
 const fx = (n: string) => resolve(fixtureDir, n);
 
 async function makeLocalRepo(): Promise<{ path: string; sha: string }> {
-  const dir = mkdtempSync(join(tmpdir(), "el-e2e-"));
+  const dir = tmpRepo("el-e2e-");
   // index.js with a throw at line 18 (pad to reach the right line)
   const indexJs = Array.from({ length: 17 }, (_, i) => `// line ${i + 1}`).join("\n") + "\nthrow new TypeError('Expected a function');\n";
   writeFileSync(join(dir, "index.js"), indexJs);
@@ -131,7 +132,7 @@ describe("pipeline e2e (fixture-replay)", () => {
     ]);
 
     raw.close();
-    rmSync(local.path, { recursive: true, force: true });
+    disposeRepo(local.path);
     rmSync(dbPath, { force: true });
   }, 60000);
 
@@ -178,7 +179,7 @@ describe("pipeline e2e (fixture-replay)", () => {
     expect(res2.skipped).toContain("enrichment");
 
     raw.close();
-    rmSync(local.path, { recursive: true, force: true });
+    disposeRepo(local.path);
     rmSync(dbPath, { force: true });
   }, 60000);
 
@@ -204,7 +205,50 @@ describe("pipeline e2e (fixture-replay)", () => {
     } finally {
       delete process.env.ERRLOOKUP_MAX_CLONE_MB;
       raw.close();
-      rmSync(local.path, { recursive: true, force: true });
+      disposeRepo(local.path);
+      rmSync(dbPath, { force: true });
+    }
+  }, 30000);
+
+  it("solo retry holds the machine-wide slot from before the clone", async () => {
+    const local = await makeLocalRepo();
+    const dbPath = resolve(".tmp-test", `e2e-solo-${process.pid}.db`);
+    rmSync(dbPath, { force: true });
+    const { db, raw } = openDb(dbPath);
+    const lockDir = join(tmpdir(), `el-solo-${process.pid}.lock`);
+    rmSync(lockDir, { recursive: true, force: true });
+    process.env.ERRLOOKUP_LARGE_LOCK_DIR = lockDir;
+    const logs: string[] = [];
+    try {
+      const res = await analyzeRepo("sindresorhus/is", {
+        db,
+        providers: {
+          claude: new ScriptedProvider("claude", [
+            { match: [EXPLAIN, DEFEND], fixturePath: fx("provider-stdout-analysis.json") },
+            { match: "Review these assembled", fixturePath: fx("provider-stdout-verify.json") },
+            { match: "error patterns", fixturePath: fx("provider-stdout-clean.json") },
+          ]),
+        },
+        cfg: makeCfg(),
+        cloneUrlOverride: local.path,
+        solo: true,
+        onLog: (m) => logs.push(m),
+      });
+      expect(res.failed).toBeUndefined();
+      expect(res.heldLargeSlot).toBe(true);
+      // The slot must be taken before the clone — the failed attempt this
+      // retry recovers from may have died in the clone itself.
+      const acquired = logs.findIndex((m) => m === "solo slot acquired");
+      const cloning = logs.findIndex((m) => m.startsWith("cloning "));
+      expect(acquired).toBeGreaterThanOrEqual(0);
+      expect(cloning).toBeGreaterThan(acquired);
+      // released on the way out — the lock dir must be gone
+      expect(() => mkdirSync(lockDir)).not.toThrow();
+    } finally {
+      delete process.env.ERRLOOKUP_LARGE_LOCK_DIR;
+      rmSync(lockDir, { recursive: true, force: true });
+      raw.close();
+      disposeRepo(local.path);
       rmSync(dbPath, { force: true });
     }
   }, 30000);
@@ -283,7 +327,7 @@ describe("pipeline e2e (fixture-replay)", () => {
     expect(rows.some((r) => r.documentation.length > 50)).toBe(true);
 
     raw.close();
-    rmSync(local.path, { recursive: true, force: true });
+    disposeRepo(local.path);
     rmSync(dbPath, { force: true });
   }, 60000);
 });

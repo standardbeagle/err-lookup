@@ -63,7 +63,7 @@ export async function acquireLargeRepoLock(
 }
 import { fetchRepoMeta } from "./vcs/github-meta.js";
 import { countSourceFiles } from "./phase/candidates.js";
-import { upsertRepo } from "./db/store.js";
+import { upsertRepo, recordAnalysisFailure } from "./db/store.js";
 import { runPhases, type RunPhasesResult } from "./phase/runner.js";
 
 export interface AnalyzeOptions {
@@ -79,6 +79,9 @@ export interface AnalyzeOptions {
   repoPath?: string;
   /** Pinned SHA when repoPath is provided. */
   sha?: string;
+  /** Second try after a resource failure: hold the machine-wide slot for the
+   *  whole run, clone included — the previous attempt may have died there. */
+  solo?: boolean;
 }
 
 /**
@@ -105,20 +108,17 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
 
   const work = await tempWorkDir();
   let releaseLargeLock: (() => void) | null = null;
+  const lockDir = process.env.ERRLOOKUP_LARGE_LOCK_DIR ?? join(tmpdir(), "errlookup-large-repo.lock");
   try {
+    if (opts.solo) {
+      log("solo retry after a resource failure: acquiring the machine-wide slot before cloning");
+      releaseLargeLock = await acquireLargeRepoLock(lockDir, (holder) =>
+        log(`solo slot held by pid ${holder ?? "?"} — waiting`)
+      );
+      log("solo slot acquired");
+    }
     log(`cloning ${repo} → ${work.path}`);
     await cloneShallow(repo, work.path, opts.cloneUrlOverride);
-
-    // Memory guard (2026-08-04 host-OOM incident): cap the lci index budget
-    // per clone. Error-string discovery needs breadth, not a full index of a
-    // 500 MB corpus — lci's per-byte index cost on large repos (reference
-    // tracker) turned unbudgeted servers into 8-26 GB RSS and crashed the
-    // host. 200 MB in priority order is ample for error sites and bounds a
-    // server at low single-digit GB. "reduced" indexes what fits, loudly.
-    writeFileSync(
-      join(work.path, ".lci.kdl"),
-      'index {\n    max_total_size_mb 200\n    overflow_policy "reduced"\n}\n'
-    );
 
     // Disk budget (§11.1/§11.3). Two tiers:
     //  - hard cap (default 20GB): recorded skipped_too_large, never analyzed;
@@ -129,12 +129,11 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
     const sizeMb = await dirSizeMb(work.path);
     if (sizeMb > hardCapMb) {
       const msg = `skipped_too_large: clone ${sizeMb}MB > cap ${hardCapMb}MB`;
-      upsertRepo(opts.db, { repo, status: "failed", lastError: msg });
+      recordAnalysisFailure(opts.db, repo, msg);
       log(msg);
       return { errorCount: 0, rejects: [], skipped: [], failed: msg };
     }
-    if (sizeMb > largeMb) {
-      const lockDir = process.env.ERRLOOKUP_LARGE_LOCK_DIR ?? join(tmpdir(), "errlookup-large-repo.lock");
+    if (sizeMb > largeMb && !releaseLargeLock) {
       log(`large repo (${sizeMb}MB > ${largeMb}MB): acquiring large-repo slot`);
       releaseLargeLock = await acquireLargeRepoLock(lockDir, (holder) =>
         log(`large-repo slot held by pid ${holder ?? "?"} — waiting`)
@@ -160,7 +159,7 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
     // NOTE: `return await` is required so the finally/cleanup waits for phases
     // to finish — a bare `return runPhases(...)` would run cleanup() immediately
     // and delete the clone dir while the LLM subprocess is still using it.
-    return await runPhases({
+    const result = await runPhases({
       db: opts.db,
       repo,
       sha,
@@ -171,6 +170,12 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
       force: opts.force,
       onLog: opts.onLog,
     });
+    return { ...result, heldLargeSlot: releaseLargeLock !== null };
+  } catch (e) {
+    // Thrown failures (clone, du, phase faults) carry whether this run had the
+    // slot, so the scan's escalation can read it off the error.
+    (e as { heldLargeSlot?: boolean }).heldLargeSlot = releaseLargeLock !== null;
+    throw e;
   } finally {
     releaseLargeLock?.();
     await work.cleanup();

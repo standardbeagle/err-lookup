@@ -1,0 +1,50 @@
+---
+import Guide from "../../layouts/Guide.astro";
+---
+<Guide slug="connection-failures">
+  <p class="lead">
+    A connection failure means TCP itself gave up — no HTTP status, no response body, nothing
+    from the application on the other side. The error code tells you <em>when</em> in the
+    connection's life it died, and that is the single most useful diagnostic fact.
+  </p>
+
+  <h2>The codes, by when they fire</h2>
+  <table>
+    <tbody>
+      <tr><td><code>ECONNREFUSED</code></td><td>Before the connection existed. The target machine answered with a TCP RST: nothing is listening on that port. The host is reachable — the service isn't.</td></tr>
+      <tr><td><code>EHOSTUNREACH</code> / <code>ENETUNREACH</code></td><td>Before the target machine was even reached — routing failed. Wrong network, missing route, firewall dropping silently.</td></tr>
+      <tr><td><code>ECONNRESET</code></td><td>Mid-conversation. The peer (or a middlebox between you) sent RST on an established connection: process crash, forced restart, idle-timeout on a load balancer, or a proxy killing what it considers a dead connection.</td></tr>
+      <tr><td><code>EPIPE</code> ("broken pipe")</td><td>You wrote to a connection the peer had already closed. Same family as ECONNRESET, seen from the writing side.</td></tr>
+      <tr><td>"socket hang up"</td><td>Node's wrapper for the server closing the connection before sending a complete response — usually a crashed handler or an aggressive keep-alive timeout.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Debugging in order</h2>
+  <p>
+    Work outward from the refused/reset distinction. For <code>ECONNREFUSED</code>: is the
+    service running, and is it listening where you think?
+  </p>
+  <pre>ss -tlnp | grep 5432        # is anything listening on the port?
+curl -v telnet://host:5432   # can this machine reach it?</pre>
+  <p>
+    The classic causes are the service binding <code>127.0.0.1</code> while you connect from
+    another host (or another container), a container port that was never published, or connecting
+    to <code>localhost</code> inside a container where "localhost" is the container itself.
+  </p>
+  <p>
+    For <code>ECONNRESET</code> mid-stream, suspect timeouts and middleboxes before code: idle
+    keep-alive connections killed by a load balancer (AWS ALB defaults to 60s), a proxy with a
+    shorter timeout than your client, or the peer process being restarted by a deploy or an
+    OOM kill. Check the server's logs for the same timestamp — a reset with no server-side log
+    line usually means a middlebox did it.
+  </p>
+
+  <h2>Handling it properly</h2>
+  <p>
+    Connection failures before any bytes are sent are safely retryable — with backoff and a
+    retry budget, not a bare loop. Failures mid-request are only retryable if the request is
+    idempotent. Pool users: retire a pooled connection on ECONNRESET/EPIPE instead of
+    resurrecting it, and keep client keep-alive timeouts <em>shorter</em> than every hop in
+    front of the server so the client, not a middlebox, decides when connections die.
+  </p>
+</Guide>

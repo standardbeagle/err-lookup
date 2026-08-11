@@ -80,6 +80,8 @@ export const RepoEntry = z
     description: z.string().nullable(),
     language: z.string().nullable(),
     stars: z.number().int().min(0),
+    /** Analyzable source files in the repo; null for repos scanned before counting existed. */
+    sourceFiles: z.number().int().min(0).nullable(),
     defaultBranch: z.string().min(1),
     analyzedSha: GitSha,
     analyzedAt: IsoUtc,

@@ -23,7 +23,7 @@ socketio/socket.io
 websockets/ws
 node-fetch/node-fetch
 sindresorhus/got
-axios/axios-retry
+softonic/axios-retry
 expressjs/multer
 vitejs/vite
 webpack/webpack
@@ -49,7 +49,7 @@ vercel/next.js
 dotnet/runtime
 dotnet/aspnetcore
 dotnet/efcore
-newtonsoft/Newtonsoft.Json
+JamesNK/Newtonsoft.Json
 serilog/serilog
 
 # Java / JVM — corporate dev. Spring is where most enterprise stack traces start.

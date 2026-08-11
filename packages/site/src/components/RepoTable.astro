@@ -8,14 +8,14 @@ const numbers = Array.from({ length: page.totalPages }, (_, i) => i + 1).filter(
 );
 ---
 <table>
-  <thead><tr><th>Repo</th><th>Language</th><th>Errors</th><th>Stars</th></tr></thead>
+  <thead><tr><th>Repo</th><th>Language</th><th>Errors</th><th>Source files</th></tr></thead>
   <tbody>
     {page.repos.map((r) => (
       <tr>
         <td><a href={`/${r.repo}/`}>{r.repo}</a></td>
         <td>{r.language ?? "—"}</td>
         <td>{r.errorCount}</td>
-        <td class="muted">{r.stars.toLocaleString()}</td>
+        <td class="muted">{r.sourceFiles?.toLocaleString() ?? "—"}</td>
       </tr>
     ))}
   </tbody>

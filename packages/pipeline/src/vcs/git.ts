@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stopLciServer } from "../util/lci-server.js";
 
 const exec = promisify(execFile);
 
@@ -19,6 +20,21 @@ export async function cloneShallow(
   await exec("git", ["clone", "--depth", "1", url, dest], { maxBuffer: 50 * 1024 * 1024 });
 }
 
+/**
+ * Read the remote HEAD SHA without cloning (`git ls-remote`). This is what
+ * lets a re-entrant scan visit every corpus repo cheaply: an unchanged repo
+ * costs one ref lookup instead of a full shallow clone.
+ */
+export async function remoteHeadSha(repo: string, cloneUrl?: string): Promise<string> {
+  const url = cloneUrl ?? `https://github.com/${repo}.git`;
+  const { stdout } = await exec("git", ["ls-remote", url, "HEAD"], { timeout: 60_000 });
+  const sha = stdout.split(/\s/)[0];
+  if (!sha || !/^[0-9a-f]{40}$/.test(sha)) {
+    throw new Error(`ls-remote returned no HEAD sha for ${url}`);
+  }
+  return sha;
+}
+
 /** Read HEAD SHA of a git working dir. */
 export async function headSha(dir: string): Promise<string> {
   const { stdout } = await exec("git", ["rev-parse", "HEAD"], { cwd: dir });
@@ -31,8 +47,28 @@ export async function defaultBranch(dir: string): Promise<string> {
   return stdout.trim();
 }
 
-/** Create a temp working dir; returns { path, cleanup }. */
+/**
+ * Create a temp working dir; returns { path, cleanup }.
+ *
+ * cleanup stops the lci index server for this root before removing the
+ * directory. The candidates phase indexes whatever we clone here, and an lci
+ * server outlives its client by design — so removing the directory first strands
+ * that server forever, rooted at a path that no longer exists. See
+ * `util/lci-server.ts` for what that cost in practice.
+ */
 export async function tempWorkDir(prefix = "errlookup-"): Promise<{ path: string; cleanup: () => Promise<void> }> {
   const path = await mkdtemp(join(tmpdir(), prefix));
-  return { path, cleanup: () => rm(path, { recursive: true, force: true }) };
+  return {
+    path,
+    cleanup: async () => {
+      const stranded = stopLciServer(path);
+      if (stranded.length > 0) {
+        console.error(
+          `[err-lookup] lci server(s) ${stranded.join(",")} still hold ${path}; ` +
+            `reap with: kill -9 ${stranded.join(" ")}`,
+        );
+      }
+      await rm(path, { recursive: true, force: true });
+    },
+  };
 }

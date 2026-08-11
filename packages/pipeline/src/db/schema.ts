@@ -15,6 +15,8 @@ export const repositories = sqliteTable(
     description: text("description"),
     language: text("language"),
     stars: integer("stars").notNull().default(0),
+    /** Analyzable source files in the clone (null until a scan/backfill counts them). */
+    sourceFiles: integer("source_files"),
     defaultBranch: text("default_branch").notNull(),
     analyzedSha: text("analyzed_sha"),
     analyzedAt: text("analyzed_at"),
@@ -103,6 +105,12 @@ export const queue = sqliteTable(
     priority: integer("priority").notNull().default(0),
     status: text("status").notNull().default("queued"), // queued | running | done | failed | skipped
     attempts: integer("attempts").notNull().default(0),
+    // Resource-failure escalation level. 0 = best effort at full concurrency;
+    // 1 = previous attempt died on host resources → retry holding the
+    // machine-wide large-repo slot; 2 = died even in the large slot → retry
+    // with no other repos running at all. An infra failure at level 2 settles
+    // as failed.
+    solo: integer("solo").notNull().default(0),
     lastError: text("last_error"),
     updatedAt: integer("updated_at").notNull().$defaultFn(() => Date.now()),
   },
