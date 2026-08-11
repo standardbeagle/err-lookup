@@ -36,11 +36,21 @@ if [ "$latest" = "$last" ]; then
   exit 0
 fi
 
-{
+# Build + deploy output goes to a per-run log (the Astro build alone prints
+# ~17k page lines; appending it to publish.log grew that file to 198MB).
+# publish.log keeps only one summary line per attempt.
+RUN_LOG="$LOG_DIR/publish-$(date -u +%Y%m%d-%H%M%S).log"
+(
   echo "=== publish start $(date -u +%FT%TZ) (new analysis up to $latest)"
   cd "$REPO_ROOT"
   pnpm --filter @errlookup/pipeline dev export || exit 1
   "$REPO_ROOT/scripts/deploy-site.sh" || exit 1
   printf '%s' "$latest" > "$STATE_FILE"
   echo "=== publish done $(date -u +%FT%TZ)"
-} >>"$LOG" 2>&1
+) >>"$RUN_LOG" 2>&1
+publish_exit=$?
+echo "$(date -u +%FT%TZ) publish exit=$publish_exit (analysis up to $latest) log=$RUN_LOG" >>"$LOG"
+
+# keep the 10 most recent publish run logs
+ls -1t "$LOG_DIR"/publish-*.log 2>/dev/null | tail -n +11 | xargs -r rm --
+exit "$publish_exit"
