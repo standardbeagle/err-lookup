@@ -8,6 +8,8 @@ import { ThrottledProvider } from "../src/provider/throttle.js";
 import { buildProviders } from "../src/providers.js";
 import type { LlmProvider, InvokeOptions, ProviderResult } from "../src/provider/types.js";
 import type { DiscoveredErrorJson } from "../src/phase/prompts.js";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const EXPLAIN = "EXPLAIN the error";
 const DEFEND = "DEFEND against the error";
@@ -28,8 +30,23 @@ class RecordingProvider implements LlmProvider {
   peak = 0;
   constructor(
     readonly name: string,
-    private readonly opts: { delayMs?: number; failPrompts?: (p: string) => boolean } = {}
+    private readonly opts: {
+      delayMs?: number;
+      failPrompts?: (p: string) => boolean;
+      /** Hold every call open until releaseAll() — lets a test observe true
+       *  peak concurrency instead of racing the scheduler. */
+      holdOpen?: boolean;
+    } = {}
   ) {}
+
+  private held: (() => void)[] = [];
+  private open = false;
+
+  /** Release calls parked by holdOpen, now and for the rest of the test. */
+  releaseAll(): void {
+    this.open = true;
+    for (const release of this.held.splice(0)) release();
+  }
 
   async invoke(prompt: string, _o: InvokeOptions): Promise<ProviderResult> {
     this.prompts.push(prompt);
@@ -37,6 +54,9 @@ class RecordingProvider implements LlmProvider {
     this.peak = Math.max(this.peak, this.live);
     try {
       if (this.opts.delayMs) await sleep(this.opts.delayMs);
+      if (this.opts.holdOpen && !this.open) {
+        await new Promise<void>((resolve) => this.held.push(resolve));
+      }
       if (this.opts.failPrompts?.(prompt)) {
         return { ok: false, kind: "empty", error: "simulated batch failure" };
       }
@@ -90,11 +110,18 @@ function cfgFrom(defaults: string[], phaseProviders: string[] = []): ReturnType<
 
 const BOTH = { enrichment: true, defense: true };
 
+// Fake repo paths must be unique non-existent directories: a colliding real
+// FILE at the same path turns runProvider's output-file cleanup into ENOTDIR
+// failures that never reach the provider (seen with a stray /tmp/b).
+const FAKE_REPO = join(tmpdir(), `errlookup-fake-${process.pid}`);
+const FAKE_REPO_A = `${FAKE_REPO}-a`;
+const FAKE_REPO_B = `${FAKE_REPO}-b`;
+
 describe("runAnalysis: fused enrichment + defense", () => {
   it("covers both phases in one call per batch", async () => {
     const p = new RecordingProvider("bulk");
     const cfg = cfgFrom(["  analysis-batch-size 10"]);
-    const res = await runAnalysis("/tmp/x", discovered(25), { bulk: p }, cfg, BOTH);
+    const res = await runAnalysis(FAKE_REPO, discovered(25), { bulk: p }, cfg, BOTH);
 
     // 25 errors / 10 per batch = 3 calls total, NOT 3 enrichment + 3 defense.
     expect(p.prompts).toHaveLength(3);
@@ -130,7 +157,7 @@ describe("runAnalysis: fused enrichment + defense", () => {
   it("asks for only the phase that is still missing", async () => {
     const p = new RecordingProvider("bulk");
     const cfg = cfgFrom(["  analysis-batch-size 10"]);
-    const res = await runAnalysis("/tmp/x", discovered(10), { bulk: p }, cfg, {
+    const res = await runAnalysis(FAKE_REPO, discovered(10), { bulk: p }, cfg, {
       enrichment: false,
       defense: true,
     });
@@ -146,7 +173,7 @@ describe("runAnalysis: fused enrichment + defense", () => {
     const bulk = new RecordingProvider("bulk");
     const strong = new RecordingProvider("strong");
     const cfg = cfgFrom(["  analysis-batch-size 10"], ['  defense "strong"']);
-    const res = await runAnalysis("/tmp/x", discovered(10), { bulk, strong }, cfg, BOTH);
+    const res = await runAnalysis(FAKE_REPO, discovered(10), { bulk, strong }, cfg, BOTH);
 
     // Fusing would have silently sent defense to the bulk model, ignoring routing.
     expect(bulk.prompts).toHaveLength(1);
@@ -163,7 +190,7 @@ describe("runAnalysis: fused enrichment + defense", () => {
     // Fail only the batch that starts at index 10.
     const p = new RecordingProvider("bulk", { failPrompts: (t) => t.includes("[10] ") });
     const cfg = cfgFrom(["  analysis-batch-size 10"]);
-    const res = await runAnalysis("/tmp/x", discovered(30), { bulk: p }, cfg, BOTH);
+    const res = await runAnalysis(FAKE_REPO, discovered(30), { bulk: p }, cfg, BOTH);
 
     expect(res.failedBatches).toBe(1);
     expect(res.batches).toBe(3);
@@ -177,7 +204,7 @@ describe("runAnalysis: fused enrichment + defense", () => {
     const p = new RecordingProvider("bulk", { delayMs: 40 });
     const cfg = cfgFrom(["  analysis-batch-size 10", "  batch-concurrency 4"]);
     const started = Date.now();
-    const res = await runAnalysis("/tmp/x", discovered(80), { bulk: p }, cfg, BOTH);
+    const res = await runAnalysis(FAKE_REPO, discovered(80), { bulk: p }, cfg, BOTH);
 
     expect(res.batches).toBe(8);
     expect(p.peak).toBe(4);
@@ -188,7 +215,7 @@ describe("runAnalysis: fused enrichment + defense", () => {
   it("stays serial when batch-concurrency is left at the default", async () => {
     const p = new RecordingProvider("bulk", { delayMs: 5 });
     const cfg = cfgFrom(["  analysis-batch-size 10"]);
-    await runAnalysis("/tmp/x", discovered(40), { bulk: p }, cfg, BOTH);
+    await runAnalysis(FAKE_REPO, discovered(40), { bulk: p }, cfg, BOTH);
     expect(p.peak).toBe(1);
   });
 });
@@ -196,15 +223,21 @@ describe("runAnalysis: fused enrichment + defense", () => {
 describe("provider rate-limit gate", () => {
   it("caps calls process-wide even when the two knobs over-subscribe", async () => {
     // 2 repos x 4 in-phase calls could put 8 calls in flight; the account allows 5.
+    // Calls park until released, so demand must pile up to exactly the gate
+    // width — the observation cannot depend on scheduler timing.
     const gate = new Semaphore(5);
-    const raw = new RecordingProvider("bulk", { delayMs: 20 });
+    const raw = new RecordingProvider("bulk", { holdOpen: true });
     const throttled = new ThrottledProvider(raw, gate);
     const cfg = cfgFrom(["  analysis-batch-size 10", "  batch-concurrency 4"]);
 
-    await Promise.all([
-      runAnalysis("/tmp/a", discovered(80), { bulk: throttled }, cfg, BOTH),
-      runAnalysis("/tmp/b", discovered(80), { bulk: throttled }, cfg, BOTH),
+    const runs = Promise.all([
+      runAnalysis(FAKE_REPO_A, discovered(80), { bulk: throttled }, cfg, BOTH),
+      runAnalysis(FAKE_REPO_B, discovered(80), { bulk: throttled }, cfg, BOTH),
     ]);
+    // 8 workers demand slots; parked calls guarantee the gate saturates.
+    for (let waited = 0; raw.live < 5 && waited < 5000; waited++) await sleep(1);
+    raw.releaseAll();
+    await runs;
 
     expect(raw.peak).toBeLessThanOrEqual(5);
     expect(raw.peak).toBe(5); // and it does use the whole allowance
