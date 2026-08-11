@@ -1,0 +1,1 @@
+ALTER TABLE `queue` ADD `solo` integer DEFAULT 0 NOT NULL;

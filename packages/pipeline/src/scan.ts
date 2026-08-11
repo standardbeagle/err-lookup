@@ -84,26 +84,31 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
   let tripped = false;
 
   // Both failure paths (phase-level and thrown) settle through here so infra
-  // classification cannot drift between them. Infra failures still count
-  // toward the breaker — a sick host should stop the drain, just without
-  // stamping `failed` on repos that were never the problem.
-  const settleFailure = (repo: string, msg: string): void => {
-    if (isInfraFailure(msg)) {
-      requeueInfraFailure(db, repo, msg);
+  // classification cannot drift between them. Infra failures escalate instead
+  // of failing: the limits exist for system stability, so a repo that hit them
+  // retries with more of the machine to itself — first holding the large-repo
+  // slot (level 1), then with no other repos running at all (level 2). Only a
+  // level-2 infra failure settles as failed. Every failure still counts toward
+  // the breaker — a sick host should stop the drain quickly.
+  const settleFailure = (repo: string, msg: string, ranAt: number, heldLargeSlot: boolean): void => {
+    if (isInfraFailure(msg) && ranAt < 2) {
+      // A run that already held the large slot skips straight to exclusive.
+      const next = ranAt >= 1 || heldLargeSlot ? 2 : 1;
+      requeueInfraFailure(db, repo, msg, next);
       summary.infraRequeued++;
-      log(repo, `INFRA FAILURE (requeued without cooloff): ${msg}`);
+      log(repo, `INFRA FAILURE — requeued at escalation level ${next} (no cooloff): ${msg}`);
     } else {
       settleQueueItem(db, repo, "failed", msg);
       summary.failed++;
-      log(repo, `FAILED: ${msg}`);
+      log(repo, ranAt >= 2 && isInfraFailure(msg) ? `FAILED even running alone: ${msg}` : `FAILED: ${msg}`);
     }
     consecutiveFailures++;
   };
 
-  const worker = async (): Promise<void> => {
+  const worker = async (which: "concurrent" | "exclusive"): Promise<void> => {
     for (;;) {
       if (tripped) return;
-      const item = claimNextQueued(db);
+      const item = claimNextQueued(db, which);
       if (!item) return;
       const repo = item.repo;
 
@@ -137,7 +142,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
         }
       }
 
-      log(repo, "start");
+      log(repo, item.solo > 0 ? `start (escalation level ${item.solo})` : "start");
       try {
         const r = await analyzeRepo(repo, {
           db,
@@ -146,10 +151,11 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
           phases: opts.phases,
           force: opts.force,
           cloneUrlOverride: cloneUrl,
+          solo: item.solo >= 1,
           onLog: (m) => log(repo, m),
         });
         if (r.failed) {
-          settleFailure(repo, r.failed);
+          settleFailure(repo, r.failed, item.solo, r.heldLargeSlot ?? false);
         } else {
           settleQueueItem(db, repo, "done");
           summary.ok++;
@@ -157,7 +163,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
           log(repo, `→ ${r.errorCount} errors`);
         }
       } catch (e) {
-        settleFailure(repo, (e as Error).message);
+        settleFailure(repo, (e as Error).message, item.solo, (e as { heldLargeSlot?: boolean }).heldLargeSlot ?? false);
       }
       if (consecutiveFailures >= BREAKER && !tripped) {
         tripped = true;
@@ -167,8 +173,17 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
   };
 
   await Promise.all(
-    Array.from({ length: Math.max(1, cfg.defaults.maxConcurrent) }, () => worker())
+    Array.from({ length: Math.max(1, cfg.defaults.maxConcurrent) }, () => worker("concurrent"))
   );
+
+  // Exclusive pass: level-2 repos run only after every concurrent worker has
+  // drained out, one at a time, with the whole machine to themselves. Rows
+  // escalated to level 2 during the pass above are picked up here in the same
+  // run.
+  if (!tripped && queueByStatus(db, "queued").some((r) => r.solo >= 2)) {
+    log("*", "exclusive pass: retrying resource-failed repos with no other repos running");
+    await worker("exclusive");
+  }
 
   summary.leftQueued = queueByStatus(db, "queued").length;
   return summary;

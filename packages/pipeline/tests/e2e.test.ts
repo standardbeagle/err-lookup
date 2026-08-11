@@ -210,6 +210,49 @@ describe("pipeline e2e (fixture-replay)", () => {
     }
   }, 30000);
 
+  it("solo retry holds the machine-wide slot from before the clone", async () => {
+    const local = await makeLocalRepo();
+    const dbPath = resolve(".tmp-test", `e2e-solo-${process.pid}.db`);
+    rmSync(dbPath, { force: true });
+    const { db, raw } = openDb(dbPath);
+    const lockDir = join(tmpdir(), `el-solo-${process.pid}.lock`);
+    rmSync(lockDir, { recursive: true, force: true });
+    process.env.ERRLOOKUP_LARGE_LOCK_DIR = lockDir;
+    const logs: string[] = [];
+    try {
+      const res = await analyzeRepo("sindresorhus/is", {
+        db,
+        providers: {
+          claude: new ScriptedProvider("claude", [
+            { match: [EXPLAIN, DEFEND], fixturePath: fx("provider-stdout-analysis.json") },
+            { match: "Review these assembled", fixturePath: fx("provider-stdout-verify.json") },
+            { match: "error patterns", fixturePath: fx("provider-stdout-clean.json") },
+          ]),
+        },
+        cfg: makeCfg(),
+        cloneUrlOverride: local.path,
+        solo: true,
+        onLog: (m) => logs.push(m),
+      });
+      expect(res.failed).toBeUndefined();
+      expect(res.heldLargeSlot).toBe(true);
+      // The slot must be taken before the clone — the failed attempt this
+      // retry recovers from may have died in the clone itself.
+      const acquired = logs.findIndex((m) => m === "solo slot acquired");
+      const cloning = logs.findIndex((m) => m.startsWith("cloning "));
+      expect(acquired).toBeGreaterThanOrEqual(0);
+      expect(cloning).toBeGreaterThan(acquired);
+      // released on the way out — the lock dir must be gone
+      expect(() => mkdirSync(lockDir)).not.toThrow();
+    } finally {
+      delete process.env.ERRLOOKUP_LARGE_LOCK_DIR;
+      rmSync(lockDir, { recursive: true, force: true });
+      raw.close();
+      disposeRepo(local.path);
+      rmSync(dbPath, { force: true });
+    }
+  }, 30000);
+
   it("serializes large repos behind the machine-wide lock; reaps stale locks", async () => {
     const { acquireLargeRepoLock } = await import("../src/pipeline.js");
     const lockDir = join(tmpdir(), `el-lock-test-${process.pid}`);

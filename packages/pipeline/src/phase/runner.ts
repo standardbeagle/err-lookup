@@ -36,6 +36,10 @@ export interface RunPhasesResult {
   skipped: PhaseName[];
   /** Set when a required phase failed and the repo produced no usable result. */
   failed?: string;
+  /** Set by analyzeRepo: this run held the machine-wide large-repo slot. The
+   *  scan uses it to escalate a resource failure straight to an exclusive
+   *  retry — a run that already had the slot gains nothing from level 1. */
+  heldLargeSlot?: boolean;
 }
 
 const ALL_M2_PHASES: PhaseName[] = ["discovery", "enrichment"];

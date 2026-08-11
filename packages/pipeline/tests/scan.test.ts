@@ -110,14 +110,35 @@ describe("re-entrant queue", () => {
   it("infra failures requeue immediately — no failed mark, no cooloff wait", () => {
     seedQueue(db, ["a/victim"]);
     const claimed = claimNextQueued(db)!;
-    requeueInfraFailure(db, claimed.repo, "fatal: unable to create thread: Resource temporarily unavailable");
+    requeueInfraFailure(db, claimed.repo, "fatal: unable to create thread: Resource temporarily unavailable", 1);
 
-    // Back to queued with the error recorded — claimable in the same drain.
+    // Back to queued at level 1 with the error recorded — claimable in the
+    // same drain, next attempt holds the large-repo slot.
     const row = queueByStatus(db, "queued")[0]!;
     expect(row.repo).toBe("a/victim");
+    expect(row.solo).toBe(1);
     expect(row.lastError).toContain("unable to create thread");
     expect(queueByStatus(db, "failed")).toHaveLength(0);
     expect(claimNextQueued(db)?.repo).toBe("a/victim");
+    close();
+  });
+
+  it("level-2 rows are invisible to the concurrent drain and reset on reseed", () => {
+    seedQueue(db, ["a/exclusive"]);
+    claimNextQueued(db);
+    requeueInfraFailure(db, "a/exclusive", "spawn opencode EAGAIN", 2);
+
+    // Concurrent workers must never claim an exclusive-retry row; only the
+    // post-drain exclusive pass may, so the repo truly runs alone.
+    expect(claimNextQueued(db)).toBeNull();
+    const solo = claimNextQueued(db, "exclusive")!;
+    expect(solo.repo).toBe("a/exclusive");
+    expect(solo.solo).toBe(2);
+
+    // A terminal settle + fresh seed returns the repo to best effort.
+    settleQueueItem(db, "a/exclusive", "done");
+    seedQueue(db, ["a/exclusive"]);
+    expect(queueByStatus(db, "queued")[0]!.solo).toBe(0);
     close();
   });
 

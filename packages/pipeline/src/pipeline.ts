@@ -79,6 +79,9 @@ export interface AnalyzeOptions {
   repoPath?: string;
   /** Pinned SHA when repoPath is provided. */
   sha?: string;
+  /** Second try after a resource failure: hold the machine-wide slot for the
+   *  whole run, clone included — the previous attempt may have died there. */
+  solo?: boolean;
 }
 
 /**
@@ -105,7 +108,15 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
 
   const work = await tempWorkDir();
   let releaseLargeLock: (() => void) | null = null;
+  const lockDir = process.env.ERRLOOKUP_LARGE_LOCK_DIR ?? join(tmpdir(), "errlookup-large-repo.lock");
   try {
+    if (opts.solo) {
+      log("solo retry after a resource failure: acquiring the machine-wide slot before cloning");
+      releaseLargeLock = await acquireLargeRepoLock(lockDir, (holder) =>
+        log(`solo slot held by pid ${holder ?? "?"} — waiting`)
+      );
+      log("solo slot acquired");
+    }
     log(`cloning ${repo} → ${work.path}`);
     await cloneShallow(repo, work.path, opts.cloneUrlOverride);
 
@@ -122,8 +133,7 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
       log(msg);
       return { errorCount: 0, rejects: [], skipped: [], failed: msg };
     }
-    if (sizeMb > largeMb) {
-      const lockDir = process.env.ERRLOOKUP_LARGE_LOCK_DIR ?? join(tmpdir(), "errlookup-large-repo.lock");
+    if (sizeMb > largeMb && !releaseLargeLock) {
       log(`large repo (${sizeMb}MB > ${largeMb}MB): acquiring large-repo slot`);
       releaseLargeLock = await acquireLargeRepoLock(lockDir, (holder) =>
         log(`large-repo slot held by pid ${holder ?? "?"} — waiting`)
@@ -149,7 +159,7 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
     // NOTE: `return await` is required so the finally/cleanup waits for phases
     // to finish — a bare `return runPhases(...)` would run cleanup() immediately
     // and delete the clone dir while the LLM subprocess is still using it.
-    return await runPhases({
+    const result = await runPhases({
       db: opts.db,
       repo,
       sha,
@@ -160,6 +170,12 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
       force: opts.force,
       onLog: opts.onLog,
     });
+    return { ...result, heldLargeSlot: releaseLargeLock !== null };
+  } catch (e) {
+    // Thrown failures (clone, du, phase faults) carry whether this run had the
+    // slot, so the scan's escalation can read it off the error.
+    (e as { heldLargeSlot?: boolean }).heldLargeSlot = releaseLargeLock !== null;
+    throw e;
   } finally {
     releaseLargeLock?.();
     await work.cleanup();
