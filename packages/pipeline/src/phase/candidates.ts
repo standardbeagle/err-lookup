@@ -194,6 +194,17 @@ export function candidatesFromLciJson(kind: string, repoPath: string, payload: L
  * unusable — callers pick the backend explicitly via extractCandidatesAuto.
  */
 /** Build the lci invocation. `-r/--root` is a GLOBAL flag: it must precede the subcommand. */
+/**
+ * Candidate ceiling. Unlimited by default: a hard cap on candidate sites is a
+ * hard cap on a repo's error count — golang/go and elasticsearch both hit the
+ * old silent 2000 exactly. Operators bound cost explicitly via
+ * ERRLOOKUP_MAX_CANDIDATES; per-call opts (tests) still override.
+ */
+function defaultMaxCandidates(): number {
+  const n = Number(process.env.ERRLOOKUP_MAX_CANDIDATES ?? 0);
+  return Number.isFinite(n) && n > 0 ? n : Number.POSITIVE_INFINITY;
+}
+
 export function lciGrepArgs(repoPath: string, patternSource: string, maxResults: number): string[] {
   // -C: context lines ride along in the same JSON payload — free relative to
   // the LLM re-reading each file during discovery.
@@ -201,19 +212,19 @@ export function lciGrepArgs(repoPath: string, patternSource: string, maxResults:
 }
 
 export function extractCandidatesLci(repoPath: string, opts: ExtractOptions = {}): CandidateSite[] {
-  const maxCandidates = opts.maxCandidates ?? 2000;
+  const maxCandidates = opts.maxCandidates ?? defaultMaxCandidates();
   const seen = new Set<string>();
   const out: CandidateSite[] = [];
   for (const { kind, source } of LCI_PATTERNS) {
     if (out.length >= maxCandidates) break;
-    const stdout = execFileSync("lci", lciGrepArgs(repoPath, source, maxCandidates), {
+    const stdout = execFileSync("lci", lciGrepArgs(repoPath, source, Number.isFinite(maxCandidates) ? maxCandidates : 1_000_000), {
       encoding: "utf8",
       timeout: 120_000,
       maxBuffer: 64 * 1024 * 1024,
     });
     out.push(...candidatesFromLciJson(kind, repoPath, JSON.parse(stdout) as LciGrepResult, seen));
   }
-  return out.slice(0, maxCandidates);
+  return Number.isFinite(maxCandidates) ? out.slice(0, maxCandidates) : out;
 }
 
 /** Pick the best available backend: lci when installed, else the built-in walk. */
@@ -229,7 +240,7 @@ export function extractCandidatesAuto(repoPath: string, opts: ExtractOptions = {
 }
 
 export function extractCandidates(repoPath: string, opts: ExtractOptions = {}): CandidateSite[] {
-  const maxCandidates = opts.maxCandidates ?? 2000;
+  const maxCandidates = opts.maxCandidates ?? defaultMaxCandidates();
   // Error-dense files are legitimate (validation libraries put 100+ throws in
   // one module) — the per-file cap only guards against generated/minified junk.
   const maxPerFile = opts.maxPerFile ?? 500;

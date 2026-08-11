@@ -51,6 +51,22 @@ describe("builtin candidate extractor", () => {
     disposeRepo(dir);
   });
 
+  it("has no default candidate ceiling — caps only when explicitly configured", () => {
+    // The old silent default of 2000 capped a repo's error count; golang/go
+    // and elasticsearch both hit it exactly.
+    const dir = tmpRepo("cand-nocap-");
+    const lines = Array.from({ length: 2600 }, (_, i) => `throw new Error('e${i}');`).join("\n");
+    writeFileSync(join(dir, "many.js"), lines);
+    expect(extractCandidates(dir, { maxPerFile: 5000 }).length).toBe(2600);
+    process.env.ERRLOOKUP_MAX_CANDIDATES = "100";
+    try {
+      expect(extractCandidates(dir, { maxPerFile: 5000 })).toHaveLength(100);
+    } finally {
+      delete process.env.ERRLOOKUP_MAX_CANDIDATES;
+    }
+    disposeRepo(dir);
+  });
+
   it("honors caps", () => {
     const dir = tmpRepo("cand-cap-");
     const lines = Array.from({ length: 100 }, (_, i) => `throw new Error('e${i}');`).join("\n");

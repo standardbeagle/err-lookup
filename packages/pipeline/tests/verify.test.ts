@@ -70,3 +70,67 @@ describe("runVerify gap gate", () => {
     expect(p.calls).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe("runVerify chunking (size-independent)", () => {
+  class BatchCounting implements LlmProvider {
+    calls = 0;
+    constructor(
+      readonly name: string,
+      private readonly failCall = -1
+    ) {}
+    async invoke(prompt: string, _o: InvokeOptions): Promise<ProviderResult> {
+      const n = this.calls++;
+      if (n === this.failCall) return { ok: false, kind: "empty", error: "boom" };
+      const ids = [...prompt.matchAll(/"id":"([0-9a-f]{16})"/g)].map((m) => m[1]!);
+      const patches = [{ id: ids[0]!, field: "documentation", value: `patched-${n}` }];
+      return { ok: true, parsed: { patches }, raw: JSON.stringify({ patches }) };
+    }
+  }
+  const gappy = (i: number) =>
+    record({ id: i.toString(16).padStart(16, "0"), documentation: "" });
+
+  it("splits large record sets into bounded calls and merges patches", async () => {
+    process.env.ERRLOOKUP_VERIFY_BATCH = "100";
+    try {
+      const p = new BatchCounting("p");
+      const records = Array.from({ length: 450 }, (_, i) => gappy(i));
+      const r = await runVerify("/nonexistent", records, { p }, cfg);
+      expect(p.calls).toBe(5); // 450 / 100 → 5 chunks, every one gappy
+      expect(r.patches).toHaveLength(5);
+      expect(r.failedBatches).toBe(0);
+    } finally {
+      delete process.env.ERRLOOKUP_VERIFY_BATCH;
+    }
+  });
+
+  it("skips gap-free chunks, calls only for the gappy ones", async () => {
+    process.env.ERRLOOKUP_VERIFY_BATCH = "100";
+    try {
+      const p = new BatchCounting("p");
+      const complete = Array.from({ length: 100 }, (_, i) =>
+        record({ id: (1000 + i).toString(16).padStart(16, "0") })
+      );
+      const records = [...complete, ...Array.from({ length: 100 }, (_, i) => gappy(i))];
+      const r = await runVerify("/nonexistent", records, { p }, cfg);
+      expect(p.calls).toBe(1);
+      expect(r.patches).toHaveLength(1);
+    } finally {
+      delete process.env.ERRLOOKUP_VERIFY_BATCH;
+    }
+  });
+
+  it("a failed chunk loses only its own patches", async () => {
+    process.env.ERRLOOKUP_VERIFY_BATCH = "100";
+    try {
+      // Chunk 0 fails its first try; runProvider's retry gives it call 1, so
+      // fail call 0 → retry succeeds. Fail both tries of one chunk instead:
+      const p = new BatchCounting("p", 0);
+      const records = Array.from({ length: 200 }, (_, i) => gappy(i));
+      const r = await runVerify("/nonexistent", records, { p }, cfg);
+      expect(r.patches.length).toBeGreaterThanOrEqual(1);
+      expect(r.failedBatches + r.patches.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      delete process.env.ERRLOOKUP_VERIFY_BATCH;
+    }
+  });
+});

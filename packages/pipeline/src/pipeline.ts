@@ -66,6 +66,18 @@ import { countSourceFiles } from "./phase/candidates.js";
 import { upsertRepo, recordAnalysisFailure } from "./db/store.js";
 import { runPhases, type RunPhasesResult } from "./phase/runner.js";
 
+/**
+ * Should this repo hold the machine-wide large-repo slot? Two signals, either
+ * trips it: clone size (ERRLOOKUP_LARGE_CLONE_MB, default 500 — shallow-clone
+ * calibrated) or source-file count (ERRLOOKUP_LARGE_SOURCE_FILES, default
+ * 3000 — what index RAM and phase wall-clock actually scale with).
+ */
+export function needsLargeSlot(sizeMb: number, sourceFiles: number): boolean {
+  const largeMb = Number.parseInt(process.env.ERRLOOKUP_LARGE_CLONE_MB ?? "500", 10);
+  const largeFiles = Number.parseInt(process.env.ERRLOOKUP_LARGE_SOURCE_FILES ?? "3000", 10);
+  return sizeMb > largeMb || sourceFiles > largeFiles;
+}
+
 export interface AnalyzeOptions {
   db: Db;
   providers: Record<string, LlmProvider>;
@@ -122,10 +134,9 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
 
     // Disk budget (§11.1/§11.3). Two tiers:
     //  - hard cap (default 20GB): recorded skipped_too_large, never analyzed;
-    //  - large threshold (default 2GB): analyzed, but serialized machine-wide
-    //    so at most one large clone is in flight across overlapping runs.
+    //  - large threshold: analyzed, but serialized machine-wide so at most one
+    //    large repo is in flight across overlapping runs.
     const hardCapMb = Number.parseInt(process.env.ERRLOOKUP_MAX_CLONE_MB ?? "20480", 10);
-    const largeMb = Number.parseInt(process.env.ERRLOOKUP_LARGE_CLONE_MB ?? "2048", 10);
     const sizeMb = await dirSizeMb(work.path);
     if (sizeMb > hardCapMb) {
       const msg = `skipped_too_large: clone ${sizeMb}MB > cap ${hardCapMb}MB`;
@@ -133,18 +144,24 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
       log(msg);
       return { errorCount: 0, rejects: [], skipped: [], failed: msg };
     }
-    if (sizeMb > largeMb && !releaseLargeLock) {
-      log(`large repo (${sizeMb}MB > ${largeMb}MB): acquiring large-repo slot`);
-      releaseLargeLock = await acquireLargeRepoLock(lockDir, (holder) =>
-        log(`large-repo slot held by pid ${holder ?? "?"} — waiting`)
-      );
-      log("large-repo slot acquired");
-    }
 
     const sha = await headSha(work.path);
     log(`HEAD sha ${sha}`);
     const sourceFiles = countSourceFiles(work.path);
     upsertRepo(opts.db, { repo, sourceFiles });
+
+    // The slot key is what actually loads the host: index RAM and phase
+    // wall-clock scale with source files, not clone bytes (a shallow
+    // elasticsearch clone is 723MB / 20k sources; golang/go 361MB / 4k).
+    // The old 2GB byte-only threshold never fired on shallow clones, so the
+    // "at most one giant at a time" invariant silently didn't hold.
+    if (needsLargeSlot(sizeMb, sourceFiles) && !releaseLargeLock) {
+      log(`large repo (${sizeMb}MB, ${sourceFiles} source files): acquiring large-repo slot`);
+      releaseLargeLock = await acquireLargeRepoLock(lockDir, (holder) =>
+        log(`large-repo slot held by pid ${holder ?? "?"} — waiting`)
+      );
+      log("large-repo slot acquired");
+    }
     // GitHub-hosted repos get description/language/stars; local clones (tests)
     // and API failures leave nulls — honest gaps, never fabricated.
     if (!opts.cloneUrlOverride) {
