@@ -17,14 +17,16 @@ if ! flock -n 9; then
   exit 0
 fi
 
-latest=$(cd "$REPO_ROOT/packages/pipeline" && node -e '
+read -r latest repo_count <<EOF2
+$(cd "$REPO_ROOT/packages/pipeline" && node -e '
   const D = require("better-sqlite3");
   try {
     const d = new D("data/errlookup.db", { readonly: true, fileMustExist: true });
-    const r = d.prepare("SELECT max(analyzed_at) m FROM repositories WHERE status IN (\x27analyzed\x27,\x27exported\x27)").get();
-    console.log(r.m ?? "");
+    const r = d.prepare("SELECT max(analyzed_at) m, count(*) n FROM repositories WHERE status IN (\x27analyzed\x27,\x27exported\x27)").get();
+    console.log(`${r.m ?? ""} ${r.n ?? 0}`);
   } catch { /* no DB yet */ }
 ')
+EOF2
 if [ -z "$latest" ]; then
   echo "$(date -u +%FT%TZ) no analyzed repos yet, nothing to publish" >>"$LOG"
   exit 0
@@ -34,6 +36,21 @@ last=$(cat "$STATE_FILE" 2>/dev/null || echo "")
 if [ "$latest" = "$last" ]; then
   echo "$(date -u +%FT%TZ) unchanged since last publish ($latest)" >>"$LOG"
   exit 0
+fi
+
+# Cadence governor: past ERRLOOKUP_PUBLISH_SLOW_AT_REPOS analyzed repos
+# (default 150), publish at most once every ERRLOOKUP_PUBLISH_SLOW_HOURS
+# (default 4). Every publish is a full site build + deploy whose cost grows
+# with the corpus; hourly made sense at 100 repos, not at 1,000. The cron
+# stays hourly — this gate is what actually paces deploys.
+SLOW_AT="${ERRLOOKUP_PUBLISH_SLOW_AT_REPOS:-150}"
+SLOW_HOURS="${ERRLOOKUP_PUBLISH_SLOW_HOURS:-4}"
+if [ "${repo_count:-0}" -ge "$SLOW_AT" ] && [ -f "$STATE_FILE" ]; then
+  marker_age=$(( $(date +%s) - $(stat -c %Y "$STATE_FILE") ))
+  if [ "$marker_age" -lt $(( SLOW_HOURS * 3600 )) ]; then
+    echo "$(date -u +%FT%TZ) cadence governor: $repo_count repos >= $SLOW_AT, last publish ${marker_age}s ago < ${SLOW_HOURS}h — holding" >>"$LOG"
+    exit 0
+  fi
 fi
 
 # Build + deploy output goes to a per-run log (the Astro build alone prints
