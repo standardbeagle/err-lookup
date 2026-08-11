@@ -128,6 +128,23 @@ redis/redis
 
 # Size outliers, deliberately last. Language runtimes, platform monorepos and
 
+# demand-signal additions (2026-08-11): high SO question volume + dependent-repo
+# counts (ecosyste.ms) — repos the star-ranked search missed or mis-ranked.
+facebook/react
+angular/angular.js
+hibernate/hibernate-orm
+apache/maven
+tensorflow/tensorflow
+matplotlib/matplotlib
+Automattic/mongoose
+gradle/gradle
+apache/hadoop
+nginx/nginx
+twbs/bootstrap
+npm/cli
+apache/cordova-android
+aws/aws-sdk-js-v3
+
 # ---- 1k expansion (2026-08-11): top-starred per language, list/tutorial repos
 # ---- filtered out. Unvetted for clone size; the large-repo mutex and lci
 # ---- index budget bound the damage a surprise giant can do.
@@ -989,46 +1006,32 @@ basecamp/fizzy
 railsadminteam/rails_admin
 puppetlabs/puppet
 puma/puma
-github/scientist
 github-changelog-generator/github-changelog-generator
 realm/jazzy
 flyerhzm/bullet
 presidentbeef/brakeman
 middleman/middleman
 paper-trail-gem/paper_trail
-skwp/dotfiles
 BetterErrors/better_errors
 pry/pry
-urbanadventurer/WhatWeb
 sj26/mailcatcher
-instructure/canvas-lms
 bkeepers/dotenv
 ankane/searchkick
-midudev/autoskills
-kkuchta/css-only-chat
 busyloop/lolcat
 ankane/chartkick
 guard/guard
-hanami/hanami
 norman/friendly_id
 ddollar/foreman
 vcr/vcr
-venmo/synx
 github/markup
-redmine/redmine
 lostisland/faraday
-hartator/wayback-machine-downloader
 jnunemaker/httparty
 activerecord-hackery/ransack
-zammad/zammad
 ruby-concurrency/concurrent-ruby
 rack/rack-attack
-fastruby/fast-ruby
-dependabot/dependabot-core
 mislav/will_paginate
 danger/danger
 CanCanCommunity/cancancan
-sferik/x-cli
 
 # terraform: multi-GB clones that hold the large-repo mutex and produce error
 # counts an order of magnitude above the rest. At the tail, a scan delivers the
