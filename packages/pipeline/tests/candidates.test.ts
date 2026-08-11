@@ -36,6 +36,9 @@ describe("builtin candidate extractor", () => {
     expect(js.line).toBe(2);
     expect(js.kind).toBe("throw");
     expect(js.literal).toBe("Expected a function");
+    // builtin walk slices its own context window around the match
+    expect(js.context).toContain("function f(x)");
+    expect(js.context).toContain("Expected a function");
     const go = c.find((s) => s.file === "main.go")!;
     expect(go.literal).toContain("connect failed");
     disposeRepo(dir);
@@ -63,6 +66,13 @@ describe("lci invocation", () => {
     const args = lciGrepArgs("/repo", "throw", 100);
     expect(args.indexOf("-r")).toBeLessThan(args.indexOf("grep"));
     expect(args[args.length - 1]).toBe("throw");
+  });
+
+  it("requests context lines so discovery ships them instead of re-reading files", () => {
+    const args = lciGrepArgs("/repo", "throw", 100);
+    const c = args.indexOf("-C");
+    expect(c).toBeGreaterThan(args.indexOf("grep"));
+    expect(Number(args[c + 1])).toBeGreaterThan(0);
   });
 
   it("extracts real candidates end-to-end when the lci binary is available", () => {
@@ -104,6 +114,9 @@ describe("lci JSON mapping", () => {
     const c = candidatesFromLciJson("throw", "/repo", payload, seen);
     expect(c).toHaveLength(1);
     expect(c[0]).toMatchObject({ file: "src/a.ts", line: 113, kind: "throw", literal: "GET failed" });
+    // context.lines ride along verbatim — discovery classifies without re-reads
+    expect(c[0]!.context).toContain("await fetch(url)");
+    expect(c[0]!.context).toContain("GET failed");
   });
 });
 

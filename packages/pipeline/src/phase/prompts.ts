@@ -54,15 +54,15 @@ export interface VerifyPatchJson {
  * repo exploration required, which keeps lighter models accurate.
  */
 export function candidateDiscoveryPrompt(
-  candidates: { file: string; line: number; kind: string; snippet: string; literal: string | null }[]
+  candidates: { file: string; line: number; kind: string; snippet: string; literal: string | null; context: string | null }[]
 ): string {
-  return `You are an expert at finding error patterns in codebases. A static scanner extracted these candidate error-raising sites from the repository (you are in its root). For each candidate, open the file at the given line to see the full context, then decide whether it is a USER-FACING error.
+  return `You are an expert at finding error patterns in codebases. A static scanner extracted these candidate error-raising sites from the repository (you are in its root). Each candidate carries a \`context\` excerpt of the surrounding source. Judge each candidate FROM ITS CONTEXT and decide whether it is a USER-FACING error. Only open the file when the context is insufficient — e.g. the message string clearly continues beyond the excerpt or context is null.
 
 CANDIDATES:
 ${JSON.stringify(candidates)}
 
 RULES:
-- Include the EXACT error message string from source, preserving template placeholders (e.g. \`\${name}\`, {}, %s). Read the file — do not trust the snippet alone for multi-line messages.
+- Include the EXACT error message string from source, preserving template placeholders (e.g. \`\${name}\`, {}, %s). For multi-line messages that are cut off in the context, read the file.
 - Use the candidate's file and line (correct the line only if the actual throw is adjacent).
 - Capture the error code when one is defined; note the error class and HTTP status where applicable.
 - EXCLUDE: internal assertions never shown to users, debug logging, dead code, generated files.
