@@ -9,6 +9,7 @@ import {
   reclaimRunningQueue,
   claimNextQueued,
   settleQueueItem,
+  requeueInfraFailure,
   queueByStatus,
 } from "./db/queue.js";
 import { remoteHeadSha } from "./vcs/git.js";
@@ -37,7 +38,22 @@ export interface ScanSummary {
   unchanged: number;
   /** Left queued because the failure breaker tripped. */
   leftQueued: number;
+  /** Requeued without a failed mark because the host, not the repo, was sick. */
+  infraRequeued: number;
   seeded: { added: number; requeued: number };
+}
+
+/**
+ * Failures caused by the host or the provider process, not the repo under
+ * analysis: process/thread exhaustion, OOM, disk-full, DNS worker start, or a
+ * provider agent that died before it could take the prompt. Blaming the repo
+ * for these charged it a failed attempt plus the 24h cooloff — one fork storm
+ * on 2026-08-10 benched ~50 healthy repos that way.
+ */
+export function isInfraFailure(msg: string): boolean {
+  return /Resource temporarily unavailable|unable to create thread|cannot fork|getaddrinfo\(\) thread failed|\bEAGAIN\b|\bENOMEM\b|\bEMFILE\b|\bENFILE\b|\bENOSPC\b|no space left on device|\[spawn\]/i.test(
+    msg
+  );
 }
 
 /** Consecutive-failure breaker: provider quota exhaustion fails every repo the
@@ -57,7 +73,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
   const log = opts.onLog ?? (() => {});
 
   const seeded = seedQueue(db, opts.corpus);
-  const summary: ScanSummary = { ok: 0, failed: 0, unchanged: 0, leftQueued: 0, seeded };
+  const summary: ScanSummary = { ok: 0, failed: 0, unchanged: 0, leftQueued: 0, infraRequeued: 0, seeded };
   if (opts.seedOnly) return summary;
 
   // Under the drain lock any `running` row belongs to a dead scan.
@@ -66,6 +82,23 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
 
   let consecutiveFailures = 0;
   let tripped = false;
+
+  // Both failure paths (phase-level and thrown) settle through here so infra
+  // classification cannot drift between them. Infra failures still count
+  // toward the breaker — a sick host should stop the drain, just without
+  // stamping `failed` on repos that were never the problem.
+  const settleFailure = (repo: string, msg: string): void => {
+    if (isInfraFailure(msg)) {
+      requeueInfraFailure(db, repo, msg);
+      summary.infraRequeued++;
+      log(repo, `INFRA FAILURE (requeued without cooloff): ${msg}`);
+    } else {
+      settleQueueItem(db, repo, "failed", msg);
+      summary.failed++;
+      log(repo, `FAILED: ${msg}`);
+    }
+    consecutiveFailures++;
+  };
 
   const worker = async (): Promise<void> => {
     for (;;) {
@@ -116,10 +149,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
           onLog: (m) => log(repo, m),
         });
         if (r.failed) {
-          settleQueueItem(db, repo, "failed", r.failed);
-          summary.failed++;
-          consecutiveFailures++;
-          log(repo, `FAILED: ${r.failed}`);
+          settleFailure(repo, r.failed);
         } else {
           settleQueueItem(db, repo, "done");
           summary.ok++;
@@ -127,10 +157,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
           log(repo, `→ ${r.errorCount} errors`);
         }
       } catch (e) {
-        settleQueueItem(db, repo, "failed", (e as Error).message);
-        summary.failed++;
-        consecutiveFailures++;
-        log(repo, `FAILED: ${(e as Error).message}`);
+        settleFailure(repo, (e as Error).message);
       }
       if (consecutiveFailures >= BREAKER && !tripped) {
         tripped = true;

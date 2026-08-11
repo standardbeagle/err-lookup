@@ -53,6 +53,20 @@ export function seedQueue(db: Db, repos: string[]): { added: number; requeued: n
 }
 
 /**
+ * Return a claimed repo to `queued` after a host-infrastructure failure
+ * (fork/thread exhaustion, OOM, provider process that never started). The repo
+ * did nothing wrong, so it must not eat the failed-status cooloff — but the
+ * fresh `updatedAt` sends it to the back of the claim order, so the current
+ * drain finishes the healthy queue before retrying it.
+ */
+export function requeueInfraFailure(db: Db, repo: string, lastError: string): void {
+  db.update(queue)
+    .set({ status: "queued", lastError, updatedAt: Date.now() })
+    .where(eq(queue.repo, repo))
+    .run();
+}
+
+/**
  * Return `running` rows to `queued`. Only call while holding the drain lock:
  * under it, any `running` row belongs to a dead scan.
  */
