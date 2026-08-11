@@ -1,0 +1,1101 @@
+# Corpus expansion candidates — generated 2026-08-11T19:43:24.636Z
+# Review, trim comments, and append keepers to docs/blitz-corpus.txt.
+# Order matters there: the drain claims top-down, giant repos go last.
+
+# TypeScript — top-starred, not yet in blitz-corpus.txt
+freeCodeCamp/freeCodeCamp  # ★453817 freeCodeCamp.org's open-source codebase and curriculum. Lear
+openclaw/openclaw  # ★385949 Your own personal AI assistant. Any OS. Any Platform. The lo
+nilbuild/developer-roadmap  # ★364165 Interactive roadmaps, guides and other educational content t
+vuejs/vue  # ★210215 This is the repo for Vue 2. For Vue 3, go to https://github.
+n8n-io/n8n  # ★200244 Fair-code workflow automation platform with native AI capabi
+anomalyco/opencode  # ★196166 The open source coding agent.
+microsoft/vscode  # ★188581 Visual Studio Code
+firecrawl/firecrawl  # ★165787 The context API to search, scrape, and interact with the web
+langgenius/dify  # ★152109 Build Agentic workflows, RAG pipelines, with rich AI model a
+yangshun/tech-interview-handbook  # ★141780 Curated coding interview preparation materials for busy soft
+clash-verge-rev/clash-verge-rev  # ★137183 A modern GUI client based on Tauri, designed to run in Windo
+iptv-org/iptv  # ★135660 Collection of publicly available IPTV channels from all over
+excalidraw/excalidraw  # ★129349 Virtual whiteboard for sketching hand-drawn like diagrams
+garrytan/gstack  # ★127570 Use Garry Tan's exact Claude Code setup: 23 opinionated tool
+shadcn-ui/ui  # ★121081 A set of beautifully-designed, accessible components and a c
+immich-app/immich  # ★110215 High performance self-hosted photo and video management solu
+microsoft/TypeScript  # ★110133 TypeScript is a superset of JavaScript that compiles to clea
+supabase/supabase  # ★107840 The Postgres development platform. Supabase gives you a dedi
+google-gemini/gemini-cli  # ★106464 An open-source AI agent that brings the power of Gemini dire
+angular/angular  # ★100963 Deliver web apps with confidence 🚀
+ant-design/ant-design  # ★99030 An enterprise-class UI design language and React UI library
+tailwindlabs/tailwindcss  # ★97176 A utility-first CSS framework for rapid UI development.
+puppeteer/puppeteer  # ★95437 JavaScript API for Chrome and Firefox
+microsoft/playwright  # ★94355 Playwright is a framework for Web Testing and Automation. It
+storybookjs/storybook  # ★90809 Storybook is the industry standard workshop for building, do
+mermaid-js/mermaid  # ★89692 Generation of diagrams like flowcharts or sequence diagrams 
+modelcontextprotocol/servers  # ★89448 Model Context Protocol Servers
+ChatGPTNextWeb/NextChat  # ★88605 ✨ Light and Fast AI Assistant. Support: Web | iOS | MacOS | 
+earendil-works/pi  # ★87568 AI agent toolkit: unified LLM API, agent loop, TUI, coding a
+nexu-io/open-design  # ★85101 🎨 The open-source Claude Design alternative. 🖥️ Local-firs
+realworld-apps/realworld  # ★84071 "The mother of all demo apps" — Exemplary fullstack Medium.c
+OpenHands/OpenHands  # ★83732 🙌 OpenHands: AI-Driven Development
+OpenCut-app/OpenCut  # ★82377 The open-source CapCut alternative
+lobehub/lobehub  # ★81504 🤯 LobeHub is your Chief Agent Operator, organizing your age
+koala73/worldmonitor  # ★80732 Real-time global intelligence dashboard. AI-powered news agg
+hoppscotch/hoppscotch  # ★80008 Open-Source API Development Ecosystem • https://hoppscotch.i
+Egonex-AI/Understand-Anything  # ★78964 Graphs that teach > graphs that impress. Turn any code into 
+coder/code-server  # ★78746 VS Code in the browser
+paperclipai/paperclip  # ★77072 The open-source app everyone uses to manage agents at work
+grafana/grafana  # ★76223 The open and composable observability and data visualization
+Eugeny/tabby  # ★73875 A terminal for a more modern age
+strapi/strapi  # ★72843 🚀 Strapi is the leading open-source headless CMS. It’s 100%
+toeverything/AFFiNE  # ★71440 There can be more than Notion and Miro. AFFiNE(pronounced [ə
+code-yeongyu/oh-my-openagent  # ★67701 omo/lazycodex: The coding agent for tokenmaxxers;the one and
+ruvnet/ruflo  # ★67652 🌊 The original agent meta-harness. Deploy intelligent multi
+apache/echarts  # ★67048 Apache ECharts is a powerful, interactive charting and data 
+cline/cline  # ★66011 Autonomous coding agent as an SDK, IDE extension, or CLI ass
+facebook/docusaurus  # ★65886 Easy to maintain open source documentation websites.
+Fission-AI/OpenSpec  # ★64568 Spec-driven development (SDD) for AI coding assistants.
+nocodb/nocodb  # ★64497 🔥 🔥 🔥 A Free & Self-hostable Airtable Alternative
+withastro/astro  # ★61690 The web framework for content-driven websites. ⭐️ Star to su
+reduxjs/redux  # ★61514 A JS library for predictable global state management
+nuxt/nuxt  # ★60748 the full-stack Vue framework
+upstash/context7  # ★60605 Context7 Platform -- Up-to-date code documentation for LLMs 
+marktext/marktext  # ★59926 📝A simple and elegant markdown editor, available for Linux,
+pmndrs/zustand  # ★58549 🐻 Bear necessities for state management in React
+appwrite/appwrite  # ★56874 Appwrite® - complete cloud infrastructure for your web, mobi
+remix-run/react-router  # ★56554 Declarative routing for React
+remotion-dev/remotion  # ★56092 🎥      Make videos programmatically with React
+laurent22/joplin  # ★55907 Joplin - the privacy-focused note taking app with sync capab
+makeplane/plane  # ★55831 🔥🔥🔥 Open-source Jira, Linear, Monday, and ClickUp alterna
+FlowiseAI/Flowise  # ★55325 Build AI Agents, Visually
+twentyhq/twenty  # ★54757 The open alternative to Salesforce, designed for AI.
+vuejs/core  # ★54201 🖖 Vue.js is a progressive, incrementally-adoptable JavaScri
+lyswhut/lx-music-desktop  # ★52677 一个基于 Electron 的音乐软件
+ionic-team/ionic-framework  # ★52614 A powerful cross-platform UI toolkit for building native-qua
+agalwood/Motrix  # ★52439 A full-featured download manager.
+expo/expo  # ★51532 An open-source framework for making universal native apps wi
+DefinitelyTyped/DefinitelyTyped  # ★51370 The repository for high quality TypeScript type definitions.
+justjavac/wechat-miniapp-radar  # ★51200 小程序雷达：AI 驱动的小程序技术选型、趋势追踪和迁移诊断工具
+cypress-io/cypress  # ★50939 Fast, easy and reliable testing for anything that runs in a 
+CherryHQ/cherry-studio  # ★50298 AI productivity studio with smart chat, autonomous agents, a
+TanStack/query  # ★50107 🤖 Powerful asynchronous state management, server-state util
+jamiepine/voicebox  # ★50078 The open-source AI voice studio. Clone, dictate, create.
+chenglou/pretext  # ★49841 Fast, accurate & comprehensive text measurement & layout
+tldraw/tldraw  # ★49723 Build infinite canvas apps in React with the tldraw SDK. Wor
+ChromeDevTools/chrome-devtools-mcp  # ★48932 Chrome DevTools for coding agents
+type-challenges/type-challenges  # ★48409 Collection of TypeScript type challenges with online judge
+slidevjs/slidev  # ★48049 Presentation Slides for Developers
+pixijs/pixijs  # ★48000 The HTML5 Creation Engine: Create beautiful digital content 
+upscayl/upscayl  # ★47974 🆙 Upscayl - #1 Free and Open Source AI Image Upscaler for L
+moeru-ai/airi  # ★47685 💖🧸 Self hosted, you-owned Grok Companion, a container of s
+calcom/cal.diy  # ★47425 Scheduling infrastructure for absolutely everyone.
+slab/quill  # ★47290 Quill is a modern WYSIWYG editor built for compatibility and
+typescript-cheatsheets/react  # ★47099 Cheatsheets for experienced React developers getting started
+KeygraphHQ/shannon  # ★46645 Shannon is an AI pentester for web applications and APIs. It
+RocketChat/Rocket.Chat  # ★45958 The Secure CommsOS™ for mission-critical operations
+diegosouzapw/OmniRoute  # ★45813 Never stop coding. Free MIT AI gateway: one endpoint, 290+ p
+siyuan-note/siyuan  # ★45740 An open-source, privacy-first, self-hosted knowledge workspa
+DIYgod/RSSHub  # ★45700 🧡 Everything is RSSible
+abhigyanpatwari/GitNexus  # ★45288 GitNexus: The Zero-Server Code Intelligence Engine -       G
+react-hook-form/react-hook-form  # ★44820 📋 React Hooks for form state management and validation (Web
+fastapi/full-stack-fastapi-template  # ★44731 Full stack, modern web application template. Using FastAPI, 
+vercel/hyper  # ★44691 A terminal built on web technologies
+AykutSarac/jsoncrack.com  # ★44288 ✨ Innovative and open-source visualization application that 
+payloadcms/payload  # ★44096 Payload is the open-source, fullstack Next.js framework, giv
+streamich/react-use  # ★44012 React Hooks — 👍
+janhq/jan  # ★43963 Jan is an open source alternative to ChatGPT that runs 100% 
+FuelLabs/fuels-ts  # ★43040 Fuel Network Typescript SDK
+HeyPuter/puter  # ★43031 🌐 The Internet Computer! Free, Open-Source, and Self-Hostab
+mifi/lossless-cut  # ★42842 The swiss army knife of lossless video/audio editing
+stablyai/orca  # ★42596 Orca is the ADE for working with a fleet of parallel agents.
+danny-avila/LibreChat  # ★41924 Enhanced ChatGPT Clone: Features Agents, MCP, Skills, DeepSe
+nolimits4web/swiper  # ★41880 Most modern mobile touch slider with hardware accelerated tr
+hexojs/hexo  # ★41769 A fast, simple & powerful blog framework, powered by Node.js
+chatboxai/chatbox  # ★41405 Powerful AI Client
+styled-components/styled-components  # ★41126 Fast, expressive styling for React. Server components, clien
+vuetifyjs/vuetify  # ★41029 🐉 Vue Component Framework
+appsmithorg/appsmith  # ★40620 Platform to build admin panels, internal tools, and dashboar
+heygen-com/hyperframes  # ★40566 Write HTML. Render video. Built for agents.
+chakra-ui/chakra-ui  # ★40566 Chakra UI is a component system for building SaaS products w
+trpc/trpc  # ★40509 🧙‍♀️  Move Fast and Break Nothing. End-to-end typesafe APIs
+amruthpillai/reactive-resume  # ★40296 A one-of-a-kind resume builder that keeps your privacy in mi
+outline/outline  # ★40079 The fastest knowledge base for growing teams. Beautiful, rea
+Kong/insomnia  # ★39933 The open-source, cross-platform API client for GraphQL, REST
+vadimdemedes/ink  # ★39623 🌈 React for interactive command-line apps
+novuhq/novu  # ★39481 The open-source communication infrastructure for agents and 
+RSSNext/Folo  # ★38788 🧡 Folo is the AI RSS Reader
+mattermost/mattermost  # ★38727 Mattermost is an open source platform for secure collaborati
+ant-design/ant-design-pro  # ★38655 👨🏻‍💻👩🏻‍💻 Use Ant Design like a Pro!
+
+# JavaScript — top-starred, not yet in blitz-corpus.txt
+react/react  # ★247155 The library for web and native user interfaces.
+affaan-m/ECC  # ★239439 The agent harness performance optimization system. Skills, i
+trekhleb/javascript-algorithms  # ★196436 📝 Algorithms and data structures implemented in JavaScript 
+Snailclimb/JavaGuide  # ★157701 Java 面试 & 后端通用面试指南，覆盖计算机基础、数据库、分布式、高并发、系统设计与 AI 应用开发
+airbnb/javascript  # ★148128 JavaScript Style Guide
+Chalarangelo/30-seconds-of-code  # ★128680 Coding articles to level up your development skills
+nodejs/node  # ★118850 Node.js JavaScript runtime ✨🐢🚀✨
+mrdoob/three.js  # ★114438 JavaScript 3D Library.
+react/create-react-app  # ★103309 Set up a modern web app by running one command.
+DietrichGebert/ponytail  # ★100732 Makes your AI agent think like the laziest senior dev in the
+mui/material-ui  # ★98741 Material UI: Comprehensive React component library that impl
+microsoft/Web-Dev-For-Beginners  # ★96319 24 Lessons, 12 Weeks, Get Started as a Web Developer
+ryanmcdermott/clean-code-javascript  # ★94761 Clean Code concepts adapted for JavaScript
+thedotmack/claude-mem  # ★90429 Persistent Context Across Sessions for Every Agent –  Captur
+louislam/uptime-kuma  # ★90084 A fancy self-hosted monitoring tool
+sveltejs/svelte  # ★87931 web development for the rest of us
+addyosmani/agent-skills  # ★86159 Production-grade engineering skills for AI coding agents.
+anuraghazra/github-readme-stats  # ★79845 :zap: Dynamically generated stats for your github readmes
+FortAwesome/Font-Awesome  # ★76820 The iconic SVG, font, and CSS toolkit
+typicode/json-server  # ★75697 Get a full fake REST API with zero coding in less than 30 se
+Leonxlnx/taste-skill  # ★75404 Taste-Skill - gives your AI good taste. stops the AI from ge
+hakimel/reveal.js  # ★72103 The HTML Presentation Framework
+juliangarnier/anime  # ★72061 JavaScript animation engine
+chartjs/Chart.js  # ★67634 Simple HTML5 Charts using the <canvas> tag
+gorhill/uBlock  # ★66883 uBlock Origin - An efficient blocker for Chromium and Firefo
+leonardomso/33-js-concepts  # ★66517 📜 33 JavaScript concepts every developer should know.
+Mintplex-Labs/anything-llm  # ★64613 Stop renting your intelligence. Own it with AnythingLLM. Eve
+santifer/career-ops  # ★63517 Open-source AI job search: scan job portals, evaluate listin
+resume/resume.github.com  # ★62880 Resumes generated using the GitHub informations
+asgeirtj/system_prompts_leaks  # ★62728 Extracted system prompts from Anthropic - Claude Fable 5, Op
+jgraph/drawio-desktop  # ★62563 Official electron build of draw.io
+adam-p/markdown-here  # ★60248 Google Chrome, Firefox, and Thunderbird extension that lets 
+byoungd/up  # ★58402 An advanced guide which might benefit you a lot 🎉 . 人生进阶指南 
+pbakaus/impeccable  # ★58208 The design language that makes your AI harness better at des
+h5bp/html5-boilerplate  # ★57583 A professional front-end template for building fast, robust,
+scutan90/DeepLearning-500-questions  # ★57526 深度学习500问，以问答形式对常用的概率知识、线性代数、机器学习、深度学习、计算机视觉等热点问题进行阐述，以帮助自己及有
+gatsbyjs/gatsby  # ★55941 React-based framework with performance, scalability, and sec
+azl397985856/leetcode  # ★55775 LeetCode Solutions: A Record of My Problem Solving Journey.(
+TryGhost/Ghost  # ★54740 Independent technology for modern publishing, memberships, s
+mozilla/pdf.js  # ★53719 PDF Reader in JavaScript
+chinese-poetry/chinese-poetry  # ★53087 The most comprehensive database of Chinese poetry 🧶最全中华古诗词数
+bmad-code-org/BMAD-METHOD  # ★51766 Breakthrough Method for Agile Ai Driven Development
+poteto/hiring-without-whiteboards  # ★51330 ⭐️  Companies that don't have a broken hiring process
+Semantic-Org/Semantic-UI  # ★51028 Semantic is a UI component framework based around useful pri
+NARKOZ/hacker-scripts  # ★49797 Based on a true story
+bigskysoftware/htmx  # ★48928 </> htmx - high power tools for HTML
+iamkun/dayjs  # ★48665 ⏰ Day.js 2kB immutable date-time library alternative to Mome
+algorithm-visualizer/algorithm-visualizer  # ★48664 :fireworks:Interactive Online Platform that Visualizes Algor
+serverless/serverless  # ★46917 ⚡ Serverless Framework – Effortlessly build apps that auto-s
+Asabeneh/30-Days-Of-JavaScript  # ★46685 30 days of JavaScript programming challenge is a step-by-ste
+microsoft/monaco-editor  # ★46538 A browser based code editor
+LeCoupa/awesome-cheatsheets  # ★46333 👩‍💻👨‍💻 Awesome cheatsheets for popular programming langu
+usebruno/bruno  # ★46278 Opensource IDE For Exploring and Testing API's (lightweight 
+google/zx  # ★45658 A tool for writing better scripts
+Leaflet/Leaflet  # ★45474 🍃 JavaScript library for mobile-friendly interactive maps �
+DavidHDev/react-bits  # ★45329 An open source collection of animated, interactive & fully c
+meteor/meteor  # ★44809 Meteor, the JavaScript App Platform
+sudheerj/reactjs-interview-questions  # ★44724 List of top 500 ReactJS Interview Questions & Answers....Cod
+NaiboWang/EasySpider  # ★44353 A visual no-code/code-free web crawler/spider易采集：一个可视化浏览器自动化
+parcel-bundler/parcel  # ★44024 The zero configuration build tool for the web. 📦🚀
+coreyhaines31/marketingskills  # ★43935 Marketing skills for Claude Code and AI agents. CRO, copywri
+zen-browser/desktop  # ★43879 Welcome to a calmer internet
+Unitech/pm2  # ★43261 Node.js/Bun Production Process Manager with a built-in Load 
+saadeghi/daisyui  # ★42043 🌼 🌼 🌼 🌼 🌼  The most popular, free and open-source Tailw
+yarnpkg/yarn  # ★41493 The 1.x line is frozen - features and bugfixes now happen on
+nwjs/nw.js  # ★41187 Call all Node.js modules directly from DOM/WebWorker and ena
+goabstract/Awesome-Design-Tools  # ★40845 The best design tools and plugins for everything 👉
+remoteintech/remote-jobs  # ★40649 Source for remoteintech.company — a community-maintained dir
+PatrickJS/awesome-cursorrules  # ★40560 📄  Configuration files that enhance Cursor AI editor experi
+phaserjs/phaser  # ★40123 Phaser is a fun, free and fast 2D game framework for making 
+videojs/video.js  # ★39847 Video.js - open source HTML5 video player
+drawdb-io/drawdb  # ★38840 Free, simple, and intuitive online database diagram editor a
+Dogfalo/materialize  # ★38834 Materialize, a CSS Framework based on Material Design
+preactjs/preact  # ★38811 ⚛️ Fast 3kB React alternative with the same modern API. Comp
+naptha/tesseract.js  # ★38618 Pure Javascript OCR for more than 100 Languages 📖🎉🖥
+ToolJet/ToolJet  # ★38327 ToolJet is the open-source foundation of ToolJet AI - the en
+impress/impress.js  # ★38192 It's a presentation framework based on the power of CSS3 tra
+denysdovhan/wtfjs  # ★37687 🤪 A list of funny and tricky JavaScript examples
+markedjs/marked  # ★37046 A markdown parser and compiler. Built for speed.
+songquanpeng/one-api  # ★36321 LLM API 管理 & 分发系统，支持 OpenAI、Azure、Anthropic Claude、Google Ge
+carbon-app/carbon  # ★36082 :black_heart: Create and share beautiful images of your sour
+jondot/awesome-react-native  # ★35695 Awesome React Native components, news, tools, and learning m
+gchq/CyberChef  # ★35556 The Cyber Swiss Army Knife - a web app for encryption, encod
+ryanhanwu/How-To-Ask-Questions-The-Smart-Way  # ★35548 本文原文由知名 Hacker Eric S. Raymond 所撰寫，教你如何正確的提出技術問題並獲得你滿意的答案。
+alvarotrigo/fullPage.js  # ★35415 fullPage plugin by Alvaro Trigo. Create full screen pages fa
+typicode/husky  # ★35258 Git hooks made easy 🐶 woof!
+sahat/hackathon-starter  # ★35242 A boilerplate for Node.js web applications
+qishibo/AnotherRedisDesktopManager  # ★34615 🚀🚀🚀A faster, better and more stable Redis desktop manager
+TheAlgorithms/JavaScript  # ★34215 Algorithms and Data Structures implemented in JavaScript for
+zenorocha/clipboard.js  # ★34131 :scissors: Modern copy to clipboard. No Flash. Just 3kb gzip
+pcottle/learnGitBranching  # ★33860 An interactive git visualization and tutorial. Aspiring stud
+lutzroeder/netron  # ★33338 Visualizer for neural network, deep learning and machine lea
+gulpjs/gulp  # ★32955 A toolkit to automate & enhance your workflow
+lovell/sharp  # ★32563 High performance Node.js image processing, the fastest modul
+airbnb/lottie-web  # ★32045 Render After Effects animations natively on Web, Android and
+SillyTavern/SillyTavern  # ★31961 LLM Frontend for Power Users.
+gethomepage/homepage  # ★31954 A highly customizable homepage (or startpage / application d
+JCodesMore/ai-website-cloner-template  # ★31714 Clone any website with one command using AI coding agents
+openai/codex-plugin-cc  # ★31708 Use Codex from Claude Code to review code or delegate tasks.
+docsifyjs/docsify  # ★31447 🃏 A magical documentation site generator.
+webtorrent/webtorrent  # ★31321 ⚡️ Streaming torrent client for the web
+parallax/jsPDF  # ★31268 Client-side JavaScript PDF generation for everyone.
+AMAI-GmbH/AI-Expert-Roadmap  # ★31205 Roadmap to becoming an Artificial Intelligence Expert in 202
+SortableJS/Sortable  # ★31167 Reorderable drag-and-drop lists for modern browsers and touc
+ascoders/weekly  # ★31068 前端精读周刊。帮你理解最前沿、实用的技术。
+maboloshi/github-chinese  # ★30647 GitHub 汉化插件，GitHub 中文化界面。 (GitHub Translation To Chinese)
+GoogleChrome/lighthouse  # ★30646 Automated auditing, performance metrics, and best practices 
+layui/layui  # ★30580 一套遵循浏览器原生态开发模式的 Web UI 组件库。
+VincentGarreau/particles.js  # ★30224 A lightweight JavaScript library for creating particles
+vercel-labs/agent-skills  # ★29949 Vercel's official collection of agent skills
+sampotts/plyr  # ★29944 A simple HTML5, YouTube and Vimeo player
+aosabook/500lines  # ★29572 500 Lines or Less
+vuejs/vue-cli  # ★29546 🛠️ webpack-based tooling for Vue.js Development
+react-boilerplate/react-boilerplate  # ★29489 🔥 A highly scalable, offline-first foundation with the best
+elsewhencode/project-guidelines  # ★29455 A set of best practices for JavaScript projects
+standard/standard  # ★29426 🌟 JavaScript Style Guide, with linter & automatic code fixe
+immerjs/immer  # ★28980 Create the next immutable state by mutating the current one
+swagger-api/swagger-ui  # ★28966 Swagger UI is a collection of HTML, JavaScript, and CSS asse
+tastejs/todomvc  # ★28952 Helping you select a JavaScript framework - Todo apps for Re
+viatsko/awesome-vscode  # ★28948 🎨 A curated list of delightful VS Code packages and resourc
+
+# Python — top-starred, not yet in blitz-corpus.txt
+public-apis/public-apis  # ★455489 A collective list of free APIs
+EbookFoundation/free-programming-books  # ★394157 :books: Freely available programming books
+donnemartin/system-design-primer  # ★363172 Learn how to design large-scale systems. Prep for the system
+vinta/awesome-python  # ★313414 An opinionated list of Python frameworks, libraries, tools, 
+practical-tutorials/project-based-learning  # ★278350 Curated list of project-based tutorials
+NousResearch/hermes-agent  # ★228951 The agent that grows with you
+TheAlgorithms/Python  # ★223662 All Algorithms implemented in Python
+Significant-Gravitas/AutoGPT  # ★186527 AutoGPT is the vision of accessible AI for everyone, to use 
+yt-dlp/yt-dlp  # ★183896 A feature-rich command-line audio/video downloader
+microsoft/markitdown  # ★173154 Python tool for converting files and office documents to Mar
+521xueweihan/HelloGitHub  # ★170363 :octocat: 分享 GitHub 上有趣、入门级的开源项目。Share interesting, entry-le
+anthropics/skills  # ★168024 Public repository for Agent Skills
+AUTOMATIC1111/stable-diffusion-webui  # ★164478 Stable Diffusion web UI
+huggingface/transformers  # ★163733 🤗 Transformers: the model-definition framework for state-of
+langflow-ai/langflow  # ★153060 Langflow is a powerful tool for building and deploying AI-po
+open-webui/open-webui  # ★148499 User-friendly AI Interface (Supports Ollama, OpenAI API, ...
+langchain-ai/langchain  # ★143991 The agent engineering platform.
+anthropics/claude-code  # ★141071 Claude Code is an agentic coding tool that lives in your ter
+ytdl-org/youtube-dl  # ★140932 Command-line program to download videos from YouTube.com and
+Shubhamsaboo/awesome-llm-apps  # ★132138 100+ AI Agents, Agent Skills and RAG Apps - Free and Open So
+Comfy-Org/ComfyUI  # ★126789 The most powerful and modular diffusion model GUI, api and b
+github/spec-kit  # ★126245 💫 Toolkit to help you get started with Spec-Driven Developm
+nextlevelbuilder/ui-ux-pro-max-skill  # ★115662 An AI SKILL that provide design intelligence for building pr
+browser-use/browser-use  # ★108806 🌐 Make websites accessible for AI agents. Automate tasks on
+openai/whisper  # ★107093 Robust Speech Recognition via Large-Scale Weak Supervision
+Graphify-Labs/graphify  # ★105277 Turn any codebase, with its docs, SQL schemas, configs, and 
+deepseek-ai/DeepSeek-V3  # ★104157 
+harry0703/MoneyPrinterTurbo  # ★102625 利用 AI 大模型和自动化工作流，根据主题或关键词一键生成高清短视频。Generate HD short videos 
+pytorch/pytorch  # ★102315 Tensors and Dynamic neural networks in Python with strong GP
+fastapi/fastapi  # ★101501 FastAPI framework, high performance, easy to learn, fast to 
+nvbn/thefuck  # ★97638 Magnificent app which corrects your previous console command
+TauricResearch/TradingAgents  # ★97562 TradingAgents: Multi-Agents LLM Financial Trading Framework
+hacksider/Deep-Live-Cam  # ★95870 real time face swap and one-click video deepfake with only a
+karpathy/autoresearch  # ★93669 AI agents running research on single-GPU nanochat training a
+3b1b/manim  # ★90105 Animation engine for explanatory math videos
+home-assistant/core  # ★89857 :house_with_garden: Open source home automation that puts lo
+sherlock-project/sherlock  # ★89170 Hunt down social media accounts by username across social ne
+vllm-project/vllm  # ★88789 A high-throughput and memory-efficient inference and serving
+PaddlePaddle/PaddleOCR  # ★87449 Turn any PDF or image document into structured data for your
+odysseus-dev/odysseus  # ★85184 Self-hosted AI workspace. 
+bregman-arie/devops-exercises  # ★83951 Linux, Jenkins, AWS, SRE, Prometheus, Docker, Python, Ansibl
+fighting41love/funNLP  # ★82404 中英文敏感词、语言检测、中外手机/电话归属地/运营商查询、名字推断性别、手机号抽取、身份证抽取、邮箱抽取、中日文人名库、
+swisskyrepo/PayloadsAllTheThings  # ★79945 A list of useful payloads and bypass for Web Application Sec
+bytedance/deer-flow  # ★79746 An open-source long-horizon SuperAgent harness that research
+d2l-ai/d2l-zh  # ★79600 《动手学深度学习》：面向中文读者、能运行、可讨论。中英文版被70多个国家的500多所大学用于教学。
+Z4nzu/hackingtool  # ★78902 ALL IN ONE Hacking Tool For Hackers
+unclecode/crawl4ai  # ★77831 🚀🤖 Crawl4AI: Open-source LLM Friendly Web Crawler & Scrape
+tensorflow/models  # ★77663 Models and examples built with TensorFlow
+opendatalab/MinerU  # ★77369 Transforms complex documents like PDFs and Office docs into 
+python/cpython  # ★74269 The Python programming language
+apache/superset  # ★74220 Apache Superset is a Data Visualization and Data Exploration
+hiyouga/LlamaFactory  # ★73996 Unified Efficient Fine-Tuning of 100+ LLMs & VLMs (ACL 2024)
+josephmisiti/awesome-machine-learning  # ★73992 A curated list of awesome Machine Learning frameworks, libra
+abi/screenshot-to-code  # ★73956 Drop in a screenshot and convert it to clean code (HTML/Tail
+shareAI-lab/learn-claude-code  # ★73870 Bash is all you need -  A nano claude code–like 「agent harne
+D4Vinci/Scrapling  # ★73521 🕷️ An adaptive Web Scraping framework that handles everythi
+datawhalechina/hello-agents  # ★72294 📚 《从零开始构建智能体》——从零开始的智能体原理与实践教程
+ComposioHQ/awesome-claude-skills  # ★72291 A curated list of awesome Claude Skills, resources, and tool
+OpenBB-finance/OpenBB  # ★71771 Open Data Platform for analysts, quants and AI agents.
+binary-husky/gpt_academic  # ★71208 为GPT/GLM等LLM大语言模型提供实用化交互接口，特别优化论文阅读/润色/写作体验，模块化设计，支持自定义快捷按钮&
+666ghj/MiroFish  # ★70860 A Simple and Universal Swarm Intelligence Engine, Predicting
+Asabeneh/30-Days-Of-Python  # ★70714 The 30 Days of Python programming challenge is a step-by-ste
+Panniantong/Agent-Reach  # ★70675 Give your AI agent eyes to see the entire internet. Read & s
+ansible/ansible  # ★70311 Ansible is a radically simple IT automation platform that ma
+unslothai/unsloth  # ★70119 Local UI to run and train LLMs and diffusion models, includi
+FoundationAgents/MetaGPT  # ★69776 🌟 The Multi-Agent Framework: First AI Software Company, Tow
+labmlai/annotated_deep_learning_paper_implementations  # ★67308 🧑‍🏫 60+ Implementations/tutorials of deep learning papers 
+scikit-learn/scikit-learn  # ★66950 scikit-learn: machine learning in Python
+xtekky/gpt4free  # ★66538 The official gpt4free repository | various collection of pow
+headroomlabs-ai/headroom  # ★65958 Compress tool outputs, logs, files, and RAG chunks before th
+docling-project/docling  # ★64615 Get your documents ready for gen AI
+keras-team/keras  # ★64223 Deep Learning for humans
+scrapy/scrapy  # ★63812 Scrapy, a fast high-level web crawling & scraping framework 
+commaai/openpilot  # ★63384 openpilot is an operating system for robotics. Currently, it
+mem0ai/mem0  # ★63048 Universal memory layer for AI Agents
+virattt/ai-hedge-fund  # ★62787 An AI Hedge Fund Team
+pathwaycom/pathway  # ★62480 Python ETL framework for stream processing, real-time analyt
+ZhuLinsen/daily_stock_analysis  # ★62061 LLM 驱动的多市场股票智能分析系统：多源行情、实时新闻、决策看板与自动推送，支持零成本定时运行。  LLM-power
+karpathy/nanoGPT  # ★62041 The simplest, fastest repository for training/finetuning med
+NanmiCoder/MediaCrawler  # ★61690 小红书笔记 | 评论爬虫、抖音视频 | 评论爬虫、快手视频 | 评论爬虫、B 站视频 ｜ 评论爬虫、微博帖子 ｜ 评论爬
+sansan0/TrendRadar  # ★61369 ⭐AI-driven public opinion & trend monitor with multi-platfor
+RVC-Boss/GPT-SoVITS  # ★60736 1 min voice data can also be used to train a good TTS model!
+1c7/chinese-independent-developer  # ★60728 👩🏿‍💻👨🏾‍💻👩🏼‍💻👨🏽‍💻👩🏻‍💻中国独立开发者项目列表 -- 分享大家都在做什么
+ultralytics/ultralytics  # ★60527 Ultralytics YOLO26, YOLO11, YOLOv8 — object detection, insta
+microsoft/autogen  # ★60363 A programming framework for agentic AI
+CorentinJ/Real-Time-Voice-Cloning  # ★60085 Clone a voice in 5 seconds to generate arbitrary speech in r
+meta-llama/llama  # ★59552 Inference code for Llama models
+MemPalace/mempalace  # ★58306 The best-benchmarked open-source AI memory system. And it's 
+mvanhorn/last30days-skill  # ★57921 AI agent skill that researches any topic across Reddit, X, Y
+FoundationAgents/OpenManus  # ★57921 No fortress, purely open ground.  OpenManus is Coming.
+ultralytics/yolov5  # ★57855 Ultralytics YOLOv5 in PyTorch for object detection, instance
+deepfakes/faceswap  # ★57433 Deepfakes Software For All
+zylon-ai/private-gpt  # ★57427 Complete API layer for private AI applications on local mode
+karpathy/nanochat  # ★57128 The best ChatGPT that $100 can buy.
+Textualize/rich  # ★57057 Rich is a Python library for rich text and beautiful formatt
+crewAIInc/crewAI  # ★56950 Framework for orchestrating role-playing, autonomous AI agen
+soimort/you-get  # ★56879 :arrow_double_down: Dumb downloader that scrapes the web
+ageitgey/face_recognition  # ★56654 The world's simplest facial recognition api for Python and t
+BerriAI/litellm  # ★56122 The fastest, litest AI Gateway. Rust core with Python SDK. C
+Zie619/n8n-workflows  # ★56020 all of the workflows of n8n i could find (also from the site
+jingyaogong/minimind  # ★54564 🧠「大模型」2小时完全从0训练64M的小参数LLM！Train a 64M-parameter LLM from sc
+odoo/odoo  # ★53655 Odoo. Open Source Apps To Grow Your Business.
+freqtrade/freqtrade  # ★53182 Free, open source crypto trading bot
+microsoft/VibeVoice  # ★52377 Open-Source Frontier Voice AI
+lllyasviel/Fooocus  # ★52178 Focus on prompting and generating
+hesreallyhim/awesome-claude-code  # ★52138 A hand-picked collection of the finest of resources for the 
+xai-org/grok-1  # ★52108 Grok open release
+run-llama/llama_index  # ★51563 LlamaIndex is the leading document agent and OCR platform
+charlax/professional-programming  # ★51376 A collection of learning resources for curious software engi
+usestrix/strix  # ★51167 Open-source AI penetration testing tool to find and fix your
+roboflow/supervision  # ★49267 We write your reusable computer vision tools. 💜
+Aider-AI/aider  # ★48127 aider is AI pair programming in your terminal
+minimaxir/big-list-of-naughty-strings  # ★47704 The Big List of Naughty Strings is a list of strings which h
+oobabooga/textgen  # ★47542 Open-source desktop app for local LLMs. Text, vision, tool-c
+microsoft/qlib  # ★47304 Qlib is an AI-oriented Quant investment platform that aims t
+calesthio/OpenMontage  # ★47212 World's first open-source, agentic video production system. 
+HKUDS/CLI-Anything  # ★46904 "CLI-Anything: Making ALL Software Agent-Native" -- CLI-Hub:
+HKUDS/nanobot  # ★46855 Ultra-lightweight, open-source, self-hosted personal AI agen
+exo-explore/exo  # ★46773 Run frontier AI locally.
+rohitg00/ai-engineering-from-scratch  # ★46538 Learn it. Build it. Ship it for others.
+
+# Go — top-starred, not yet in blitz-corpus.txt
+avelino/awesome-go  # ★180790 A curated list of awesome Go frameworks, libraries and softw
+ollama/ollama  # ★178285 Get up and running with Kimi-K2.6, GLM-5.2, MiniMax, DeepSee
+fatedier/frp  # ★108714 A fast reverse proxy to help you expose a local server behin
+JuliusBrussee/caveman  # ★97487 🪨 why use many token when few token do trick — Claude Code 
+syncthing/syncthing  # ★87567 Open Source Continuous File Synchronization
+infiniflow/ragflow  # ★87282 RAGFlow is a leading open-source Retrieval-Augmented Generat
+junegunn/fzf  # ★82519 :cherry_blossom: A command-line fuzzy finder
+jesseduffield/lazygit  # ★81233 simple terminal UI for git commands
+netdata/netdata  # ★80129 The fastest path to AI-powered full stack observability, eve
+caddyserver/caddy  # ★74852 Fast and extensible multi-platform HTTP/1-2-3 web server wit
+moby/moby  # ★72007 The Moby Project - a collaborative project for the container
+nektos/act  # ★71465 Run your GitHub Actions locally 🚀
+prometheus/prometheus  # ★65675 The Prometheus monitoring system and time series database.
+traefik/traefik  # ★64409 The Cloud Native Application Proxy
+usememos/memos  # ★62169 Open-source, self-hosted note-taking tool built for quick ca
+pocketbase/pocketbase  # ★60609 Open Source realtime backend in 1 file
+FiloSottile/mkcert  # ★59435 A simple zero-config tool to make locally trusted developmen
+rclone/rclone  # ★59085 "rsync for cloud storage" - Google Drive, S3, Dropbox, Backb
+go-gitea/gitea  # ★57324 Git with a cup of tea! Painless self-hosted all-in-one softw
+wagoodman/dive  # ★54440 A tool for exploring each layer in a docker image
+jesseduffield/lazydocker  # ★52400 The lazier way to manage everything docker
+etcd-io/etcd  # ★52111 Distributed reliable key-value store for the most critical d
+ethereum/go-ethereum  # ★51283 Go implementation of the Ethereum protocol
+AlistGo/alist  # ★50033 🗂️A file list/WebDAV program that supports multiple storage
+mudler/LocalAI  # ★48394 LocalAI is the open-source AI engine. Run any model - LLMs, 
+gogs/gogs  # ★47730 The painless way to host your own Git service
+coreybutler/nvm-windows  # ★47286 A node.js version management utility for Windows. Ironically
+v2ray/v2ray-core  # ★46944 A platform for building proxies to bypass network restrictio
+router-for-me/CLIProxyAPI  # ★46930 Wrap Antigravity, ChatGPT Codex, Claude Code, Grok Build as 
+cli/cli  # ★45794 GitHub’s official command line tool
+milvus-io/milvus  # ★45605 Milvus is a high-performance, cloud-native vector database b
+multica-ai/multica  # ★45407 Assign issues to Claude Code, Codex, Cursor, and 17 more cod
+QuantumNous/new-api  # ★44928 A unified AI model hub for aggregation & distribution. It su
+MHSanaei/3x-ui  # ★44469 Xray panel supporting multi-protocol multi-user expire day &
+charmbracelet/bubbletea  # ★44301 A powerful little TUI framework 🏗
+astaxie/build-web-application-with-golang  # ★43918 A golang ebook intro how to build a web with golang
+danielmiessler/Fabric  # ★43399 Fabric is an open-source framework for augmenting humans usi
+juanfont/headscale  # ★42733 An open source, self-hosted implementation of the Tailscale 
+XTLS/Xray-core  # ★40981 Xray, Penetrates Everything. Also the best v2ray-core. Where
+pingcap/tidb  # ★40419 TiDB is built for agentic workloads that grow unpredictably,
+photoprism/photoprism  # ★40059 AI-Powered Photos App 🌈💎✨
+go-gorm/gorm  # ★39914 The fantastic ORM library for Golang, aims to be developer f
+schollz/croc  # ★39652 Easily and securely send things from one computer to another
+istio/istio  # ★38351 Connect, secure, control, and observe services.
+docker/compose  # ★38047 Define and run multi-container applications with Docker
+harness/harness  # ★37766 Harness Open Source is an end-to-end developer platform with
+aquasecurity/trivy  # ★37360 Find vulnerabilities, misconfigurations, secrets, SBOM in co
+IceWhaleTech/CasaOS  # ★37039 CasaOS - A simple, easy-to-use, elegant open-source Personal
+SagerNet/sing-box  # ★36913 The universal proxy platform
+Wei-Shaw/sub2api  # ★36670 Sub2API 一站式开源中转服务，让 Claude、Openai 、Gemini、Grok订阅统一接入，支持拼车共享，
+1Panel-dev/1Panel  # ★36487 🔥 1Panel is a modern, open-source Linux server management p
+glanceapp/glance  # ★36306 A self-hosted dashboard that puts all your feeds in one plac
+hashicorp/vault  # ★36103 A tool for secrets management, encryption as a service, and 
+filebrowser/filebrowser  # ★35831 File Browser provides a file managing interface within a spe
+wailsapp/wails  # ★35774 Create beautiful applications using Go
+restic/restic  # ★35462 Fast, secure, efficient backup program
+tailscale/tailscale  # ★35057 The easiest, most secure way to use WireGuard and 2FA.
+unknwon/the-way-to-go_ZH_CN  # ★35046 《The Way to Go》中文译本，中文正式名《Go 入门指南》
+v2fly/v2ray-core  # ★34464 A platform for building proxies to bypass network restrictio
+derailed/k9s  # ★34323 🐶 Kubernetes CLI To Manage Your Clusters In Style!
+ehang-io/nps  # ★34158 一款轻量级、高性能、功能强大的内网穿透代理服务器。支持tcp、udp、socks5、http等几乎所有流量转发，可用来访
+seaweedfs/seaweedfs  # ★34021 SeaweedFS is a distributed storage system for object storage
+esengine/DeepSeek-Reasonix  # ★33944 DeepSeek-native AI coding agent for your terminal. Engineere
+halfrost/LeetCode-Go  # ★33798 ✅ Solutions to LeetCode by Go, 100% test coverage, runtime b
+k3s-io/k3s  # ★33714 Lightweight Kubernetes
+binwiederhier/ntfy  # ★33394 Send push notifications to your phone or desktop using PUT/P
+zeromicro/go-zero  # ★33259 A cloud-native Go microservices framework with cli tool for 
+podman-container-tools/podman  # ★32536 Podman: A tool for managing OCI containers and pods.
+beego/beego  # ★32414 beego is an open-source, high-performance web framework for 
+cockroachdb/cockroach  # ★32380 CockroachDB — the cloud native, distributed SQL database des
+github/github-mcp-server  # ★32150 GitHub's official MCP Server
+kubernetes/minikube  # ★32024 Run Kubernetes locally
+iawia002/lux  # ★31611 👾 Fast and simple video download library and CLI tool writt
+grafana/k6  # ★31241 A modern load testing tool, using Go and JavaScript
+projectdiscovery/nuclei  # ★30441 Nuclei is a fast, customizable vulnerability scanner powered
+abiosoft/colima  # ★30326 Container runtimes on macOS (and Linux) with minimal setup
+chubin/wttr.in  # ★30310 :partly_sunny: The right way to check the weather
+helm/helm  # ★30145 The Kubernetes Package Manager
+hashicorp/consul  # ★30031 Consul is a distributed, highly available, and data center a
+sipeed/picoclaw  # ★29845 Tiny, Fast, and Deployable anywhere — automate the mundane, 
+opentofu/opentofu  # ★29753 OpenTofu lets you declaratively manage your cloud infrastruc
+micro-editor/micro  # ★29317 A modern and intuitive terminal-based text editor
+goharbor/harbor  # ★29137 An open source trusted cloud native registry project that st
+grafana/loki  # ★28714 Like Prometheus, but for logs.
+gitleaks/gitleaks  # ★28605 Find secrets with Gitleaks 🔑
+fyne-io/fyne  # ★28587 Cross platform GUI toolkit in Go inspired by Material Design
+authelia/authelia  # ★28537 The Single Sign-On Multi-Factor portal for web apps, now Ope
+cloudreve/cloudreve  # ★28511 🌩 Self-hosted file management and sharing system, supports 
+XIU2/CloudflareSpeedTest  # ★28442 🌩「自选优选 IP」测试 Cloudflare CDN 延迟和速度，获取最快 IP ！当然也支持其他 CDN / 多个
+netbirdio/netbird  # ★28259 Connect your devices into a secure WireGuard®-based overlay 
+tmrts/go-patterns  # ★28169 Curated list of Go design patterns, recipes and idioms
+go-kit/kit  # ★27428 A standard library for microservices.
+trufflesecurity/trufflehog  # ★27381 Find, verify, and analyze leaked credentials
+charmbracelet/crush  # ★27280 Glamourous agentic coding for all 💘
+Wox-launcher/Wox  # ★27206 A cross-platform launcher that simply works
+charmbracelet/glow  # ★26827 Render markdown on the CLI, with pizzazz! 💅🏻
+gastownhall/beads  # ★26235 Beads - A memory upgrade for your coding agent
+openfaas/faas  # ★26217 OpenFaaS - Serverless Functions Made Simple
+yeasy/docker_practice  # ★26192 最新Docker容器技术，从真实案例中学习最佳实践！| Learn and understand Docker&Cont
+microsoft/typescript-go  # ★26184 Staging repo for development of native port of TypeScript
+dapr/dapr  # ★26019 Dapr is a portable runtime for building distributed applicat
+go-kratos/kratos  # ★25863 Your ultimate Go microservices framework for the cloud-nativ
+rancher/rancher  # ★25844 Complete container management platform
+nsqio/nsq  # ★25773 A realtime distributed messaging platform
+GopeedLab/gopeed  # ★25764   A fast, modern download manager for HTTP, BitTorrent, Magn
+sirupsen/logrus  # ★25750 Structured, pluggable logging for Go.
+kataras/iris  # ★25564 The fastest HTTP/2 Go Web Framework. New, modern and easy to
+pulumi/pulumi  # ★25556 Pulumi - Infrastructure as Code in any programming language 
+asdf-vm/asdf  # ★25517 Extendable version manager with support for Ruby, Node.js, E
+gocolly/colly  # ★25417 Elegant Scraper and Crawler Framework for Golang
+tsenart/vegeta  # ★25144 HTTP load testing tool and library. It's over 9000!
+flipped-aurora/gin-vue-admin  # ★24931 🚀Vite+Vue3+Gin拥有AI辅助的基础开发平台，企业级业务AI+开发解决方案，内置mcp辅助服务，内置skil
+cilium/cilium  # ★24910 eBPF-based Networking, Security, and Observability
+d2lang/d2  # ★24896 D2 is a modern diagram scripting language that turns text to
+go-delve/delve  # ★24880 Delve is a debugger for the Go programming language.
+gorilla/websocket  # ★24849 Package gorilla/websocket is a fast, well-tested and widely 
+uber-go/zap  # ★24647 Blazing fast, structured, leveled logging in Go.
+charmbracelet/gum  # ★24206 A tool for glamorous shell scripts 🎀
+henrygd/beszel  # ★24196 Lightweight server monitoring with historical data, docker s
+urfave/cli  # ★24187 A declarative, simple, fast, and fun package for building co
+
+# Rust — top-starred, not yet in blitz-corpus.txt
+ultraworkers/claw-code  # ★195043 An agent-managed museum exhibit, built in Rust with Gajae-Co
+farion1231/cc-switch  # ★126458 A cross-platform desktop All-in-One assistant for Claude Cod
+rustdesk/rustdesk  # ★120103 An open-source remote desktop application designed for self-
+tauri-apps/tauri  # ★110122 Build smaller, faster, and more secure desktop and mobile ap
+denoland/deno  # ★108224 A modern runtime for JavaScript and TypeScript.
+openai/codex  # ★105338 Lightweight coding agent that runs in your terminal
+oven-sh/bun  # ★95377 Incredibly fast JavaScript runtime, bundler, test runner, an
+ruvnet/RuView  # ★89640 π RuView turns commodity WiFi signals into real-time spatial
+astral-sh/uv  # ★88628 An extremely fast Python package and project manager, writte
+zed-industries/zed  # ★88435 Code at the speed of thought – Zed is a high-performance, mu
+rtk-ai/rtk  # ★75735 CLI proxy that reduces LLM token consumption by 60-90% on co
+unionlabs/union  # ★73876 The trust-minimized, zero-knowledge bridging protocol, desig
+openinterpreter/openinterpreter  # ★67958 A coding agent for open models like Kimi K3
+alacritty/alacritty  # ★65327 A cross-platform, OpenGL terminal emulator.
+dani-garcia/vaultwarden  # ★65274 Unofficial Bitwarden compatible server written in Rust, form
+warpdotdev/warp  # ★64138 Warp is an agentic development environment, born out of the 
+rust-lang/rustlings  # ★63840 :crab: Small exercises to get you used to reading and writin
+FuelLabs/sway  # ★61516 🌴 Empowering everyone to build reliable and efficient smart
+tw93/Pake  # ★60581 🤱🏻 Turn any webpage into a desktop app with one command.
+sharkdp/bat  # ★60206 A cat(1) clone with wings.
+starship/starship  # ★59347 ☄🌌️  The minimal, blazing-fast, and infinitely customizable
+meilisearch/meilisearch  # ★58934 A lightning-fast search engine API bringing AI-powered hybri
+rust-unofficial/awesome-rust  # ★58797 A curated list of Rust code and resources.
+FuelLabs/fuel-core  # ★56918 Rust full node implementation of the Fuel v2 protocol.
+typst/typst  # ★55410 A markup-based typesetting system that is powerful and easy 
+lencx/ChatGPT  # ★54430 ❄️ ChatGPT Desktop Application (Mac, Windows and Linux)
+aaif-goose/goose  # ★52682 an open source, extensible AI agent that goes beyond code su
+astral-sh/ruff  # ★49153 An extremely fast Python linter and code formatter, written 
+bevyengine/bevy  # ★47588 A refreshingly simple data-driven game engine built in Rust
+helix-editor/helix  # ★45789 A post-modern modal text editor.
+juspay/hyperswitch  # ★43449 Open source, composable payments platform | PCI compliant | 
+FuelLabs/fuels-rs  # ★43078 Fuel Network Rust SDK
+sxyazi/yazi  # ★41243 💥 Blazing fast terminal file manager written in Rust, based
+Hmbown/CodeWhale  # ★40675 Open-source, community-driven agent harness
+GyulyVGC/sniffnet  # ★40499 Comfortably monitor your Internet traffic 🕵️‍♂️
+vercel-labs/agent-browser  # ★40421 Browser automation CLI for AI agents
+nushell/nushell  # ★40248 A new type of shell
+pola-rs/polars  # ★39338 Extremely fast Query Engine for DataFrames, written in Rust
+spacedriveapp/spacedrive  # ★38754 Spacedrive is an open source cross-platform file explorer, p
+lapce/lapce  # ★38735 Lightning-fast and Powerful Code Editor written in Rust
+ajeetdsouza/zoxide  # ★38611 A smarter cd command. Supports all major shells.
+DioxusLabs/dioxus  # ★38600 Fullstack app framework for web, desktop, and mobile.
+servo/servo  # ★37677 Servo aims to empower developers with a lightweight, high-pe
+tinyhumansai/openhuman  # ★36201 Your Personal AI super intelligence. A brain that builds a l
+pnpm/pnpm  # ★36033 Fast, disk space efficient package manager
+firecracker-microvm/firecracker  # ★35998 Secure and fast microVMs for serverless computing.
+casey/just  # ★35254 🤖 Just a command runner
+zellij-org/zellij  # ★34835 A terminal workspace with batteries included
+swc-project/swc  # ★34177 Rust-based platform for the Web
+fish-shell/fish-shell  # ★34006 The user-friendly command line shell.
+qdrant/qdrant  # ★33922 Qdrant - High-performance, massive-scale Vector Database and
+TabbyML/tabby  # ★33820 Self-hosted AI coding assistant
+google/comprehensive-rust  # ★33289 This is the Rust course used by the Android team at Google. 
+surrealdb/surrealdb  # ★32883 A scalable, distributed, collaborative, document-graph datab
+yewstack/yew  # ★32784 Rust / Wasm framework for creating reliable and efficient we
+zeroclaw-labs/zeroclaw  # ★32561 Fast, small, and fully autonomous AI personal assistant infr
+jdx/mise  # ★32282 dev tools, env vars, task runner
+linera-io/linera-protocol  # ★32133 Main repository for the Linera protocol
+dandavison/delta  # ★31714 A syntax-highlighting pager for git, diff, grep, rg --json, 
+influxdata/influxdb  # ★31687 Scalable datastore for metrics, events, and real-time analyt
+AlexsJones/llmfit  # ★31339 Hundreds of models & providers. One command to find what run
+iced-rs/iced  # ★31217 A cross-platform GUI library for Rust, inspired by Elm
+atuinsh/atuin  # ★31117 ✨ Making your shell magical
+jj-vcs/jj  # ★30938 A Git-compatible VCS that is both simple and powerful
+rustfs/rustfs  # ★30932 🚀2.3x faster than MinIO for 4KB object payloads. RustFS is 
+vercel/turborepo  # ★30882 Build system optimized for JavaScript and TypeScript, writte
+sunface/rust-course  # ★30772 什么？你敢放心的把后背交给 AI? 我赌你不敢，那就来学学 AI 时代最酷、最安全、最快的语言吧。本书拥有全面且深入的讲
+lbjlaq/Antigravity-Manager  # ★30344 Professional Antigravity Account Manager & Switcher. One-cli
+googleworkspace/cli  # ★30325 Google Workspace CLI — one command-line tool for Drive, Gmai
+emilk/egui  # ★30028 egui: an easy-to-use immediate mode GUI in Rust that runs on
+ankitects/anki  # ★29662 Anki is a smart spaced repetition flashcard program
+cjpais/Handy  # ★29298 A free, open source, and extensible speech-to-text applicati
+chroma-core/chroma  # ★29019 Search infrastructure for AI
+Zackriya-Solutions/meetily  # ★28934 Privacy first, AI meeting assistant with 4x faster Parakeet/
+sharkdp/hyperfine  # ★28639 A command-line benchmarking tool
+BigPizzaV3/CodexPlusPlus  # ★28600 An enhanced tool for CodexApp, striving to make Codex better
+wezterm/wezterm  # ★28307 A GPU-accelerated cross-platform terminal emulator and multi
+BloopAI/vibe-kanban  # ★27743 Get 10X more out of Claude Code, Codex or any coding agent
+herdrdev/herdr  # ★27577 the runtime your coding agents live on
+cloudflare/pingora  # ★27183 A library for building fast, reliable and evolvable network 
+oldj/SwitchHosts  # ★27041 Switch hosts quickly!
+xai-org/x-algorithm  # ★26972 Algorithm powering the For You feed on X
+niri-wm/niri  # ★26815 A scrollable-tiling Wayland compositor.
+GraphiteEditor/Graphite  # ★26811 Community-built comprehensive 2D content creation appplicati
+tree-sitter/tree-sitter  # ★26611 An incremental parsing system for programming tools
+Schniz/fnm  # ★26537 🚀 Fast and simple Node.js version manager, built in Rust
+block/buzz  # ★26302 A hive mind communication platform
+TheAlgorithms/Rust  # ★25981  All Algorithms implemented in Rust 
+rwf2/Rocket  # ★25778 A web framework for Rust.
+Wilfred/difftastic  # ★25756 a structural diff that understands syntax 🟥🟩
+biomejs/biome  # ★25546 A toolchain for web projects, aimed to provide functionaliti
+nautechsystems/nautilus_trader  # ★25423 Production-grade Rust-native trading engine with determinist
+zama-ai/fhevm  # ★25080 FHEVM, a full-stack framework for integrating Fully Homomorp
+clockworklabs/SpacetimeDB  # ★25000 Development at the speed of light
+xai-org/grok-build  # ★24683 SpaceXAI's coding agent harness and TUI. Fullscreen, mouse i
+ogham/exa  # ★24439 A modern replacement for ‘ls’.
+uutils/coreutils  # ★23912 Cross-platform Rust rewrite of the GNU coreutils
+tursodatabase/turso  # ★23823 A SQL database in Rust: SQLite-compatible, now also speaking
+slint-ui/slint  # ★23436 Slint is an open-source declarative GUI toolkit to build nat
+eza-community/eza  # ★22899 A modern alternative to ls
+neondatabase/neon  # ★22831 Neon: Serverless Postgres. We separated storage and compute 
+gitui-org/gitui  # ★22371 Blazing 💥 fast terminal-ui for git written in rust 🦀
+vectordotdev/vector  # ★22338 A high-performance observability data pipeline.
+oxc-project/oxc  # ★22277 ⚓ A collection of high-performance JavaScript tools.
+RustPython/RustPython  # ★22272 A Python Interpreter written in Rust
+facebook/flow  # ★22270 Adds static typing to JavaScript to improve developer produc
+ratatui/ratatui  # ★22183 A Rust crate for cooking up terminal user interfaces (TUIs) 
+rust-lang/mdBook  # ★22070 Create book from markdown files. Like Gitbook but implemente
+gleam-lang/gleam  # ★21731 ⭐️ A friendly language for building type-safe, scalable syst
+bee-san/Ciphey  # ★21581 ⚡ Automatically decrypt encryptions without knowing the key 
+gitbutlerapp/gitbutler  # ★21473 The GitButler version control client, backed by Git, powered
+valeriansaliou/sonic  # ★21307 🦔 Fast, lightweight & schema-less search backend. An altern
+h4ckf0r0day/obscura  # ★21241 The headless browser for AI agents and web scraping
+leptos-rs/leptos  # ★21195 Build fast web applications with Rust.
+nikivdev/code  # ★21124 
+wasmerio/wasmer  # ★20947 🚀 Fast, secure, lightweight containers based on WebAssembly
+screenpipe/screenpipe  # ★20903 YC (S26) | Record your screen 24/7 and plug into your agents
+huggingface/candle  # ★20891 Minimalist ML framework for Rust
+cube-js/cube  # ★20597 📊 Cube Core is open-source semantic layer for AI, BI and em
+bee-san/RustScan  # ★20252 🤖 The Modern Port Scanner 🤖
+
+# Java — top-starred, not yet in blitz-corpus.txt
+krahets/hello-algo  # ★129360 《Hello 算法》：动画图解、一键运行的数据结构与算法教程。支持简中、繁中、English、日本語，提供 Python
+iluwatar/java-design-patterns  # ★94591 Design patterns implemented in Java
+Stirling-Tools/Stirling-PDF  # ★89333 #1 PDF Application on GitHub that lets you edit PDFs on any 
+macrozheng/mall  # ★84566 mall项目是一套电商系统，包括前台商城系统及后台管理系统，基于Spring Boot+MyBatis实现，采用Dock
+doocs/advanced-java  # ★79060 😮 Core Interview Questions & Answers For Experienced Java(B
+MisterBooo/LeetCodeAnimation  # ★76713 Demonstrate all the questions on LeetCode in the form of ani
+NationalSecurityAgency/ghidra  # ★72230 Ghidra is a software reverse engineering (SRE) framework
+TheAlgorithms/Java  # ★66146 All Algorithms implemented in Java
+kdn251/interviews  # ★65206 Everything you need to know to get the job.
+termux/termux-app  # ★59067 Termux - a terminal emulator application for Android OS exte
+google/guava  # ★51903 Google core libraries for Java
+dbeaver/dbeaver  # ★51407 Free universal database tool and SQL client
+skylot/jadx  # ★50022 Dex to Java decompiler
+ReactiveX/RxJava  # ★48212 RxJava – Reactive Extensions for the JVM – a library for com
+jeecgboot/JeecgBoot  # ★47364 【低代码迈入v2.0时代，一句话即可生成整个系统】企业级AI低代码平台，一键生成前后端代码甚至整个系统。 AI Skil
+lysine-dev/retrofit  # ★43926 A type-safe HTTP client for Android and the JVM
+apache/dubbo  # ★41550 The java implementation of Apache Dubbo. An RPC and microser
+ashishps1/awesome-system-design-resources  # ★40476 Learn System Design concepts and prepare for interviews usin
+halo-dev/halo  # ★39482 Halo 是一款强大易用的开源建站工具，从个人博客、知识库，到企业官网、在线商城，Halo 都能助您轻松实现，一站式满足
+TeamNewPipe/NewPipe  # ★39313 A libre lightweight streaming front-end for Android.
+YunaiV/ruoyi-vue-pro  # ★38671 🔥 官方推荐 🔥 RuoYi-Vue 全新 Pro 版本，优化重构所有功能。基于 Spring Boot + MyB
+PhilJay/MPAndroidChart  # ★38196 A powerful 🚀 Android chart view / graph view library, suppo
+alibaba/arthas  # ★37483 Alibaba Java Diagnostic Tool Arthas/Alibaba Java诊断利器Arthas
+eugenp/tutorials  # ★37329 Getting Started with Spring Boot 3: 
+doocs/leetcode  # ★36451 🔥LeetCode solutions in any programming language | 多种编程语言实现 
+keycloak/keycloak  # ★36126 Open Source Identity and Access Management For Modern Applic
+geekxh/hello-algorithm  # ★36089 🌍 针对小白的算法训练 | 包括四部分：①.大厂面经 ②.力扣图解  ③.千本开源电子书 ④.百张技术思维导图（项目花
+airbnb/lottie-android  # ★35699 Render After Effects animations natively on Android and iOS,
+netty/netty  # ★35029 Netty project - an event-driven asynchronous network applica
+bumptech/glide  # ★35022 An image loading and caching library for Android focused on 
+SeleniumHQ/selenium  # ★34360 A browser automation framework and ecosystem.
+xkcoding/spring-boot-demo  # ★34081 🚀一个用来深入学习并实战 Spring Boot 的项目。
+zxing/zxing  # ★34064 ZXing ("Zebra Crossing") barcode scanning library for Java, 
+Blankj/AndroidUtilCode  # ★33642 :fire: Android developers should collect the following utils
+alibaba/nacos  # ★33258 an easy-to-use dynamic service discovery, configuration and 
+binarywang/WxJava  # ★33015 微信开发 Java SDK ，支持包括微信支付，开放平台，小程序，企业微信，视频号，公众号等的后端开发
+conductor-oss/conductor  # ★32079 Conductor is an event driven agentic workflow engine providi
+yuliskov/SmartTube  # ★31892 Browse media content with your own rules on Android TV
+ityouknow/spring-boot-examples  # ★30511 about learning Spring Boot via examples. Spring Boot 教程、技术栈示
+xuxueli/xxl-job  # ★30447 A distributed task scheduling framework.（分布式任务调度平台XXL-JOB）
+chinabugotech/hutool  # ★30278 🍬A set of tools that keep Java sweet.
+apolloconfig/apollo  # ★29805 Apollo is a reliable configuration management system suitabl
+alibaba/canal  # ★29714 阿里巴巴 MySQL binlog 增量订阅&消费组件 
+DrKLO/Telegram  # ★29699 Telegram for Android source
+alibaba/spring-cloud-alibaba  # ★29154 Spring Cloud Alibaba provides a one-stop solution for applic
+wuyouzhuguli/SpringAll  # ★28955 循序渐进，学习Spring Boot、Spring Boot & Shiro、Spring Batch、Spring C
+Anuken/Mindustry  # ★28576 The automation tower defense RTS
+opendataloader-project/opendataloader-pdf  # ★28346 PDF Parser for AI-ready data. Automate PDF accessibility. Op
+alibaba/druid  # ★28181 阿里云计算平台DataWorks(https://help.aliyun.com/document_detail/137
+lenve/vhr  # ★28078 微人事是一个前后端分离的人力资源管理系统，项目采用SpringBoot+Vue开发。
+OtterMind/Chat2DB  # ★27937 🔥🔥🔥 AI-driven database tool and SQL client, The hottest G
+kestra-io/kestra  # ★27771 Event Driven Orchestration & Scheduling Platform for Mission
+crossoverJie/JCSprout  # ★26862 👨‍🎓 Java Core Sprout : basic, concurrent, algorithm 
+OpenAPITools/openapi-generator  # ★26663 OpenAPI Generator allows generation of API client libraries 
+qiurunze123/miaosha  # ★26592 ⭐⭐⭐⭐秒杀系统设计与实现.互联网工程师进阶与分析🙋🐓
+jenkinsci/jenkins  # ★26444 Jenkins automation server
+apache/flink  # ★26258 Apache Flink
+ashishps1/awesome-low-level-design  # ★26069 Learn Low Level Design (LLD) and prepare for interviews usin
+apache/incubator-seata  # ★25987 :fire: Seata is an easy-to-use, high-performance, open sourc
+bazelbuild/bazel  # ★25701 a fast, scalable, multi-language and extensible build system
+hollischuang/toBeTopJavaer  # ★25354 To Be Top Javaer - Java工程师成神之路
+JakeWharton/butterknife  # ★25351 Bind Android views and callbacks to fields and methods.
+libgdx/libgdx  # ★25288 Desktop/Android/HTML5/iOS Java game development framework
+iBotPeaches/Apktool  # ★25261 A tool for reverse engineering Android apk files
+scwang90/SmartRefreshLayout  # ★25129 🔥下拉刷新、上拉加载、二级刷新、淘宝二楼、RefreshLayout、OverScroll，Android智能下拉刷新
+apache/skywalking  # ★24916 APM, Application Performance Monitoring System
+greenrobot/EventBus  # ★24719 Event bus for Android and Java that simplifies communication
+Netflix/Hystrix  # ★24470 Hystrix is a latency and fault tolerance library designed to
+redisson/redisson  # ★24373 Redisson: Valkey & Redis Java Client and Real-Time Data Plat
+LSPosed/LSPosed  # ★24341 LSPosed Framework
+dataease/dataease  # ★24317 🔥 人人可用的开源 BI 工具，数据可视化神器。An open-source BI tool alternative 
+EnterpriseQualityCoding/FizzBuzzEnterpriseEdition  # ★23776 FizzBuzz Enterprise Edition is a no-nonsense implementation 
+kunal-kushwaha/DSA-Bootcamp-Java  # ★23458 This repository consists of the code samples, assignments, a
+openjdk/jdk  # ★23215 JDK main-line development https://openjdk.org/projects/jdk
+alibaba/Sentinel  # ★23141 A powerful flow control component enabling reliability, resi
+doocs/source-code-hunter  # ★23135 😱 从源码层面，剖析挖掘互联网行业主流技术的底层实现原理，为广大开发者 “提升技术深度” 提供便利。目前开放 Spri
+apache/rocketmq  # ★22556 Apache RocketMQ is a cloud native messaging and streaming pl
+thingsboard/thingsboard  # ★22227 Open-source IoT Platform - Device management, data collectio
+google/ExoPlayer  # ★21929 This project is deprecated and stale. The latest ExoPlayer c
+elunez/eladmin  # ★21921 eladmin jpa 版本：项目基于 Spring Boot 2.7.18、 Jpa、 Spring Security
+oracle/graal  # ★21661 GraalVM compiles applications into native executables that s
+CarGuo/GSYVideoPlayer  # ★21460 Video players (IJKplayer, ExoPlayer, MediaPlayer), HTTPS, 16
+brettwooldridge/HikariCP  # ★21180 光 HikariCP・A solid, high-performance, JDBC connection pool a
+apache/shardingsphere  # ★20777 Empowering Data Intelligence with Distributed SQL for Shardi
+JetBrains/intellij-community  # ★20443 IntelliJ IDEA & IntelliJ Platform
+mybatis/mybatis-3  # ★20434 MyBatis SQL mapper framework for Java
+didi/DoKit  # ★20408 一款面向泛前端产品研发全生命周期的效率平台。
+linlinjava/litemall  # ★20335 又一个小商城。litemall = Spring Boot后端 + Vue管理员前端 + 微信小程序用户前端 + Vue
+yudaocode/SpringBoot-Labs  # ★20108 一个涵盖六个专栏：Spring Boot 2.X、Spring Cloud、Spring Cloud Alibaba、D
+ReactiveX/RxAndroid  # ★19951 RxJava bindings for Android
+floci-io/floci  # ★19507 Light, fluffy, and always free - The AWS Local Emulator alte
+YunaiV/yudao-cloud  # ★19374 ruoyi-vue-pro 全新 Cloud 版本，优化重构所有功能。基于 Spring Cloud Alibaba +
+dromara/Sa-Token  # ★18981 ✨ 开源、免费、一站式 Java 权限认证框架，让鉴权变得简单、优雅！—— 登录认证、权限认证、分布式 Session 
+antlr/antlr4  # ★18977 ANTLR (ANother Tool for Language Recognition) is a powerful 
+dianping/cat  # ★18943 CAT 作为服务端项目基础组件，提供了 Java, C/C++, Node.js, Python, Go 等多语言客户端
+Baseflow/PhotoView  # ★18817 Implementation of ImageView for Android that supports zoomin
+williamfiset/algorithms  # ★18704 A collection of algorithms and data structures
+LMAX-Exchange/disruptor  # ★18430 High Performance Inter-Thread Messaging Library
+Tencent/APIJSON  # ★18398 🏆 Real-Time no-code, powerful and secure ORM 🚀  providing 
+forezp/SpringCloudLearning  # ★17920 《史上最简单的Spring Cloud教程源码》
+ben-manes/caffeine  # ★17813 A high performance caching library for Java
+Tencent/tinker  # ★17656 Tinker is a hot-fix solution library for Android, it support
+ashishps1/awesome-leetcode-resources  # ★17633 Awesome LeetCode resources to learn Data Structures and Algo
+gyoogle/tech-interview-for-developer  # ★17514 👶🏻 신입 개발자 전공 지식 & 기술 면접 백과사전 📖
+infinilabs/analysis-ik  # ★17513 🚌 The IK Analysis plugin integrates Lucene IK analyzer into
+justauth/JustAuth  # ★17483 🏆Gitee 最有价值开源项目 🚀:100: 小而全而美的第三方登录开源组件。目前已支持Github、Gitee、微
+itwanger/toBeBetterJavaer  # ★17472 一份通俗易懂、风趣幽默的Java学习指南，内容涵盖Java基础、Java并发编程、Java虚拟机、Java企业级开发、J
+baomidou/mybatis-plus  # ★17466 An powerful enhanced toolkit of MyBatis for simplify develop
+openzipkin/zipkin  # ★17452 Zipkin is a distributed tracing system
+material-components/material-components-android  # ★17365 [MAINTENANCE MODE] Modular and customizable Material Design 
+alibaba/DataX  # ★17310 DataX是阿里云DataWorks数据集成的开源版本。
+questdb/questdb  # ★17249 QuestDB is a high performance, open-source, time-series data
+neo4j/neo4j  # ★17049 Graphs for Everyone
+heibaiying/BigData-Notes  # ★16945 大数据入门指南  :star:
+nostra13/Android-Universal-Image-Loader  # ★16839 Powerful and flexible library for loading, caching and displ
+Grasscutters/Grasscutter  # ★16792 A server software reimplementation for a certain anime game.
+winterbe/java8-tutorial  # ★16727 Modern Java - A Guide to Java 8
+prestodb/presto  # ★16721 The official home of the Presto distributed SQL query engine
+shuzheng/zheng  # ★16660 基于Spring+SpringMVC+Mybatis分布式敏捷开发系统架构，提供整套公共微服务服务模块：集中权限管理（单
+JeffLi1993/springboot-learning-example  # ★16562 spring boot 实践学习案例，是 spring boot 初学者及核心技术巩固的最佳实践。
+
+# C# — top-starred, not yet in blitz-corpus.txt
+2dust/v2rayN  # ★113593 A GUI client for Windows, Linux and macOS, support Xray and 
+shadowsocks/shadowsocks-windows  # ★59580 A C# port of shadowsocks
+jellyfin/jellyfin  # ★55663 The Free Software Media System - Server Backend & API
+PowerShell/PowerShell  # ★54783 PowerShell for every system!
+files-community/Files  # ★44602 A modern file manager that helps users organize their files 
+ShareX/ShareX  # ★39081 ShareX is a free and open-source application that enables us
+huiyadanli/RevokeMsgPatcher  # ★38423 :trollface: A hex editor for WeChat/QQ/TIM - PC版微信/QQ/TIM防撤回
+DevToys-app/DevToys  # ★31852 A Swiss Army knife for developers.
+AvaloniaUI/Avalonia  # ★31306 Develop Desktop, Embedded, Mobile and WebAssembly apps with 
+microsoft/semantic-kernel  # ★28441 Integrate cutting-edge LLM technology quickly and easily int
+iOfficeAI/OfficeCLI  # ★27688 OfficeCLI is the first and best Office suite  purpose-built 
+NickeManarin/ScreenToGif  # ★27448 🎬 ScreenToGif allows you to record a selected area of your 
+BeyondDimension/SteamTools  # ★26455 🛠「Watt Toolkit」是一个开源跨平台的多功能 Steam 工具箱。
+icsharpcode/ILSpy  # ★25835 .NET Decompiler with support for PDB generation, ReadyToRun,
+Devolutions/UniGetUI  # ★25479 UniGetUI: The Graphical Interface for your package managers.
+mxgmn/WaveFunctionCollapse  # ★25251 Bitmap & tilemap generation from a single example with the h
+QL-Win/QuickLook  # ★24364 Bring macOS “Quick Look” feature to Windows
+dotnet/maui  # ★23297 .NET MAUI is the .NET Multi-platform App UI, a framework for
+thangchung/awesome-dotnet-core  # ★21361 :honeybee: A collection of awesome .NET core libraries, tool
+QuantConnect/Lean  # ★21169 Lean Algorithmic Trading Engine by QuantConnect (Python, C#)
+BCUninstaller/Bulk-Crap-Uninstaller  # ★20638 Remove large amounts of unwanted applications quickly.
+dotnet/roslyn  # ★20606 The Roslyn .NET compiler provides C# and Visual Basic langua
+jasontaylordev/CleanArchitecture  # ★20448 Clean Architecture Solution Template for ASP.NET Core
+peass-ng/PEASS-ng  # ★20304 PEASS - Privilege Escalation Awesome Scripts SUITE (with col
+bitwarden/server  # ★19816 Bitwarden infrastructure/backend (API, database, Docker, etc
+BluePointLilac/ContextMenuManager  # ★19765 🖱️ 纯粹的Windows右键菜单管理程序
+Unity-Technologies/ml-agents  # ★19618 The Unity Machine Learning Agents Toolkit (ML-Agents) is an 
+rocksdanister/lively  # ★19364 Free and open-source software that allows users to set anima
+TGSAN/CMWTAT_Digital_Edition  # ★19286 CloudMoe Windows 10/11 Activation Toolkit get digital licens
+ppy/osu  # ★18842 rhythm is just a *click* away!
+ardalis/CleanArchitecture  # ★18387 Clean Architecture Solution Template: A proven Clean Archite
+DapperLib/Dapper  # ★18363 Dapper - a simple object mapper for .Net
+netchx/netch  # ★17679 A simple proxy client
+OpenRA/OpenRA  # ★17213 Open Source real-time strategy game engine for early Westwoo
+k1tbyte/Wand-Enhancer  # ★16618 Advanced UX and interoperability extension for Wand (WeMod) 
+MaterialDesignInXAML/MaterialDesignInXamlToolkit  # ★16234 Google's Material Design in XAML & WPF, for C# & VB.Net. 
+nilaoda/N_m3u8DL-CLI  # ★16035 [.NET] m3u8 downloader 开源的命令行m3u8/HLS/dash下载器，支持普通AES-128-CB
+Tyrrrz/YoutubeDownloader  # ★15890 Downloads videos and playlists from YouTube
+Jackett/Jackett  # ★15868 API Support for your favorite torrent trackers
+Flow-Launcher/Flow.Launcher  # ★15346 :mag: Quick file search & app launcher for Windows with comm
+Sonarr/Sonarr  # ★15044 Smart PVR for newsgroup and bittorrent users.
+Tichau/FileConverter  # ★14977 File Converter is a very simple tool which allows you to con
+duplicati/duplicati  # ★14879 Store securely encrypted backups in the cloud!
+babalae/better-genshin-impact  # ★14646 📦BetterGI · 更好的原神 - 自动拾取 | 自动剧情 | 全自动钓鱼(AI) | 全自动七圣召唤 | 自动伐
+seerge/g-helper  # ★14637 Lightweight Armoury Crate alternative for Asus laptops with 
+abpframework/abp  # ★14400 Open-source web application framework for ASP.NET Core! Offe
+MonoGame/MonoGame  # ★14293 One framework for creating powerful cross-platform games.
+App-vNext/Polly  # ★14224 Polly is a .NET resilience and transient-fault-handling libr
+winsw/winsw  # ★14212 A wrapper executable that can run any executable as a Window
+QuestPDF/QuestPDF  # ★14155 QuestPDF is a modern library for PDF document generation. It
+Radarr/Radarr  # ★14141 Movie organizer/manager for usenet and torrent users.
+d2phap/ImageGlass  # ★14003 🏞 A fast, open-source, modern image viewer for 90+ formats 
+kgrzybek/modular-monolith-with-ddd  # ★13927 Full Modular Monolith application with Domain-Driven Design 
+SubtitleEdit/subtitleedit  # ★13801 the subtitle editor :)
+JosefNemec/Playnite  # ★13733 Video game library manager with support for wide range of 3r
+JustArchiNET/ArchiSteamFarm  # ★13614 C# application with primary purpose of farming Steam cards f
+CoplayDev/unity-mcp  # ★13337 Unity MCP acts as a bridge between AI assistants and your Un
+MiniMax-AI/skills  # ★13331 
+dotnet/AspNetCore.Docs  # ★13130 Documentation for ASP.NET Core
+Unity-Technologies/UnityCsReference  # ★12940 Unity C# reference source code.
+dotnet/csharplang  # ★12677 The official repo for the design of the C# programming langu
+wmjordan/PDFPatcher  # ★12608 PDF补丁丁——PDF工具箱，可以编辑书签、剪裁旋转页面、解除限制、提取或合并文档，探查文档结构，提取图片、转成图片等等
+OdysseusYuan/LKY_OfficeTools  # ★12479 一键自动化 下载、安装、激活 Office 的利器。
+memstechtips/Winhance  # ★12430 Application designed to optimize, customize and enhance your
+aspnetboilerplate/aspnetboilerplate  # ★11998 ASP.NET Boilerplate - Web Application Framework
+microsoft/garnet  # ★11926 Garnet is a remote cache-store from Microsoft Research that 
+LuckyPennySoftware/MediatR  # ★11856 Simple, unambitious mediator implementation in .NET
+lucasg/Dependencies  # ★11753 A rewrite of the old legacy software "depends.exe" in C# for
+Tyrrrz/DiscordChatExporter  # ★11740 Saves Discord chat logs to a file
+spectreconsole/spectre.console  # ★11580 A .NET library that makes it easier to create beautiful cons
+chocolatey/choco  # ★11483 Chocolatey - the package manager for Windows
+dotnet/BenchmarkDotNet  # ★11470 Powerful .NET library for benchmarking
+mono/mono  # ★11461 Mono open source ECMA CLI, C# and .NET implementation.
+Kareadita/Kavita  # ★11450 Kavita is a fast, feature rich, cross platform reading serve
+lostindark/DriverStoreExplorer  # ★11338 Driver Store Explorer
+File-New-Project/EarTrumpet  # ★11277 EarTrumpet - Volume Control for Windows
+tui-cs/Terminal.Gui  # ★11167 Cross Platform Terminal UI toolkit for .NET
+Cysharp/UniTask  # ★11115 Provides an efficient allocation free async/await integratio
+coding-horror/basic-computer-games  # ★11095 An updated version of the classic "Basic Computer Games" boo
+mRemoteNG/mRemoteNG  # ★11040 mRemoteNG is the next generation of mRemote, open source, ta
+dotnet/orleans  # ★10823 Cloud Native application framework for .NET
+MathewSachin/Captura  # ★10778 Capture Screen, Audio, Cursor, Mouse Clicks and Keystrokes
+YSGStudyHards/DotNetGuide  # ★10766 🌈【C#/.NET/.NET Core学习、工作、面试指南】记录、收集和总结C#/.NET/.NET Core基础知识
+dotnet/eShop  # ★10765 A reference .NET application implementing an eCommerce site
+StockSharp/StockSharp  # ★10545 Algorithmic trading and quantitative trading open source pla
+MudBlazor/MudBlazor  # ★10535 Blazor Component Library based on Material Design principles
+dodyg/practical-aspnetcore  # ★10404 Practical samples of ASP.NET Core 11, 10, 9, 8.0, 7.0, 6.0, 
+runcat-dev/RunCat365  # ★10252 A cute running cat animation on your windows taskbar.
+studyzy/imewlconverter  # ★10246 ”深蓝词库转换“ 一款开源免费的输入法词库转换程序
+cefsharp/CefSharp  # ★10238 .NET (WPF and Windows Forms) bindings for the Chromium Embed
+0x7c13/Notepads  # ★10211 A modern, lightweight text editor with a minimalist design.
+LuckyPennySoftware/AutoMapper  # ★10197 A convention-based object-object mapper in .NET. 
+nopSolutions/nopCommerce  # ★10120 ASP.NET Core eCommerce software. nopCommerce is a free and o
+HangfireIO/Hangfire  # ★10117 An easy way to perform background job processing in .NET and
+unoplatform/uno  # ★10009 Open-source platform for building cross-platform native Mobi
+egametang/ET  # ★9882 Unity3D Client And C# Server Framework
+restsharp/RestSharp  # ★9829 Simple REST and HTTP API Client for .NET
+MahApps/MahApps.Metro  # ★9810 A framework that allows developers to cobble together a bett
+Humanizr/Humanizer  # ★9799 Humanizer meets all your .NET needs for manipulating and dis
+FluentValidation/FluentValidation  # ★9752 A popular .NET validation library for building strongly-type
+bchavez/Bogus  # ★9725 :card_index: A simple fake data generator for C#, F#, and VB
+AutoDarkMode/Windows-Auto-Night-Mode  # ★9632 Automatically switches between the dark and light theme of W
+felixse/FluentTerminal  # ★9605 A Terminal Emulator based on UWP and web technologies.
+dotnet/yarp  # ★9591 A toolkit for developing high-performance HTTP reverse proxy
+lepoco/wpfui  # ★9590 WPF UI provides the Fluent experience in your known and love
+reactiveui/refit  # ★9558 The automatic type-safe REST library for .NET Core, Xamarin 
+TechnitiumSoftware/DnsServer  # ★9492 Technitium DNS Server
+litedb-org/LiteDB  # ★9451 LiteDB - A .NET NoSQL Document Store in a single data file
+SignalR/SignalR  # ★9399 Incredibly simple real-time web for .NET
+dotnet/machinelearning  # ★9346 ML.NET is an open source and cross-platform machine learning
+Perfare/Il2CppDumper  # ★9295 Unity il2cpp reverse engineer
+git-ecosystem/git-credential-manager  # ★9170 Secure, cross-platform Git credential storage with authentic
+XINCGer/Unity3DTraining  # ★9096 【Unity杂货铺】unity大杂烩~
+jynew/jynew  # ★8936 JinYongLegend-like RPG Game Framework with full Modding supp
+JeffreySu/WeiXinMPSDK  # ★8886 微信全平台 .NET SDK， Senparc.Weixin for C#，支持 .NET Framework 及 .N
+gibbed/SteamAchievementManager  # ★8871 A manager for game achievements in Steam.
+LibreHardwareMonitor/LibreHardwareMonitor  # ★8858 Libre Hardware Monitor is free software that can monitor the
+RayWangQvQ/BiliBiliToolPro  # ★8789 B 站（bilibili）自动任务工具，支持docker、青龙、k8s等多种部署方式。全面拥抱AI。敏感肌也能用。
+ThreeMammals/Ocelot  # ★8716 .NET API Gateway
+BornToBeRoot/NETworkManager  # ★8658 A powerful open-source tool for managing networks and troubl
+
+# PHP — top-starred, not yet in blitz-corpus.txt
+danielmiessler/SecLists  # ★72778 SecLists is the security tester's companion. It's a collecti
+coollabsio/coolify  # ★60389 An open-source, self-hostable PaaS alternative to Vercel, He
+nextcloud/server  # ★36388 ☁️ Nextcloud server, a safe home for all your data
+filamentphp/filament  # ★31760 A powerful open-source UI framework for Laravel • Build and 
+bagisto/bagisto  # ★27965 Open Source eCommerce Platform Built with Laravel for Enterp
+monicahq/monica  # ★25022 Personal CRM. Remember everything about your friends, family
+firefly-iii/firefly-iii  # ★24286 Firefly III: a personal finances manager
+krayin/laravel-crm  # ★23667 Krayin CRM is Free & Open Source CRM Built with Laravel for 
+livewire/livewire  # ★23566 A full-stack framework for Laravel that takes the pain out o
+PHPMailer/PHPMailer  # ★22280 The classic email sending library for PHP
+DesignPatternsPHP/DesignPatternsPHP  # ★22185 Sample code for several design patterns in PHP 8.x
+matomo-org/matomo  # ★21757 Empowering People Ethically 🚀 — Matomo is hiring! Join us →
+Seldaek/monolog  # ★21396 Sends your logs to files, sockets, inboxes, databases and va
+WordPress/WordPress  # ★21328 WordPress, Git-ified. This repository is just a mirror of th
+sebastianbergmann/phpunit  # ★20044 The PHP Unit Testing framework.
+fruitcake/laravel-debugbar  # ★19276 Debugbar for Laravel (Integrates PHP Debug Bar)
+BookStackApp/BookStack  # ★18980 NOW MANAGED ON CODEBERG
+easychen/howto-make-more-money  # ★18632 程序员如何优雅的挣零花钱，2.0版，升级为小书了。Most of this not work outside China
+bcit-ci/CodeIgniter  # ★18168 Open Source PHP Framework (originally from EllisLab)
+nikic/PHP-Parser  # ★17451 A PHP parser written in PHP
+koel/koel  # ★17217 Music streaming solution that works.
+briannesbitt/Carbon  # ★16608 A simple PHP API extension for DateTime.
+easychen/opc-methodology  # ★16608 《一人企业方法论》第二版，也适合做其他副业（比如自媒体、电商、数字商品）的非技术人群。
+flarum/flarum  # ★16367 Simple forum software for building great communities.
+FreshRSS/FreshRSS  # ★15744 A free, self-hostable news aggregator…
+getgrav/grav  # ★15623 Modern, Crazy Fast, Ridiculously Easy and Amazingly Powerful
+cachethq/cachet  # ★15211 🚦 Cachet, the open source, self-hosted status page system.
+erusev/parsedown  # ★15056 Better Markdown Parser in PHP
+barryvdh/laravel-ide-helper  # ★14953 IDE Helper for Laravel
+grokability/snipe-it  # ★14795 A free open source IT asset/license management system
+Intervention/image  # ★14368 PHP Image Processing
+yiisoft/yii2  # ★14304 Yii 2: The Fast, Secure and Professional PHP Framework
+Qloapps/QloApps  # ★14223 QloApps is a Free and Open-source hotel management and reser
+phpstan/phpstan  # ★14069 PHP Static Analysis Tool - discover bugs in your code withou
+PHPOffice/PhpSpreadsheet  # ★13972 A pure PHP library for reading and writing spreadsheet files
+thephpleague/flysystem  # ★13583 Abstraction for local and remote filesystems
+vlucas/phpdotenv  # ★13548 Loads environment variables from `.env` to `getenv()`, `$_EN
+PHP-CS-Fixer/PHP-CS-Fixer  # ★13548 A tool to automatically fix PHP Coding Standards issues
+digininja/DVWA  # ★13487 Damn Vulnerable Web Application (DVWA)
+roots/sage  # ★13256 WordPress starter theme with Laravel Blade components and te
+filp/whoops  # ★13236 PHP errors for cool kids 
+spatie/laravel-permission  # ★12954 Associate users with roles and permissions
+wallabag/wallabag  # ★12893 wallabag is a self hostable application for saving web pages
+star7th/showdoc  # ★12846 ShowDoc is a tool greatly applicable for an IT team to share
+SpartnerNL/Laravel-Excel  # ★12699 🚀 Supercharged Excel exports and imports in Laravel
+ramsey/uuid  # ★12636 :snowflake: A PHP library for generating universally unique 
+piotrplenik/clean-code-php  # ★12451 :bathtub: Clean Code concepts adapted for PHP
+typecho/typecho  # ★12421 A PHP Blogging Platform. Simple and Powerful.
+phacility/phabricator  # ★12297 Effective June 1, 2021: Phabricator is no longer actively ma
+slimphp/Slim  # ★12275 Slim is a PHP micro framework that helps you quickly write s
+magento/magento2  # ★12166 Prior to making any Submission(s), you must sign an Adobe Co
+YOURLS/YOURLS  # ★12151 🔗 The 𝘥𝘦 𝘧𝘢𝘤𝘵𝘰 standard, self hosted, powerful and c
+aureuserp/aureuserp  # ★11741 Free and Open Source ERP platform
+pestphp/pest  # ★11650 The elegant testing framework for PHP developers and AI agen
+egulias/EmailValidator  # ★11637 PHP Email address validator
+walkor/workerman  # ★11550 An asynchronous event driven PHP socket framework. Supports 
+tymondesigns/jwt-auth  # ★11492 🔐 JSON Web Token Authentication for Laravel & Lumen
+doctrine/inflector  # ★11340 Doctrine Inflector is a small library that can perform strin
+Leantime/leantime  # ★11301 Leantime is a goals focused project management system for no
+dompdf/dompdf  # ★11170 HTML to PDF converter for PHP
+z-song/laravel-admin  # ★11147 Build a full-featured administrative interface in ten minute
+doctrine/lexer  # ★11145 Base library for a lexer that can be used in Top-Down, Recur
+octobercms/october  # ★11142 Self-hosted CMS platform based on the Laravel PHP Framework.
+deployphp/deployer  # ★11094 The PHP deployment tool with support for popular frameworks 
+doctrine/instantiator  # ★10988 
+unopim/unopim  # ★10838 Open source Product Information Management (PIM) and Digital
+phalcon/cphalcon  # ★10832 High performance, full-stack PHP framework delivered as a C 
+squizlabs/PHP_CodeSniffer  # ★10773 PHP_CodeSniffer tokenizes PHP files and detects violations o
+tennc/webshell  # ★10769 This is a webshell open source project
+mockery/mockery  # ★10726 Mockery is a simple yet flexible PHP mock object framework f
+serbanghita/Mobile-Detect  # ★10683 Mobile_Detect is a lightweight PHP class for detecting mobil
+woocommerce/woocommerce  # ★10457 A customizable, open-source ecommerce platform built on Word
+php-fig/log  # ★10419 
+Anankke/SSPanel-UIM  # ★10404 Multi-purpose proxy service management system
+rectorphp/rector  # ★10399 Instant Upgrades and Automated Refactoring of any PHP 5.3+ c
+w7corp/easywechat  # ★10370 📦 一个 PHP 微信 SDK
+mautic/mautic  # ★10313 Mautic: Open Source Marketing Automation Software.
+nextcloud/all-in-one  # ★10251 📦 The official Nextcloud installation method. Provides easy
+doctrine/orm  # ★10170 Doctrine Object Relational Mapper (ORM)
+akaunting/akaunting  # ★10052 Online Accounting Software
+helloqingfeng/Awsome-Front-End-learning-resource  # ★10037 :octocat:GitHub最全的前端资源汇总仓库（包括前端学习、开发资源、求职面试等）
+guyueyingmu/avbook  # ★10017 AV 电影管理系统， avmoo , javbus , javlibrary 爬虫，线上 AV 影片图书馆，AV 磁力链
+php-fig/container  # ★9995 
+invoiceninja/invoiceninja  # ★9986 A source-available invoice, quote, project and time-tracking
+bobthecow/psysh  # ★9833 A REPL for PHP
+symfony/console  # ★9808 Eases the creation of beautiful and testable command line in
+googleapis/google-api-php-client  # ★9804 A PHP client library for accessing Google APIs
+kanboard/kanboard  # ★9788 Kanban project management software
+doctrine/dbal  # ★9702 Doctrine Database Abstraction Layer
+dingo/api  # ★9365 A RESTful API package for the Laravel and Lumen frameworks.
+phpDocumentor/ReflectionDocBlock  # ★9362 
+linuxserver/Heimdall  # ★9296 An Application dashboard and launcher
+DenverCoder1/readme-typing-svg  # ★9197 ⚡ Dynamically generated, customizable SVG that gives the app
+PrestaShop/PrestaShop  # ★9186 PrestaShop is the universal open-source software platform to
+api-platform/api-platform  # ★9175 🕸️ Create REST and GraphQL APIs, scaffold Jamstack webapps,
+phpDocumentor/TypeResolver  # ★9160 A PSR-5 based resolver of Class names, Types and Structural 
+RSS-Bridge/rss-bridge  # ★9158 The RSS feed for websites missing it
+pterodactyl/panel  # ★9136 Pterodactyl® is a free, open-source game server management p
+reactphp/reactphp  # ★9093 Event-driven, non-blocking I/O with PHP.
+phpDocumentor/ReflectionCommon  # ★9037 
+fuzzdb-project/fuzzdb  # ★8971 Dictionary of attack patterns and primitives for black-box a
+sebastianbergmann/php-code-coverage  # ★8925 Library that provides collection, processing, and rendering 
+myclabs/DeepCopy  # ★8887 Create deep copies (clones) of your objects
+solidtime-io/solidtime  # ★8844 Modern open-source time-tracking app
+owncloud/core  # ★8830 :cloud: ownCloud web server core (Files, DAV, etc.)
+cakephp/cakephp  # ★8794 CakePHP: The Rapid Development Framework for PHP - Official 
+aimeos/aimeos-laravel  # ★8674 Laravel ecommerce package for ultra fast online shops, scala
+symfony/http-foundation  # ★8623 Defines an object-oriented layer for the HTTP specification
+symfony/event-dispatcher  # ★8530 Provides tools that allow your application components to com
+PrivateBin/PrivateBin  # ★8523 A minimalist, open source online pastebin where the server h
+Sylius/Sylius  # ★8512 Headless open-source eCommerce platform on top of PHP/Symfon
+phpspec/prophecy  # ★8474 Highly opinionated mocking framework for PHP 5.3+
+symfony/finder  # ★8434 Finds files and directories via an intuitive fluent interfac
+twigphp/Twig  # ★8370 Twig, the flexible, fast, and secure template language for P
+crater-invoice-inc/crater  # ★8339 Open Source Invoicing Solution for Individuals & Businesses
+ellite/Wallos  # ★8336 Wallos: Open-source, self-hostable personal subscription tra
+opencart/opencart  # ★8176 A free shopping cart system. OpenCart is an open source PHP-
+paragonie/random_compat  # ★8154 PHP 5.x support for random_bytes() and random_int()
+symfony/http-kernel  # ★8106 Provides a structured process for converting a Request into 
+symfony/thanks  # ★8077 Give thanks (in the form of a GitHub ★) to your fellow PHP p
+
+# Ruby — top-starred, not yet in blitz-corpus.txt
+jekyll/jekyll  # ★51633 :globe_with_meridians: Jekyll is a blog-aware static site ge
+mastodon/mastodon  # ★50197 Your self-hosted, globally interconnected microblogging comm
+huginn/huginn  # ★49771 Create agents that monitor and act on your behalf.  Your age
+Homebrew/brew  # ★49116 🍺 The Package Manager for Everywhere
+discourse/discourse  # ★47631 A platform for community discussion. Free, open, simple.
+fastlane/fastlane  # ★41979 🚀 The easiest way to automate building and releasing your i
+freeCodeCamp/devdocs  # ★39279 API Documentation Browser
+rapid7/metasploit-framework  # ★38787 Metasploit Framework
+kilimchoi/engineering-blogs  # ★38492 A curated list of engineering blogs
+chatwoot/chatwoot  # ★35726 Open-source live-chat, email support, omni-channel desk. An 
+bayandin/awesome-awesomeness  # ★33597 A curated list of awesome awesomeness
+hashicorp/vagrant  # ★27200 Vagrant is a tool for building and distributing development 
+matteocrippa/awesome-swift  # ★26198 A collaborative list of awesome Swift libraries and resource
+gitlabhq/gitlabhq  # ★24532 GitLab CE Mirror | Please open new issues in our issue track
+heartcombo/devise  # ★24351 Flexible authentication solution for Rails with Warden.
+ruby/ruby  # ★23673 The Ruby Programming Language
+forem/forem  # ★22759 For empowering community 🌱
+Homebrew/homebrew-cask  # ★22158 🍻 Default casks (upstream binary packages) for the package 
+lewagon/setup  # ★19614 Setup instructions for Le Wagon's students on their first da
+docusealco/docuseal  # ★18243 Open source DocuSign alternative. Create, fill, and sign dig
+postalserver/postal  # ★16724 📮 A fully featured open source mail delivery platform for i
+opf/openproject  # ★15825 OpenProject is the leading open source project management so
+spree/spree  # ★15614 Open Source eCommerce Platform for B2B, Marketplace, and Ent
+Homebrew/homebrew-core  # ★15490 🍻 Default and OSS formulae (built-from-source packages) for
+CocoaPods/CocoaPods  # ★14833 The Cocoa Dependency Manager.
+mame/quine-relay  # ★14566 An uroboros program with 100+ programming languages
+basecamp/kamal  # ★14498 Deploy web apps anywhere.
+neutraltone/awesome-stock-resources  # ★14416 :city_sunrise: A collection of links for free stock photogra
+gollum/gollum  # ★14310 A simple, Git-powered wiki with a local frontend and support
+tmuxinator/tmuxinator  # ★13702 Manage complex tmux sessions easily
+diaspora/diaspora  # ★13657 A privacy-aware, distributed, open source social network.
+github-linguist/linguist  # ★13634 Language Savant. If your repository's language is being repo
+fluent/fluentd  # ★13577 Fluentd: Unified Logging Layer (project under CNCF)
+sidekiq/sidekiq  # ★13553 Simple, efficient background processing for Ruby
+capistrano/capistrano  # ★12979 A deployment automation tool built on Ruby, Rake, and SSH.
+rubocop/rubocop  # ★12898 A Ruby static code analyzer and formatter, based on the comm
+ubicloud/ubicloud  # ★12224 Open source alternative to AWS. Elastic compute, block stora
+faker-ruby/faker  # ★11930 A library for generating fake data such as names, addresses,
+Shopify/liquid  # ★11853 Liquid markup language. Safe, customer facing template langu
+greatghoul/remote-working  # ★11709 收集整理远程工作相关的资料
+jordansissel/fpm  # ★11498 Effing package management! Build packages for multiple platf
+DeathKing/Learning-SICP  # ★11261 MIT视频公开课《计算机程序的构造和解释》中文化项目及课程学习资料搜集。
+teamcapybara/capybara  # ★10169 Acceptance test framework for web applications
+Freika/dawarich  # ★10061 Your favorite self-hostable alternative to Google Timeline (
+ruby-grape/grape  # ★9996 An opinionated framework for creating REST-like APIs in Ruby
+wpscanteam/wpscan  # ★9729 WPScan WordPress security scanner. Written for security prof
+activeadmin/activeadmin  # ★9705 The administration framework for Ruby on Rails applications.
+thoughtbot/guides  # ★9559 A guide for programming in style.
+antiwork/gumroad  # ★9551 See what sticks
+resque/resque  # ★9482 Resque is a Redis-backed Ruby library for creating backgroun
+we-promise/sure  # ★9351 The personal finance app for everyone (by everyone)
+freeCodeCamp/how-to-contribute-to-open-source  # ★9325 A guide to contributing to open source
+imathis/octopress  # ★9237 Octopress is an obsessively designed framework for Jekyll bl
+ankane/pghero  # ★8908 A performance dashboard for Postgres
+javan/whenever  # ★8862 Cron jobs in Ruby
+carrierwaveuploader/carrierwave  # ★8781 Classier solution for file uploads for Rails, Sinatra and ot
+kaminari/kaminari  # ★8673 ⚡ A Scope & Engine based, clean, powerful, customizable and 
+community/community  # ★8652 Public feedback discussions for: GitHub Mobile, GitHub Discu
+varvet/pundit  # ★8520 Minimal authorization through OO design and pure Ruby classe
+chef/chef  # ★8231 Chef Infra, a powerful automation platform that transforms i
+heartcombo/simple_form  # ★8227 Forms made easy for Rails! It's tied to a simple DSL, with n
+thoughtbot/factory_bot  # ★8184 A library for setting up Ruby objects as test data.
+omniauth/omniauth  # ★8100 OmniAuth is a flexible authentication system utilizing Rack 
+basecamp/fizzy  # ★8048 Kanban as it should be. Not as it has been.
+railsadminteam/rails_admin  # ★7958 RailsAdmin is a Rails engine that provides an easy-to-use in
+puppetlabs/puppet  # ★7918 Server automation framework and application
+puma/puma  # ★7914 A Ruby/Rack web server built for parallelism
+github/scientist  # ★7748 :microscope: A Ruby library for carefully refactoring critic
+github-changelog-generator/github-changelog-generator  # ★7533 Automatically generate change log from your tags, issues, la
+realm/jazzy  # ★7381 Soulful docs for Swift & Objective-C
+flyerhzm/bullet  # ★7334 help to kill N+1 queries and unused eager loading
+presidentbeef/brakeman  # ★7261 A static analysis security vulnerability scanner for Ruby on
+middleman/middleman  # ★7113 Hand-crafted frontend development
+paper-trail-gem/paper_trail  # ★7028 Track changes to your rails models
+skwp/dotfiles  # ★6972 YADR - The best vim,git,zsh plugins and the cleanest vimrc y
+chyingp/nodejs-learning-guide  # ★6870 Nodejs学习笔记以及经验总结，公众号"程序猿小卡"
+BetterErrors/better_errors  # ★6863 Better error page for Rack apps
+pry/pry  # ★6836 A runtime developer console and IRB alternative with powerfu
+urbanadventurer/WhatWeb  # ★6776 Next generation web scanner
+sj26/mailcatcher  # ★6775 Catches mail and serves it through a dream.
+instructure/canvas-lms  # ★6765 The open LMS by Instructure, Inc.
+bkeepers/dotenv  # ★6763 A Ruby gem to load environment variables from `.env`. 
+ankane/searchkick  # ★6719 Intelligent search made easy
+midudev/autoskills  # ★6715 One command. Your entire AI skill stack. Installed.
+kkuchta/css-only-chat  # ★6593 A truly monstrous async web chat using no JS whatsoever on t
+busyloop/lolcat  # ★6564 Rainbows and unicorns!
+ankane/chartkick  # ★6527 Create beautiful JavaScript charts with one line of Ruby
+guard/guard  # ★6459 Guard is a command line tool to easily handle events on file
+alexreisner/geocoder  # ★6445 Complete Ruby geocoding solution.
+hanami/hanami  # ★6401 A flexible framework for maintainable Ruby apps
+norman/friendly_id  # ★6227 FriendlyId is the “Swiss Army bulldozer” of slugging and per
+ddollar/foreman  # ★6156 Manage Procfile-based applications
+felixonmars/dnsmasq-china-list  # ★6103 Chinese-specific configuration to improve your favorite DNS 
+vcr/vcr  # ★6077 Record your test suite's HTTP interactions and replay them d
+venmo/synx  # ★6042 A command-line tool that reorganizes your Xcode project fold
+github/markup  # ★6039 Determines which markup library to use to render a content f
+redmine/redmine  # ★6016 Mirror of redmine code source - Official Subversion reposito
+lostisland/faraday  # ★5948 Simple, but flexible HTTP client library, with support for m
+hartator/wayback-machine-downloader  # ★5923 Download an entire website from the Wayback Machine.
+jnunemaker/httparty  # ★5897 :tada: Makes http fun again!
+activerecord-hackery/ransack  # ★5862 Object-based searching. 
+zammad/zammad  # ★5842 Zammad is a web based open source helpdesk/customer support 
+ruby-concurrency/concurrent-ruby  # ★5833 Modern concurrency tools including agents, futures, promises
+rack/rack-attack  # ★5760 Rack middleware for blocking & throttling
+fastruby/fast-ruby  # ★5735 :dash: Writing Fast Ruby :heart_eyes: -- Collect Common Ruby
+dependabot/dependabot-core  # ★5717 🤖 Dependabot's core logic for creating update PRs.
+square/maximum-awesome  # ★5702 Config files for vim and tmux.
+CanCanCommunity/cancancan  # ★5688 The authorization Gem for Ruby on Rails.
+mislav/will_paginate  # ★5688 Pagination library for Rails and other Ruby applications
+danger/danger  # ★5688 🚫 Stop saying "you forgot to …" in code review (in Ruby)
+sferik/x-cli  # ★5581 A command-line power tool for Twitter.
+doorkeeper-gem/doorkeeper  # ★5516 Doorkeeper is an OAuth 2 provider for Ruby on Rails / Grape.
+rmosolgo/graphql-ruby  # ★5447 Ruby implementation of GraphQL 
+Hackplayers/evil-winrm  # ★5436 The ultimate WinRM shell for hacking/pentesting
+slim-template/slim  # ★5372 Slim is a template language whose goal is to reduce the synt
+rails-api/active_model_serializers  # ★5342 ActiveModel::Serializer implementation and Rails hooks
+solidusio/solidus  # ★5318 🛒 Solidus, the open-source eCommerce framework for industry
+drapergem/draper  # ★5276 Decorators/View-Models for Rails Applications
+rails/webpacker  # ★5273 Use Webpack to manage app-like JavaScript modules in Rails
+rspec/rspec-rails  # ★5272 RSpec for Rails 7+
