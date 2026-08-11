@@ -14,8 +14,10 @@ import {
   CURRENT_SCHEMA_VERSION,
   validateErrorEntry,
   validateRepoEntry,
+  buildSearchIndex,
   type ErrorEntry,
   type RepoEntry,
+  type IndexError,
 } from "@errlookup/schema";
 
 export interface ExportOptions {
@@ -25,18 +27,6 @@ export interface ExportOptions {
   datasetVersion?: string;
 }
 
-interface IndexError {
-  id: string;
-  repo: string;
-  slug: string;
-  code: string | null;
-  msg: string;
-  pattern: string;
-  type: string;
-  cls: string | null;
-  tags: string[];
-  sev: string;
-}
 
 interface RepoIndex extends RepoEntry {}
 
@@ -187,15 +177,26 @@ export function buildDataset(
   // manifest.json — MCP freshness poll target (§5.1)
   const indexStr = JSON.stringify(indexJson);
   const reposStr = JSON.stringify(reposJson);
+  // Sharded search index (§5.4): lets the site's API answer queries without
+  // ever loading index.json — required once the corpus outgrows what a Pages
+  // Function isolate can parse per request.
+  const searchFiles = buildSearchIndex(indexErrors);
   const files: FileOut[] = [
     { relPath: "index.json", content: indexStr },
     { relPath: "repos.json", content: reposStr },
     ...repoFiles,
+    ...searchFiles,
   ];
 
+  const summaryStr = searchFiles.find((f) => f.relPath === "search/summary.json")!.content;
   const inventory: Record<string, { path: string; bytes: number; sha256: string }> = {
     index: { path: "/data/index.json", bytes: Buffer.byteLength(indexStr), sha256: sha256(indexStr) },
     repos: { path: "/data/repos.json", bytes: Buffer.byteLength(reposStr), sha256: sha256(reposStr) },
+    searchSummary: {
+      path: "/data/search/summary.json",
+      bytes: Buffer.byteLength(summaryStr),
+      sha256: sha256(summaryStr),
+    },
   };
 
   const manifest = {
