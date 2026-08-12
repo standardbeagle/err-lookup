@@ -23,7 +23,12 @@ $(cd "$REPO_ROOT/packages/pipeline" && node -e '
   try {
     const d = new D("data/errlookup.db", { readonly: true, fileMustExist: true });
     const r = d.prepare("SELECT max(analyzed_at) m, count(*) n FROM repositories WHERE status IN (\x27analyzed\x27,\x27exported\x27)").get();
-    console.log(`${r.m ?? ""} ${r.n ?? 0}`);
+    // Info pages publish too: fold their newest created_at into the change
+    // marker (space-free — the marker is one shell word). The table check
+    // covers a DB from before migration 0004 ran.
+    const hasInfo = d.prepare("SELECT 1 FROM sqlite_master WHERE type=\x27table\x27 AND name=\x27info_pages\x27").get();
+    const info = hasInfo ? d.prepare("SELECT coalesce(max(created_at), \x27\x27) i FROM info_pages").get().i : "";
+    console.log(`${r.m ?? ""}${info === "" ? "" : `+info${info}`} ${r.n ?? 0}`);
   } catch { /* no DB yet */ }
 ')
 EOF2
