@@ -15,7 +15,7 @@ function cfg(): ReturnType<typeof mapConfig> {
 }
 
 let idSeq = 0;
-function errorRow(repo: string, code: string | null, cls: string | null = null) {
+function errorRow(repo: string, code: string | null, cls: string | null = null, backgroundTag: string | null = null) {
   const n = idSeq++;
   return {
     id: n.toString(16).padStart(16, "0"),
@@ -45,14 +45,22 @@ function errorRow(repo: string, code: string | null, cls: string | null = null) 
     tryCatchPattern: null,
     preventionTips: ["health-check first"],
     tags: ["network"],
+    backgroundTag,
     analyzedSha: "a".repeat(40),
     analyzedAt: "2026-08-11T00:00:00Z",
     schemaVersion: 2,
   };
 }
 
-function seed(db: ReturnType<typeof openDb>["db"], repo: string, code: string | null, count: number, cls: string | null = null) {
-  for (let i = 0; i < count; i++) db.insert(errors).values(errorRow(repo, code, cls)).run();
+function seed(
+  db: ReturnType<typeof openDb>["db"],
+  repo: string,
+  code: string | null,
+  count: number,
+  cls: string | null = null,
+  backgroundTag: string | null = null
+) {
+  for (let i = 0; i < count; i++) db.insert(errors).values(errorRow(repo, code, cls, backgroundTag)).run();
 }
 
 const GOOD_DRAFT = {
@@ -108,6 +116,41 @@ describe("findNewClusters", () => {
         .run();
       const again = findNewClusters(db, { minErrors: 5, minRepos: 2, limit: 10 });
       expect(again.map((c) => c.key)).toEqual(["class:TypeError"]);
+    } finally {
+      raw.close();
+    }
+  });
+
+  it("excludes generic class/tag families but never codes", () => {
+    const { db, raw } = openDb(tmpDbPath("info-generic"));
+    try {
+      seed(db, "a/one", null, 3, "Error");
+      seed(db, "b/two", null, 3, "Error"); // class:Error — the cluster the first run wasted its page on
+      seed(db, "a/one", null, 3, "Exception");
+      seed(db, "b/two", null, 3, "Exception");
+      seed(db, "a/one", null, 3, null, "error");
+      seed(db, "b/two", null, 3, null, "error"); // tag:error — same word, same rule
+      seed(db, "a/one", "ECONNREFUSED", 3);
+      seed(db, "b/two", "ECONNREFUSED", 3); // codes are inherently specific
+
+      const found = findNewClusters(db, { minErrors: 5, minRepos: 2, limit: 10 });
+      expect(found.map((c) => c.key)).toEqual(["code:ECONNREFUSED"]);
+    } finally {
+      raw.close();
+    }
+  });
+
+  it("clusters by backgroundTag across records that share neither code nor class", () => {
+    const { db, raw } = openDb(tmpDbPath("info-tag"));
+    try {
+      seed(db, "a/one", "EONE", 3, null, "connection-refused");
+      seed(db, "b/two", null, 3, "SocketError", "connection-refused");
+
+      const found = findNewClusters(db, { minErrors: 5, minRepos: 2, limit: 10 });
+      const tag = found.find((c) => c.key === "tag:connection-refused");
+      expect(tag).toBeDefined();
+      expect(tag!.errorCount).toBe(6);
+      expect(tag!.repoCount).toBe(2);
     } finally {
       raw.close();
     }

@@ -47,12 +47,35 @@ export interface CollectOptions {
 }
 
 export interface ClusterCandidate {
-  /** "code:ECONNREFUSED" or "class:TypeError" — the idempotency key. */
+  /** "code:ECONNREFUSED", "class:TypeError", or "tag:connection-refused" — the idempotency key. */
   key: string;
-  kind: "code" | "class";
+  kind: "code" | "class" | "tag";
   value: string;
   errorCount: number;
   repoCount: number;
+}
+
+/**
+ * Class/tag values too generic to write a family article about — the first
+ * collector run spent its page on class:Error (3,783 records). Codes are
+ * inherently specific and are not filtered.
+ */
+const GENERIC_FAMILIES = new Set([
+  "error",
+  "errors",
+  "exception",
+  "exceptions",
+  "baseexception",
+  "throwable",
+  "runtimeerror",
+  "runtimeexception",
+  "failure",
+  "failures",
+  "unknown",
+]);
+
+function isGenericFamily(value: string): boolean {
+  return GENERIC_FAMILIES.has(value.toLowerCase());
 }
 
 interface ClusterRow {
@@ -91,12 +114,27 @@ export function findNewClusters(
     GROUP BY error_class
     HAVING n >= ${opts.minErrors} AND r >= ${opts.minRepos}
   `);
+  // Enrichment names each record's cross-library family in background_tag —
+  // families that codes and classes cannot see (a "connection-refused" thrown
+  // as plain Error). Tag clusters cut across the other two, so an error can
+  // belong to both a code page and a tag page; the pages answer different
+  // questions and the slugs cannot collide silently (clusterSlug suffixes).
+  const byTag = db.all<ClusterRow>(sql`
+    SELECT 'tag:' || background_tag AS key, background_tag AS value,
+           count(*) AS n, count(DISTINCT repo) AS r
+    FROM errors
+    WHERE background_tag IS NOT NULL AND background_tag != ''
+    GROUP BY background_tag
+    HAVING n >= ${opts.minErrors} AND r >= ${opts.minRepos}
+  `);
 
   return [
     ...byCode.map((c): ClusterCandidate => ({ ...rowToCandidate(c), kind: "code" })),
     ...byClass.map((c): ClusterCandidate => ({ ...rowToCandidate(c), kind: "class" })),
+    ...byTag.map((c): ClusterCandidate => ({ ...rowToCandidate(c), kind: "tag" })),
   ]
     .filter((c) => !existing.has(c.key))
+    .filter((c) => c.kind === "code" || !isGenericFamily(c.value))
     .sort((a, b) => b.errorCount - a.errorCount)
     .slice(0, opts.limit);
 }
@@ -110,7 +148,9 @@ export function sampleCluster(db: Db, cluster: ClusterCandidate, limit = 30): Cl
   const where =
     cluster.kind === "code"
       ? sql`error_code = ${cluster.value}`
-      : sql`(error_code IS NULL OR error_code = '') AND error_class = ${cluster.value}`;
+      : cluster.kind === "class"
+        ? sql`(error_code IS NULL OR error_code = '') AND error_class = ${cluster.value}`
+        : sql`background_tag = ${cluster.value}`;
   const rows = db.all<{
     id: string;
     repo: string;

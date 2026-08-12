@@ -28,7 +28,11 @@ export function infoPagePrompt(
   guides: GuideDef[]
 ): string {
   const family =
-    cluster.kind === "code" ? `error code "${cluster.value}"` : `error class "${cluster.value}"`;
+    cluster.kind === "code"
+      ? `error code "${cluster.value}"`
+      : cluster.kind === "class"
+        ? `error class "${cluster.value}"`
+        : `error family "${cluster.value}"`;
   const records = samples
     .map(
       (s, i) =>
@@ -54,8 +58,11 @@ Available deep-dive guides (link only those genuinely relevant):
 ${guideList}
 
 Write JSON with exactly these fields:
-- title: article headline naming the family in plain words (no clickbait).
-- summary: one paragraph — what this error family is and when a developer meets it.
+- title: article headline naming the family in the words a developer would type into a
+  search engine — lead with the error's own vocabulary (code, message phrase), then the
+  plain-words meaning. No clickbait.
+- summary: one paragraph — what this error family is and when a developer meets it. Open
+  with the searched-for phrase; this paragraph is the meta description search engines show.
 - background: 2-4 paragraphs of mechanism — what layer produces it, why it exists,
   what it looks like from the caller's side, how the family varies across libraries.
   Draw on the records; do not invent libraries or behaviors not in evidence.
