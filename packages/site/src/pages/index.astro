@@ -3,7 +3,6 @@ import Base from "../layouts/Base.astro";
 import RepoTable from "../components/RepoTable.astro";
 import { getManifest } from "../data/load.js";
 import { getRepoPage } from "../data/paging.js";
-import { GUIDES, guideHref } from "../data/guides.js";
 const manifest = getManifest();
 // Page 1 of the analyzed-repos list; /repos/2/ onward carry the rest.
 const page = getRepoPage(1);
@@ -27,7 +26,7 @@ const jsonLd = JSON.stringify({
   <p class="lead">ErrLookup reads library source and documents every user-facing error: exact message, cause, ordered fixes, defensive patterns. Built for coding agents, answer engines, and humans.</p>
 
   <div class="actions">
-    <a class="btn" href="#install">Install the MCP server</a>
+    <a class="btn" href="/troubleshooting/#install">Install the MCP server</a>
     <a class="btn-ghost" href="/request-crawl/">Request a library</a>
   </div>
 
@@ -37,33 +36,10 @@ const jsonLd = JSON.stringify({
     <div><b>{manifest.datasetVersion.slice(0, 10)}</b><span>dataset version</span></div>
   </div>
 
-  <h2>See it in action</h2>
-  <p class="muted">opencode hits an <code>AxiosError</code>, asks the ErrLookup MCP server what it means, and applies the fix the library authors recommend.</p>
-  <video controls preload="metadata" playsinline style="width:100%; border:1px solid var(--line); border-radius:8px; background:#191410;">
-    <source src="/demo/errlookup-demo.mp4" type="video/mp4" />
-    Your browser does not support embedded video — <a href="/demo/errlookup-demo.mp4">download the demo</a>.
-  </video>
-
-  <h2 id="install">Give your coding agent error superpowers</h2>
-  <pre>{
-    JSON.stringify(
-      { mcpServers: { errlookup: { command: "npx", args: ["-y", "@standardbeagle/errlookup-mcp"] } } },
-      null,
-      2
-    )
-  }</pre>
-  <p class="muted">The MCP server caches the dataset locally: offline-capable, no API keys, answers <code>search_error</code> straight from disk.</p>
-
-  <h2>Failure class guides</h2>
   <p class="muted">
-    Most production errors belong to a handful of failure classes. Each <a href="/guides/">guide</a>
-    explains one from the mechanism up and links every documented occurrence:
+    New here? The <a href="/troubleshooting/">troubleshooting page</a> collects the failure-class
+    guides, a demo of the MCP server fixing a real error, and the agent install block.
   </p>
-  <ul>
-    {GUIDES.map((g) => (
-      <li><a href={guideHref(g.slug)}>{g.title}</a></li>
-    ))}
-  </ul>
 
   <h2>Analyzed repos</h2>
   <p class="muted">

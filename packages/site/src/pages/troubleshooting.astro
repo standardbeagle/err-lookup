@@ -1,0 +1,36 @@
+---
+import Base from "../layouts/Base.astro";
+import { GUIDES, guideHref } from "../data/guides.js";
+---
+<Base title="Troubleshooting — guides, demo, and agent setup | ErrLookup" description="Failure-class guides for the errors ErrLookup documents, a demo of the MCP server fixing a real error, and the one-block install for coding agents.">
+  <h1>Troubleshooting with ErrLookup</h1>
+  <p class="lead">Start from the failure class, watch the MCP server resolve a real error, or wire it into your own agent.</p>
+
+  <h2>Failure class guides</h2>
+  <p class="muted">
+    Most production errors belong to a handful of failure classes. Each <a href="/guides/">guide</a>
+    explains one from the mechanism up and links every documented occurrence:
+  </p>
+  <ul>
+    {GUIDES.map((g) => (
+      <li><a href={guideHref(g.slug)}>{g.title}</a></li>
+    ))}
+  </ul>
+
+  <h2>See it in action</h2>
+  <p class="muted">opencode hits an <code>AxiosError</code>, asks the ErrLookup MCP server what it means, and applies the fix the library authors recommend.</p>
+  <video controls preload="metadata" playsinline style="width:100%; border:1px solid var(--line); border-radius:8px; background:#191410;">
+    <source src="/demo/errlookup-demo.mp4" type="video/mp4" />
+    Your browser does not support embedded video — <a href="/demo/errlookup-demo.mp4">download the demo</a>.
+  </video>
+
+  <h2 id="install">Give your coding agent error superpowers</h2>
+  <pre>{
+    JSON.stringify(
+      { mcpServers: { errlookup: { command: "npx", args: ["-y", "@standardbeagle/errlookup-mcp"] } } },
+      null,
+      2
+    )
+  }</pre>
+  <p class="muted">The MCP server caches the dataset locally: offline-capable, no API keys, answers <code>search_error</code> straight from disk.</p>
+</Base>

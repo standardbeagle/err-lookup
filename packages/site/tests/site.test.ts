@@ -408,16 +408,18 @@ describe("header and layout contract", () => {
     const html = readFileSync(resolve(dist, "index.html"), "utf8");
     const nav = html.match(/<nav class="top">[\s\S]*?<\/nav>/)![0];
     const links = [...nav.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1]!);
-    // brand + About + Blog + API + GitHub. The bar also carries a search field,
-    // and every extra link steals width from it — the pre-redesign nav wrapped
-    // to two rows and stranded items on the second.
-    expect(links).toEqual(["/", "/about/", "/blog/", "/api-docs/", "https://github.com/standardbeagle/err-lookup"]);
+    // brand + Troubleshooting + About + API + GitHub. The bar also carries a
+    // search field, and every extra link steals width from it — the
+    // pre-redesign nav wrapped to two rows and stranded items on the second.
+    // Blog moved to the footer when Troubleshooting took its header slot.
+    expect(links).toEqual(["/", "/troubleshooting/", "/about/", "/api-docs/", "https://github.com/standardbeagle/err-lookup"]);
     expect(nav).toContain('class="navsearch"');
   });
 
   it("keeps the links removed from the header reachable in the footer", () => {
     const footer = readFileSync(resolve(dist, "index.html"), "utf8").match(/<footer[\s\S]*?<\/footer>/)![0];
     expect(footer).toContain('href="/request-crawl/"');
+    expect(footer).toContain('href="/blog/"');
     expect(footer).toContain("errlookup-mcp");
   });
 

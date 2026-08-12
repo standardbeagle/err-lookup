@@ -4,7 +4,7 @@ import { allRepoPageHrefs } from "../../data/paging.js";
 import { posts, blogPostHref } from "../../data/blog.js";
 import { GUIDES, guideHref } from "../../data/guides.js";
 
-const STATIC_PAGES = ["/about/", "/request-crawl/", "/api-docs/", "/blog/", "/guides/"];
+const STATIC_PAGES = ["/about/", "/request-crawl/", "/api-docs/", "/blog/", "/guides/", "/troubleshooting/"];
 
 // Static (non-repo) pages sitemap, referenced from the sitemap index.
 // The repo-list pages are derived rather than listed: they grow with the corpus,
