@@ -212,6 +212,20 @@ describe("site build (§8.3)", () => {
   });
 });
 
+describe("background article matching", () => {
+  it("matches backgroundTag first, then the slugified error code, else null", async () => {
+    const { findBackgroundArticle } = await import("../src/data/runtime.js");
+    const index = [
+      { slug: "connection-refused", title: "t1", summary: "s", errorCount: 6, repoCount: 2, generatedAt: "2026-08-12T00:00:00Z" },
+      { slug: "err-bad-response", title: "t2", summary: "s", errorCount: 1, repoCount: 1, generatedAt: "2026-08-12T00:00:00Z" },
+    ];
+    expect(findBackgroundArticle(index, { backgroundTag: "connection-refused", errorCode: "ERR_BAD_RESPONSE" })?.slug).toBe("connection-refused");
+    expect(findBackgroundArticle(index, { backgroundTag: null, errorCode: "ERR_BAD_RESPONSE" })?.slug).toBe("err-bad-response");
+    expect(findBackgroundArticle(index, { backgroundTag: null, errorCode: "ENOENT" })).toBeNull();
+    expect(findBackgroundArticle([], { backgroundTag: "connection-refused", errorCode: null })).toBeNull();
+  });
+});
+
 describe("info pages", () => {
   // The dist mirrors whatever dataset was present at build time: the seeded
   // fixture always has one info page; a real exported dataset has them once

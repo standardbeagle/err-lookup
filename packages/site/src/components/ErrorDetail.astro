@@ -2,15 +2,17 @@
 import Base from "../layouts/Base.astro";
 import { guidesFor, guideHref } from "../data/guides.js";
 import { repoOg } from "../data/og.js";
-import type { ErrorEntry } from "@errlookup/schema";
+import type { ErrorEntry, InfoPageIndexEntry } from "@errlookup/schema";
 
 interface Props {
   error: ErrorEntry;
   repoFullName: string;
   related: ErrorEntry[];
+  /** Published background article covering this error's family, if any. */
+  backgroundArticle?: InfoPageIndexEntry | null;
 }
 
-const { error: e, repoFullName, related } = Astro.props;
+const { error: e, repoFullName, related, backgroundArticle = null } = Astro.props;
 // "CODE: message" when there is a code to lead with. Falling back to a
 // truncated copy of the message printed it twice ("Expected a function, got
 // {type}: Expected a function, got {type}"), spending the part of the title
@@ -51,6 +53,7 @@ const ld = {
       about: `${repoFullName} — ${e.errorMessage}`,
       url: `https://errors.standardbeagle.com/${repoFullName}/${e.slug}/`,
       proficiencyLevel: "Expert",
+      keywords: [...e.tags, ...(e.backgroundTag ? [e.backgroundTag] : [])].join(", "),
     },
     {
       "@type": "FAQPage",
@@ -125,14 +128,22 @@ const ld = {
   <p><strong>Trigger:</strong> {e.triggerScenarios}</p>
   <p><strong>Common situations:</strong> {e.commonSituations}</p>
 
-  {guides.length > 0 && (
+  {(backgroundArticle || guides.length > 0) && (
     <>
       <h2>Understand the failure class</h2>
-      <ul>
-        {guides.map((g) => (
-          <li><a href={guideHref(g.slug)}>{g.title}</a> — {g.short}.</li>
-        ))}
-      </ul>
+      {backgroundArticle && (
+        <p>
+          Background: <a href={`/info/${backgroundArticle.slug}/`}>{backgroundArticle.title}</a> —
+          this error's family across {backgroundArticle.repoCount} libraries.
+        </p>
+      )}
+      {guides.length > 0 && (
+        <ul>
+          {guides.map((g) => (
+            <li><a href={guideHref(g.slug)}>{g.title}</a> — {g.short}.</li>
+          ))}
+        </ul>
+      )}
     </>
   )}
 
