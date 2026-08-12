@@ -1,5 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { assemble } from "../src/phase/assembler.js";
+import { assemble, normalizeBackgroundTag } from "../src/phase/assembler.js";
+
+describe("normalizeBackgroundTag", () => {
+  it("passes a valid kebab tag through", () => {
+    expect(normalizeBackgroundTag("connection-refused")).toBe("connection-refused");
+  });
+  it("sanitizes case, spaces, and stray punctuation", () => {
+    expect(normalizeBackgroundTag(" JWT Token Expired! ")).toBe("jwt-token-expired");
+  });
+  it("nulls generic families and garbage — auxiliary field, never a record reject", () => {
+    expect(normalizeBackgroundTag("error")).toBeNull();
+    expect(normalizeBackgroundTag("Exception")).toBeNull();
+    expect(normalizeBackgroundTag("---")).toBeNull();
+    expect(normalizeBackgroundTag(null)).toBeNull();
+    expect(normalizeBackgroundTag(undefined)).toBeNull();
+  });
+});
 
 function discovered(code: string | null, message: string, file: string) {
   return { message, type: "exception", file, line: null, code, errorClass: null, httpStatus: null };

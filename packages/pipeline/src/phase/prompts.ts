@@ -23,6 +23,7 @@ export interface EnrichedErrorJson {
   exampleFix?: string | null;
   severity: "critical" | "error" | "warning" | "info";
   tags: string[];
+  backgroundTag?: string | null;
 }
 
 export interface DefenseStrategyJson {
@@ -105,7 +106,12 @@ const ENRICHMENT_FIELDS = `- documentation: what this error means and why this l
 - solutions: ordered array, most likely fix FIRST, each a concrete actionable step.
 - exampleFix: before/after code block (null if not applicable).
 - severity: one of critical|error|warning|info.
-- tags: lowercase kebab-case array (e.g. ["network","typescript"]).`;
+- tags: lowercase kebab-case array (e.g. ["network","typescript"]).
+- backgroundTag: ONE lowercase kebab-case tag naming the cross-library error FAMILY this
+  belongs to, phrased the way a developer would search it (e.g. "connection-refused",
+  "jwt-token-expired", "missing-env-var", "schema-validation-failed"). Specific enough
+  that a background article could cover the family; NEVER a generic word like "error",
+  "exception", or "failure". null only when no family fits.`;
 
 const DEFENSE_FIELDS = `- handlingStrategy: exactly one of try-catch|type-guard|validation|retry|fallback.
 - validationCode: code the caller can run BEFORE the API to avoid the error (null if not applicable).
@@ -113,7 +119,7 @@ const DEFENSE_FIELDS = `- handlingStrategy: exactly one of try-catch|type-guard|
 - tryCatchPattern: the recommended catch pattern for this specific error (null if not applicable).
 - preventionTips: array of concrete habits/checks to avoid it.`;
 
-const ENRICHED_SHAPE = `"enriched":[{"errorIndex":0,"documentation":"...","triggerScenarios":"...","commonSituations":"...","solutions":["step 1","step 2"],"exampleFix":"// before\\n...\\n// after\\n...","severity":"error","tags":["x","y"]}]`;
+const ENRICHED_SHAPE = `"enriched":[{"errorIndex":0,"documentation":"...","triggerScenarios":"...","commonSituations":"...","solutions":["step 1","step 2"],"exampleFix":"// before\\n...\\n// after\\n...","severity":"error","tags":["x","y"],"backgroundTag":"connection-refused"}]`;
 
 const DEFENSE_SHAPE = `"defenseStrategies":[{"errorIndex":0,"handlingStrategy":"try-catch","validationCode":"// ...","typeGuard":"// ...","tryCatchPattern":"// ...","preventionTips":["..."]}]`;
 

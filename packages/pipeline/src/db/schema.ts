@@ -66,6 +66,8 @@ export const errors = sqliteTable(
     preventionTips: text("prevention_tips", { mode: "json" }).$type<string[]>(),
 
     tags: text("tags", { mode: "json" }).$type<string[]>(),
+    /** Kebab-case cross-library family tag — the collector's third cluster key. */
+    backgroundTag: text("background_tag"),
     analyzedSha: text("analyzed_sha").notNull(),
     analyzedAt: text("analyzed_at").notNull(),
     schemaVersion: integer("schema_version").notNull().default(2),
@@ -76,6 +78,7 @@ export const errors = sqliteTable(
     uniqueIndex("idx_errors_repo_slug").on(table.repo, table.slug),
     index("idx_errors_repo").on(table.repo),
     index("idx_errors_code").on(table.errorCode),
+    index("idx_errors_background_tag").on(table.backgroundTag),
   ]
 );
 

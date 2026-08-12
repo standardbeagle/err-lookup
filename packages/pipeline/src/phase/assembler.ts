@@ -8,6 +8,25 @@ import { computeErrorId, deriveSlug, normalizeErrorType } from "../util/ids.js";
 import { extractSourceRegion, githubPermalink } from "../util/source.js";
 import { deriveMessagePattern } from "../util/pattern.js";
 
+/** Kebab-case tag shape (mirrors schema's Tag). */
+const TAG_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+/** Family names too generic to write a background article about. */
+const GENERIC_FAMILIES = new Set(["error", "errors", "exception", "exceptions", "failure", "failures", "unknown"]);
+
+/**
+ * Normalize the model's backgroundTag to a valid, non-generic kebab tag. The
+ * field is auxiliary — a malformed or generic value becomes null rather than
+ * rejecting the whole record.
+ */
+export function normalizeBackgroundTag(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const tag = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return TAG_RE.test(tag) && !GENERIC_FAMILIES.has(tag) ? tag : null;
+}
+
 export interface AssembleInput {
   repo: string;
   sha: string;
@@ -97,6 +116,7 @@ export function assemble(input: AssembleInput): AssembleOutput {
       tryCatchPattern: def?.tryCatchPattern ?? null,
       preventionTips: def?.preventionTips ?? [],
       tags: (e?.tags ?? []).map((t) => t.toLowerCase()),
+      backgroundTag: normalizeBackgroundTag(e?.backgroundTag),
       analyzedSha: sha,
       analyzedAt,
       schemaVersion: CURRENT_SCHEMA_VERSION,

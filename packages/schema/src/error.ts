@@ -127,6 +127,10 @@ export const ErrorEntry = z
     preventionTips: z.array(z.string().min(1)),
 
     tags: z.array(Tag),
+    /** One kebab-case tag naming the cross-library error family — the key the
+     *  info-page collector clusters on and error pages link through. Defaulted
+     *  so records analyzed before the field existed keep validating. */
+    backgroundTag: Tag.nullable().default(null),
     analyzedSha: GitSha,
     analyzedAt: IsoUtc,
     schemaVersion: z.literal(CURRENT_SCHEMA_VERSION),

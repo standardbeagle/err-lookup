@@ -338,6 +338,7 @@ function toRow(e: import("@errlookup/schema").ErrorEntry) {
     tryCatchPattern: e.tryCatchPattern,
     preventionTips: e.preventionTips,
     tags: e.tags,
+    backgroundTag: e.backgroundTag,
     analyzedSha: e.analyzedSha,
     analyzedAt: e.analyzedAt,
     schemaVersion: e.schemaVersion,

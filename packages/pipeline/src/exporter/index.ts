@@ -67,6 +67,7 @@ function rowToErrorEntry(r: typeof errors.$inferSelect): ErrorEntry {
     tryCatchPattern: r.tryCatchPattern,
     preventionTips: r.preventionTips ?? [],
     tags: r.tags ?? [],
+    backgroundTag: r.backgroundTag ?? null,
     analyzedSha: r.analyzedSha,
     analyzedAt: r.analyzedAt,
     schemaVersion: CURRENT_SCHEMA_VERSION,
