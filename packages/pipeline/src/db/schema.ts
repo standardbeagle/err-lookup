@@ -117,6 +117,34 @@ export const queue = sqliteTable(
   (table) => [index("idx_queue_status_priority").on(table.status, table.priority)]
 );
 
+/**
+ * Info pages — collector output (cross-repo background articles). One row per
+ * error-family cluster; `clusterKey` is the collector's idempotency key, so a
+ * twice-daily run only writes pages for clusters that gained one since.
+ * Exported with the dataset and rendered at /info/<slug>/.
+ */
+export const infoPages = sqliteTable(
+  "info_pages",
+  {
+    slug: text("slug").primaryKey(),
+    clusterKey: text("cluster_key").notNull(),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    background: text("background").notNull(),
+    commonCauses: text("common_causes", { mode: "json" })
+      .$type<{ cause: string; detail: string }[]>()
+      .notNull(),
+    fixes: text("fixes", { mode: "json" }).$type<string[]>().notNull(),
+    guideSlugs: text("guide_slugs", { mode: "json" }).$type<string[]>().notNull(),
+    errorIds: text("error_ids", { mode: "json" }).$type<string[]>().notNull(),
+    errorCount: integer("error_count").notNull(),
+    repoCount: integer("repo_count").notNull(),
+    generatedAt: text("generated_at").notNull(),
+    createdAt: integer("created_at").notNull().$defaultFn(() => Date.now()),
+  },
+  (table) => [uniqueIndex("idx_info_pages_cluster").on(table.clusterKey)]
+);
+
 export type RepositoryRow = typeof repositories.$inferSelect;
 export type NewRepositoryRow = typeof repositories.$inferInsert;
 export type ErrorRow = typeof errors.$inferSelect;
@@ -125,3 +153,5 @@ export type JobHistoryRow = typeof jobHistory.$inferSelect;
 export type NewJobHistoryRow = typeof jobHistory.$inferInsert;
 export type QueueRow = typeof queue.$inferSelect;
 export type NewQueueRow = typeof queue.$inferInsert;
+export type InfoPageRow = typeof infoPages.$inferSelect;
+export type NewInfoPageRow = typeof infoPages.$inferInsert;

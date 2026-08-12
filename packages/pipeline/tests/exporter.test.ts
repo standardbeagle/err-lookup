@@ -83,7 +83,7 @@ describe("exporter", () => {
     // manifest shape
     const m = JSON.parse(readFileSync(resolve(outDir, "manifest.json"), "utf8"));
     expect(m.schemaVersion).toBe(2);
-    expect(m.counts).toEqual({ repos: 1, errors: 1 });
+    expect(m.counts).toEqual({ repos: 1, errors: 1, infoPages: 0 });
     expect(m.files.index.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect((manifest as { datasetVersion: string }).datasetVersion).toBeTruthy();
 

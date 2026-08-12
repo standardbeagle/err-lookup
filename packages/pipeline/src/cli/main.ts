@@ -9,6 +9,7 @@ import { analyzeRepo } from "../pipeline.js";
 import { runScan } from "../scan.js";
 import { publishDataset } from "../exporter/index.js";
 import { resetRepo, reposByStatus, purgeOrphanedJobs } from "../db/store.js";
+import { collectInfoPages } from "../info/collector.js";
 import { printStatus } from "./status.js";
 
 function dbPath(): string {
@@ -94,6 +95,38 @@ async function main(): Promise<void> {
           JSON.stringify(manifest, null, 2)
         }`
       );
+    } finally {
+      raw.close();
+    }
+    return;
+  }
+
+  if (cmd === "collect-info") {
+    const { values } = parseArgs({
+      options: {
+        "max-pages": { type: "string", default: "5" },
+        "min-errors": { type: "string", default: "5" },
+        "min-repos": { type: "string", default: "2" },
+      },
+      allowPositionals: true,
+      args: rest,
+    });
+    const cfg = loadConfig();
+    const providers = buildProviders(cfg);
+    const { db, raw } = openDb(dbPath());
+    try {
+      const result = await collectInfoPages(db, providers, cfg, {
+        maxPages: Number.parseInt(String(values["max-pages"]), 10),
+        minErrors: Number.parseInt(String(values["min-errors"]), 10),
+        minRepos: Number.parseInt(String(values["min-repos"]), 10),
+        onLog: (m) => console.log(`  ${m}`),
+      });
+      console.log(
+        `collect-info done: ${result.created.length} pages written` +
+          (result.failed > 0 ? `, ${result.failed} failed` : "") +
+          (result.remaining > 0 ? `, ~${result.remaining} clusters still unpaged` : "")
+      );
+      if (result.failed > 0) process.exit(1);
     } finally {
       raw.close();
     }
@@ -205,9 +238,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.error("err-lookup pipeline. commands: analyze, scan, reset, export, status");
+  console.error("err-lookup pipeline. commands: analyze, scan, collect-info, reset, export, status");
   console.error("  errlookup analyze <owner/repo> [--phases 1,2,3,4,5] [--force]");
   console.error("  errlookup scan <file.txt> [--phases 1,2,3,5] [--force] [--seed-only]");
+  console.error("  errlookup collect-info [--max-pages 5] [--min-errors 5] [--min-repos 2]");
   console.error("  errlookup reset [--failed] [--dry-run] [owner/repo ...]");
   console.error("  errlookup export [--out-dir <path>]");
   console.error("  errlookup status");

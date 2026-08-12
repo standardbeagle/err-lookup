@@ -9,15 +9,19 @@ import {
 import { join, dirname, resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { repositories, errors } from "../db/schema.js";
+import { repositories, errors, infoPages } from "../db/schema.js";
 import {
   CURRENT_SCHEMA_VERSION,
+  INFO_PAGE_SCHEMA_VERSION,
   validateErrorEntry,
   validateRepoEntry,
+  validateInfoPageEntry,
   buildSearchIndex,
   type ErrorEntry,
   type RepoEntry,
   type IndexError,
+  type InfoPageEntry,
+  type InfoPageIndexEntry,
 } from "@errlookup/schema";
 
 export interface ExportOptions {
@@ -103,6 +107,24 @@ export function readDataset(db: Db): {
   return { repos, errorsByRepo };
 }
 
+function rowToInfoPageEntry(r: typeof infoPages.$inferSelect): InfoPageEntry {
+  return {
+    slug: r.slug,
+    clusterKey: r.clusterKey,
+    title: r.title,
+    summary: r.summary,
+    background: r.background,
+    commonCauses: r.commonCauses,
+    fixes: r.fixes,
+    guideSlugs: r.guideSlugs,
+    errorIds: r.errorIds,
+    errorCount: r.errorCount,
+    repoCount: r.repoCount,
+    generatedAt: r.generatedAt,
+    schemaVersion: INFO_PAGE_SCHEMA_VERSION,
+  };
+}
+
 interface FileOut {
   relPath: string;
   content: string;
@@ -174,6 +196,28 @@ export function buildDataset(
 
   const reposJson = validRepos;
 
+  // Info pages (§ info-collector): one file per page + a compact hub index,
+  // same validate-or-drop policy as error records.
+  const validInfoPages: InfoPageEntry[] = [];
+  for (const row of db.select().from(infoPages).all()) {
+    const v = validateInfoPageEntry(rowToInfoPageEntry(row));
+    if (v.ok) validInfoPages.push(v.value);
+    else rejected++;
+  }
+  validInfoPages.sort((a, b) => b.errorCount - a.errorCount);
+  const infoIndex: InfoPageIndexEntry[] = validInfoPages.map((p) => ({
+    slug: p.slug,
+    title: p.title,
+    summary: p.summary,
+    errorCount: p.errorCount,
+    repoCount: p.repoCount,
+    generatedAt: p.generatedAt,
+  }));
+  const infoFiles: FileOut[] = [
+    { relPath: "info/index.json", content: JSON.stringify(infoIndex) },
+    ...validInfoPages.map((p) => ({ relPath: `info/${p.slug}.json`, content: JSON.stringify(p) })),
+  ];
+
   // manifest.json — MCP freshness poll target (§5.1)
   const indexStr = JSON.stringify(indexJson);
   const reposStr = JSON.stringify(reposJson);
@@ -186,6 +230,7 @@ export function buildDataset(
     { relPath: "repos.json", content: reposStr },
     ...repoFiles,
     ...searchFiles,
+    ...infoFiles,
   ];
 
   const summaryStr = searchFiles.find((f) => f.relPath === "search/summary.json")!.content;
@@ -202,7 +247,7 @@ export function buildDataset(
   const manifest = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     datasetVersion,
-    counts: { repos: validRepos.length, errors: allErrors.length },
+    counts: { repos: validRepos.length, errors: allErrors.length, infoPages: validInfoPages.length },
     files: inventory,
   };
   files.unshift({ relPath: "manifest.json", content: JSON.stringify(manifest) });
