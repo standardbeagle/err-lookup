@@ -16,16 +16,11 @@ import { execFileSync } from "node:child_process";
  * Measured effect on an unrelated tool's startup: 4.5-10.3s before reaping the
  * orphans, 1.6-1.9s after.
  *
- * Signals the process directly instead of calling `lci shutdown`, which does not
- * work as of lci 2026-08-08 — it reports
- *
- *     Shutting down server for root: /tmp/x
- *     Error: server did not shut down            (exit 1)
- *
- * and leaves the server running. Once that is fixed this can collapse to one
- * call. Until then, calling it and ignoring the non-zero exit is precisely how
- * the leak went unnoticed, so this verifies the process is actually gone and
- * reports what it could not stop.
+ * Asks the server to exit via `lci shutdown` (fixed in lci 2026-08-09; it was a
+ * no-op for CLI-started servers before that), then VERIFIES the process is gone
+ * and escalates to SIGTERM/SIGKILL if not. Calling shutdown and trusting its
+ * exit code is precisely how the leak went unnoticed, so the verification and
+ * the escalation stay regardless of what shutdown reports.
  *
  * Call this BEFORE removing the directory: once the root is gone, the server can
  * no longer be identified with certainty.
@@ -33,6 +28,17 @@ import { execFileSync } from "node:child_process";
  * @returns PIDs it could not stop (empty on success).
  */
 export function stopLciServer(root: string): number[] {
+  if (lciServerPids(root).length > 0) {
+    try {
+      execFileSync("lci", ["-r", root, "shutdown"], {
+        stdio: "ignore",
+        timeout: 10_000,
+      });
+      pauseSync(250);
+    } catch {
+      // Absent binary or shutdown failure — the signal path below still runs.
+    }
+  }
   for (const signal of ["SIGTERM", "SIGKILL"] as const) {
     const pids = lciServerPids(root);
     if (pids.length === 0) return [];
