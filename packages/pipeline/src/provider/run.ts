@@ -19,6 +19,23 @@ function nextOutputFile(cwd: string): string {
   return join(cwd, `${OUTPUT_PREFIX}.${process.pid}.${outputSeq++}.json`);
 }
 
+/**
+ * Provider error text meaning the account is over its request rate — z.ai
+ * surfaces "AI_APICallError: Rate limit reached for requests" through the ACP
+ * error channel. An immediate retry spends more of the same limit and keeps
+ * the account pinned there, so runProvider pauses before retrying these;
+ * other failure kinds (parse, spawn, timeout) still retry at once.
+ */
+const RATE_LIMIT_RE = /rate.?limit|too many requests|\b429\b/i;
+
+export const RATE_LIMIT_BACKOFF_MS = 30_000;
+
+export function isRateLimitError(error: string): boolean {
+  return RATE_LIMIT_RE.test(error);
+}
+
+const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 function withOutputInstruction(prompt: string, outputFile: string): string {
   return (
     `${prompt}\n\n` +
@@ -32,7 +49,8 @@ function withOutputInstruction(prompt: string, outputFile: string): string {
  * Phase-level watchdog budget for one runProvider call. The real per-call
  * timeout lives inside each provider and starts AFTER the shared throttle gate
  * is acquired, so the outer net must cover two primary attempts, one fallback
- * attempt, and time spent queued on the gate — 4x the configured call timeout.
+ * attempt, one rate-limit backoff, and time spent queued on the gate — 4x the
+ * configured call timeout (3 x timeout + one 30s backoff fits with room over).
  * A tighter budget (it used to equal the call timeout) fires before retry or
  * fallback ever run, turning ordinary congestion into phase failures.
  */
@@ -63,7 +81,8 @@ export async function runProvider(
   opts: InvokeOptions,
   providers: Record<string, LlmProvider>,
   cfg: ErrlookupConfig,
-  phase?: "discovery" | "enrichment" | "defense" | "verify"
+  phase?: "discovery" | "enrichment" | "defense" | "verify",
+  sleep: (ms: number) => Promise<void> = realSleep
 ): Promise<RunResult> {
   const primaryName = (phase && cfg.phaseProviders?.[phase]) || cfg.defaults.primary;
   const fallbackName = cfg.defaults.fallback;
@@ -80,16 +99,19 @@ export async function runProvider(
   const clean = () => rmSync(outputFile, { force: true });
 
   try {
-    // Primary: try once, retry once.
-    let lastPrimary: ProviderResult | null = null;
+    // Primary: try once, retry once. The backoff sleeps outside any provider
+    // invoke, so no throttle-gate slot is held while waiting.
+    let lastFailure: Extract<ProviderResult, { ok: false }> | null = null;
     for (let attempt = 0; attempt < 2; attempt++) {
+      if (lastFailure && isRateLimitError(lastFailure.error)) await sleep(RATE_LIMIT_BACKOFF_MS);
       clean();
       const r = await primary.invoke(attemptPrompt, attemptOpts);
       if (r.ok) return { parsed: r.parsed, raw: r.raw, providerUsed: primary.name };
-      lastPrimary = r;
+      lastFailure = r;
     }
 
-    // Fallback (single attempt).
+    // Fallback (single attempt). No backoff here: the fallback is a different
+    // provider, so the primary's rate limit does not gate it.
     if (fallbackName && fallbackName !== primaryName) {
       const fallback = providers[fallbackName];
       if (fallback) {
@@ -99,7 +121,7 @@ export async function runProvider(
       }
     }
 
-    const failed = lastPrimary ?? { ok: false as const, kind: "empty" as const, error: "no attempt made" };
+    const failed = lastFailure ?? { ok: false as const, kind: "empty" as const, error: "no attempt made" };
     throw new ProviderError(failed.kind, failed.error, primaryName);
   } finally {
     clean();

@@ -4,7 +4,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractJson } from "../src/provider/json.js";
 import { FixtureProvider } from "../src/provider/fixture.js";
-import { runProvider } from "../src/provider/run.js";
+import { runProvider, RATE_LIMIT_BACKOFF_MS } from "../src/provider/run.js";
 import { ProviderError, type LlmProvider } from "../src/provider/types.js";
 import { mapConfig, type ErrlookupConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
@@ -141,5 +141,59 @@ describe("runProvider retry + fallback", () => {
       f: new FixtureProvider("f", fx("provider-stdout-truncated.txt")),
     };
     await expect(runProvider("q", { cwd: "." }, providers, cfg)).rejects.toBeInstanceOf(ProviderError);
+  });
+});
+
+describe("runProvider rate-limit backoff", () => {
+  const rateLimited = {
+    ok: false as const,
+    kind: "spawn" as const,
+    error: "glm ACP failure: AI_APICallError: Rate limit reached for requests",
+  };
+
+  /** Fails the first `failures` calls with `failure`, then answers cleanly. */
+  function failingThen(name: string, failures: number, failure: typeof rateLimited): LlmProvider & { calls: number } {
+    const good = new FixtureProvider(name, fx("provider-stdout-clean.json"));
+    return {
+      name,
+      calls: 0,
+      async invoke(prompt, opts) {
+        return ++this.calls <= failures ? failure : good.invoke(prompt, opts);
+      },
+    };
+  }
+
+  it("pauses before retrying a rate-limited primary", async () => {
+    const sleeps: number[] = [];
+    const p = failingThen("p", 1, rateLimited);
+    const res = await runProvider("q", { cwd: "." }, { p }, makeCfg("p"), undefined, async (ms) => {
+      sleeps.push(ms);
+    });
+    expect(res.providerUsed).toBe("p");
+    expect(p.calls).toBe(2);
+    expect(sleeps).toEqual([RATE_LIMIT_BACKOFF_MS]);
+  });
+
+  it("retries other failure kinds without pausing", async () => {
+    const sleeps: number[] = [];
+    const p = failingThen("p", 1, { ok: false as const, kind: "parse" as const, error: "bad JSON" });
+    const res = await runProvider("q", { cwd: "." }, { p }, makeCfg("p"), undefined, async (ms) => {
+      sleeps.push(ms);
+    });
+    expect(res.providerUsed).toBe("p");
+    expect(sleeps).toEqual([]);
+  });
+
+  it("reaches the fallback with only the same-provider backoff", async () => {
+    const sleeps: number[] = [];
+    const p = failingThen("p", 99, rateLimited);
+    const f = new FixtureProvider("f", fx("provider-stdout-clean.json"));
+    const res = await runProvider("q", { cwd: "." }, { p, f }, makeCfg("p", "f"), undefined, async (ms) => {
+      sleeps.push(ms);
+    });
+    expect(res.providerUsed).toBe("f");
+    // One pause between the two primary attempts; none before the fallback,
+    // which is a different provider and not gated by the primary's limit.
+    expect(sleeps).toEqual([RATE_LIMIT_BACKOFF_MS]);
   });
 });
