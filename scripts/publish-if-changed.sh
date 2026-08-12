@@ -65,6 +65,9 @@ RUN_LOG="$LOG_DIR/publish-$(date -u +%Y%m%d-%H%M%S).log"
 (
   echo "=== publish start $(date -u +%FT%TZ) (new analysis up to $latest)"
   cd "$REPO_ROOT"
+  # Export and the site build both resolve @errlookup/schema to its dist — a
+  # pull alone leaves that stale (install does not build workspace deps).
+  pnpm --filter @errlookup/schema build || exit 1
   pnpm --filter @errlookup/pipeline dev export || exit 1
   "$REPO_ROOT/scripts/deploy-site.sh" || exit 1
   printf '%s' "$latest" > "$STATE_FILE"

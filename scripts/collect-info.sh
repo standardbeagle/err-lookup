@@ -21,6 +21,9 @@ fi
 
 echo "=== collect-info start $(date -u +%FT%TZ)" >>"$LOG"
 cd "$REPO_ROOT"
+# The pipeline resolves @errlookup/schema to its dist — a pull alone leaves
+# that stale (install does not build workspace deps), so build it first.
+pnpm --filter @errlookup/schema build >>"$LOG" 2>&1 || { echo "=== collect-info exit=1 (schema build failed) $(date -u +%FT%TZ)" >>"$LOG"; exit 1; }
 pnpm --filter @errlookup/pipeline dev collect-info --max-pages "${ERRLOOKUP_INFO_MAX_PAGES:-5}" >>"$LOG" 2>&1
 status=$?
 echo "=== collect-info exit=$status $(date -u +%FT%TZ)" >>"$LOG"
