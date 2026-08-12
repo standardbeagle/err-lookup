@@ -65,8 +65,10 @@ export async function runVerify(
       providerUsed = result.providerUsed;
       const parsed = result.parsed as { patches?: VerifyPatchJson[] };
       return parsed.patches ?? [];
-    } catch {
+    } catch (err) {
       failedBatches++;
+      const msg = err instanceof Error ? err.message : String(err);
+      onLog?.(`verify: batch failed: ${msg.slice(0, 300)}`);
       return [];
     }
   });

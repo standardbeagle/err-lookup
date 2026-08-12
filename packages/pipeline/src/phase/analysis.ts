@@ -42,7 +42,8 @@ export async function runAnalysis(
   providers: Record<string, LlmProvider>,
   cfg: ErrlookupConfig,
   need: AnalysisNeed,
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  onLog?: (msg: string) => void
 ): Promise<AnalysisResult> {
   const started = Date.now();
   const enrichedByIndex = new Map<number, EnrichedErrorJson>();
@@ -71,8 +72,8 @@ export async function runAnalysis(
   let done = 0;
 
   await mapPool(units, cfg.defaults.batchConcurrency, async (unit) => {
+    const routingPhase = unit.pass.enrichment ? "enrichment" : "defense";
     try {
-      const routingPhase = unit.pass.enrichment ? "enrichment" : "defense";
       const budget = watchdogBudgetMs(cfg, routingPhase);
       const result = await withTimeout(
         runProvider(
@@ -99,8 +100,12 @@ export async function runAnalysis(
           if (typeof d?.errorIndex === "number") defenseByIndex.set(d.errorIndex, d);
         }
       }
-    } catch {
+    } catch (err) {
       failedBatches++;
+      const msg = err instanceof Error ? err.message : String(err);
+      onLog?.(
+        `${routingPhase} batch at errors ${unit.startIndex}-${unit.startIndex + unit.batch.length - 1} failed: ${msg.slice(0, 300)}`
+      );
     } finally {
       onProgress?.(++done, units.length);
     }

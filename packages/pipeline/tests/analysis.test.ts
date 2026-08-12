@@ -190,9 +190,16 @@ describe("runAnalysis: fused enrichment + defense", () => {
     // Fail only the batch that starts at index 10.
     const p = new RecordingProvider("bulk", { failPrompts: (t) => t.includes("[10] ") });
     const cfg = cfgFrom(["  analysis-batch-size 10"]);
-    const res = await runAnalysis(FAKE_REPO, discovered(30), { bulk: p }, cfg, BOTH);
+    const logs: string[] = [];
+    const res = await runAnalysis(FAKE_REPO, discovered(30), { bulk: p }, cfg, BOTH, undefined, (m) =>
+      logs.push(m)
+    );
 
     expect(res.failedBatches).toBe(1);
+    // The failure reason must reach the log, not be swallowed.
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain("errors 10-19 failed");
+    expect(logs[0]).toContain("simulated batch failure");
     expect(res.batches).toBe(3);
     expect(res.enrichedByIndex.size).toBe(20); // the other two batches survived
     expect(res.enrichedByIndex.has(10)).toBe(false);

@@ -203,8 +203,14 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
   if (need.enrichment || need.defense) {
     const started = Date.now();
     try {
-      const res = await runAnalysis(repoPath, discovered, providers, cfg, need, (d, t) =>
-        log(`phase analysis: ${d}/${t} batches`)
+      const res = await runAnalysis(
+        repoPath,
+        discovered,
+        providers,
+        cfg,
+        need,
+        (d, t) => log(`phase analysis: ${d}/${t} batches`),
+        (m) => log(`phase analysis: ${m}`)
       );
       if (need.enrichment) {
         enrichedMap = res.enrichedByIndex;

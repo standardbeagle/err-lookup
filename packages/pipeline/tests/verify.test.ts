@@ -126,9 +126,12 @@ describe("runVerify chunking (size-independent)", () => {
       // fail call 0 → retry succeeds. Fail both tries of one chunk instead:
       const p = new BatchCounting("p", 0);
       const records = Array.from({ length: 200 }, (_, i) => gappy(i));
-      const r = await runVerify("/nonexistent", records, { p }, cfg);
+      const logs: string[] = [];
+      const r = await runVerify("/nonexistent", records, { p }, cfg, (m) => logs.push(m));
       expect(r.patches.length).toBeGreaterThanOrEqual(1);
       expect(r.failedBatches + r.patches.length).toBeGreaterThanOrEqual(2);
+      // Each failed chunk logs its reason instead of swallowing it.
+      expect(logs.filter((l) => l.includes("batch failed:"))).toHaveLength(r.failedBatches);
     } finally {
       delete process.env.ERRLOOKUP_VERIFY_BATCH;
     }
