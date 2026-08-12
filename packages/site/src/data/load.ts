@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import type { ErrorEntry, RepoEntry } from "@errlookup/schema";
+import type { ErrorEntry, RepoEntry, InfoPageEntry, InfoPageIndexEntry } from "@errlookup/schema";
 
 // Build-time only (prerendered routes and sitemaps). Resolved from cwd, not
 // import.meta.url: under the Cloudflare adapter these modules prerender from
@@ -52,6 +52,18 @@ export function getRepos(): RepoEntry[] {
 
 export function getIndex(): { schemaVersion: number; datasetVersion: string; errors: IndexError[] } {
   return readJson("index.json");
+}
+
+/** Info-page hub rows. A dataset published before the collector first ran has
+ *  no info/ directory — an empty hub is the correct rendering of that state,
+ *  not a fallback. */
+export function getInfoIndex(): InfoPageIndexEntry[] {
+  const p = resolve(siteRoot, "public", "data", "info", "index.json");
+  return existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")) as InfoPageIndexEntry[]) : [];
+}
+
+export function getInfoPage(slug: string): InfoPageEntry {
+  return readJson<InfoPageEntry>(`info/${slug}.json`);
 }
 
 /** Split "owner/name" into path segments. */

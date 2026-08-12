@@ -1,0 +1,86 @@
+---
+import Base from "../../../layouts/Base.astro";
+import { getInfoIndex, getInfoPage, getIndex } from "../../../data/load.js";
+import { guideBySlug, guideHref } from "../../../data/guides.js";
+
+export function getStaticPaths() {
+  return getInfoIndex().map((p) => ({ params: { slug: p.slug } }));
+}
+
+const { slug } = Astro.params;
+const page = getInfoPage(slug!);
+const paragraphs = page.background.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
+
+// Representative occurrences: resolve the stored ids against the search index.
+const byId = new Map(getIndex().errors.map((e) => [e.id, e]));
+const occurrences = page.errorIds.map((id) => byId.get(id)).filter((e) => e !== undefined);
+const OCCURRENCE_LIMIT = 20;
+const shown = occurrences.slice(0, OCCURRENCE_LIMIT);
+
+const SITE = "https://errors.standardbeagle.com";
+const ld = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "Article",
+  headline: page.title,
+  description: page.summary,
+  datePublished: page.generatedAt,
+  url: `${SITE}/info/${page.slug}/`,
+});
+---
+<Base title={`${page.title} — ErrLookup`} description={page.summary.slice(0, 155)}>
+  <script slot="head" type="application/ld+json" set:html={ld} />
+  <p class="muted"><a href="/">ErrLookup</a> › <a href="/info/">Background articles</a> › {page.title}</p>
+  <h1>{page.title}</h1>
+  <p class="lead">{page.summary}</p>
+  <p class="muted">
+    Distilled from {page.errorCount.toLocaleString()} documented records across {page.repoCount} repositories.
+  </p>
+
+  <h2>Background</h2>
+  {paragraphs.map((p) => <p>{p}</p>)}
+
+  <h2>Common causes</h2>
+  <ul>
+    {page.commonCauses.map((c) => (
+      <li><strong>{c.cause}.</strong> {c.detail}</li>
+    ))}
+  </ul>
+
+  {page.fixes.length > 0 && (
+    <>
+      <h2>What usually fixes it</h2>
+      <ul>{page.fixes.map((f) => <li>{f}</li>)}</ul>
+    </>
+  )}
+
+  {page.guideSlugs.length > 0 && (
+    <>
+      <h2>Go deeper</h2>
+      <ul>
+        {page.guideSlugs.map((s) => {
+          const g = guideBySlug(s);
+          return <li><a href={guideHref(g.slug)}>{g.title}</a> — {g.short}.</li>;
+        })}
+      </ul>
+    </>
+  )}
+
+  {shown.length > 0 && (
+    <>
+      <h2>Documented occurrences</h2>
+      <ul>
+        {shown.map((e) => (
+          <li><a href={`/${e.repo}/${e.slug}/`}>{e.code ? `${e.code}: ${e.msg}` : e.msg}</a> <span class="muted">({e.repo})</span></li>
+        ))}
+      </ul>
+      {page.errorCount > shown.length && (
+        <p class="muted">…and {(page.errorCount - shown.length).toLocaleString()} more across the corpus — use <a href="/search/">search</a>.</p>
+      )}
+    </>
+  )}
+
+  <p class="muted">
+    Honest provenance: generated on {page.generatedAt.slice(0, 10)} from AI-assisted analysis of the
+    linked records. See <a href="/about/">how records are made</a>.
+  </p>
+</Base>

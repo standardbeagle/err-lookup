@@ -12,6 +12,8 @@
     "/sitemaps/*",
     "/blog/*",
     "/guides/*",
+    "/info/*",
+    "/troubleshooting/*",
     "/repos/*",
     "/about/*",
     "/api-docs/*",

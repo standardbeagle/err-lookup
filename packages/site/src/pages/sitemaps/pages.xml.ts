@@ -3,8 +3,9 @@ import { SITE, xmlResponse } from "../../data/sitemap.js";
 import { allRepoPageHrefs } from "../../data/paging.js";
 import { posts, blogPostHref } from "../../data/blog.js";
 import { GUIDES, guideHref } from "../../data/guides.js";
+import { getInfoIndex } from "../../data/load.js";
 
-const STATIC_PAGES = ["/about/", "/request-crawl/", "/api-docs/", "/blog/", "/guides/", "/troubleshooting/"];
+const STATIC_PAGES = ["/about/", "/request-crawl/", "/api-docs/", "/blog/", "/guides/", "/troubleshooting/", "/info/"];
 
 // Static (non-repo) pages sitemap, referenced from the sitemap index.
 // The repo-list pages are derived rather than listed: they grow with the corpus,
@@ -15,6 +16,7 @@ export const GET: APIRoute = () => {
     ...STATIC_PAGES,
     ...posts.map((p) => blogPostHref(p.slug)),
     ...GUIDES.map((g) => guideHref(g.slug)),
+    ...getInfoIndex().map((p) => `/info/${p.slug}/`),
   ];
   return xmlResponse(
     [

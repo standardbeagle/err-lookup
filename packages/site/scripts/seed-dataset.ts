@@ -190,6 +190,40 @@ for (const e of errors) write(`errors/${e.id}.json`, e);
 
 for (const f of buildSearchIndex(indexErrors)) write(f.relPath, f.content);
 
+// Info pages — in production the collector (errlookup collect-info) writes
+// these; one fixture page keeps /info/ rendering covered by the build test.
+const infoPage = {
+  slug: "err-bad-response",
+  clusterKey: "code:ERR_BAD_RESPONSE",
+  title: "ERR_BAD_RESPONSE: when the server's answer fails validation",
+  summary:
+    "HTTP clients raise ERR_BAD_RESPONSE when the server replies, but with a status the request was not configured to accept.",
+  background:
+    "The request completed at the transport layer — this family is about policy, not connectivity.\n\nClients ship a default acceptance window (usually 2xx) and surface everything else as an error carrying the full response.",
+  commonCauses: [
+    { cause: "Server-side failure", detail: "The endpoint returned 5xx; the client is only the messenger." },
+    { cause: "Overly strict validateStatus", detail: "Expected 4xx responses (e.g. 404 probes) rejected by the default window." },
+  ],
+  fixes: ["Inspect the attached response before treating the error as fatal.", "Widen validateStatus for statuses the caller genuinely handles."],
+  guideSlugs: ["http-status-errors"],
+  errorIds: ["a1b2c3d4e5f60718"],
+  errorCount: 1,
+  repoCount: 1,
+  generatedAt: "2026-07-14T00:00:00Z",
+  schemaVersion: 1,
+};
+write("info/index.json", [
+  {
+    slug: infoPage.slug,
+    title: infoPage.title,
+    summary: infoPage.summary,
+    errorCount: infoPage.errorCount,
+    repoCount: infoPage.repoCount,
+    generatedAt: infoPage.generatedAt,
+  },
+]);
+write(`info/${infoPage.slug}.json`, infoPage);
+
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 const manifest = {
   schemaVersion: 2,

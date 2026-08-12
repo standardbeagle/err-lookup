@@ -16,6 +16,10 @@ import { GUIDES, guideHref } from "../data/guides.js";
       <li><a href={guideHref(g.slug)}>{g.title}</a></li>
     ))}
   </ul>
+  <p class="muted">
+    For error families the guides don't cover, the <a href="/info/">background articles</a> distill
+    common causes across every documented occurrence — and grow twice a day as the collector runs.
+  </p>
 
   <h2>See it in action</h2>
   <p class="muted">opencode hits an <code>AxiosError</code>, asks the ErrLookup MCP server what it means, and applies the fix the library authors recommend.</p>

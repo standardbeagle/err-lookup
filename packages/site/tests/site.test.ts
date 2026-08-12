@@ -212,6 +212,30 @@ describe("site build (§8.3)", () => {
   });
 });
 
+describe("info pages", () => {
+  // The dist mirrors whatever dataset was present at build time: the seeded
+  // fixture always has one info page; a real exported dataset has them once
+  // the collector has run. Either way the hub must prerender.
+  it("prerenders the hub", () => {
+    expect(existsSync(resolve(dist, "info", "index.html"))).toBe(true);
+  });
+
+  it("prerenders one page per dataset entry with its sections and links", () => {
+    const idxPath = resolve(publicData, "info", "index.json");
+    if (!existsSync(idxPath)) return; // pre-collector dataset: hub renders its empty state
+    const entries = JSON.parse(readFileSync(idxPath, "utf8")) as { slug: string; title: string }[];
+    const hub = readFileSync(resolve(dist, "info", "index.html"), "utf8");
+    for (const e of entries) {
+      expect(hub).toContain(`/info/${e.slug}/`);
+      const html = readFileSync(resolve(dist, "info", e.slug, "index.html"), "utf8");
+      const page = JSON.parse(readFileSync(resolve(publicData, `info/${e.slug}.json`), "utf8"));
+      expect(html).toContain("Common causes");
+      for (const c of page.commonCauses) expect(html).toContain(c.cause);
+      for (const g of page.guideSlugs) expect(html).toContain(`/guides/${g}/`);
+    }
+  });
+});
+
 describe("404 page", () => {
   it("emits /404.html at the dist root, not a /404/ directory", () => {
     // Cloudflare Pages serves the not-found body from /404.html specifically.

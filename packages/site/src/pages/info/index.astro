@@ -1,0 +1,29 @@
+---
+import Base from "../../layouts/Base.astro";
+import { getInfoIndex } from "../../data/load.js";
+
+const pages = getInfoIndex();
+---
+<Base
+  title="Error background articles — ErrLookup"
+  description="Background articles on error families that appear across many open-source libraries: what the family means, its common causes, and how the libraries differ."
+>
+  <h1>Error background articles</h1>
+  <p class="lead">
+    Each article covers one error family that appears across many analyzed libraries — the
+    mechanism behind it, the causes the records agree on, and where the libraries differ.
+    They are generated from the documented records and grow as the corpus does.
+  </p>
+  {pages.length === 0 && <p class="muted">No articles yet — the collector has not run against this dataset.</p>}
+  <ul>
+    {pages.map((p) => (
+      <li>
+        <a href={`/info/${p.slug}/`}><strong>{p.title}</strong></a>
+        <br />
+        {p.summary}
+        <span class="muted"> ({p.errorCount.toLocaleString()} records across {p.repoCount} repos)</span>
+      </li>
+    ))}
+  </ul>
+  <p class="muted">Looking for a specific failure class? The <a href="/guides/">guides</a> go deeper on the big ones.</p>
+</Base>
