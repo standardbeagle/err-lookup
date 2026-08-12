@@ -98,6 +98,9 @@ importers:
       '@astrojs/cloudflare':
         specifier: ^12.6.13
         version: 12.6.13(@types/node@22.19.1)(astro@5.18.2(@types/node@22.19.1)(lightningcss@1.33.0)(rollup@4.62.2)(terser@5.44.1)(tsx@4.20.6)(typescript@5.9.3))(lightningcss@1.33.0)(terser@5.44.1)(tsx@4.20.6)
+      '@errlookup/schema':
+        specifier: workspace:*
+        version: link:../schema
       astro:
         specifier: ^5.1.0
         version: 5.18.2(@types/node@22.19.1)(lightningcss@1.33.0)(rollup@4.62.2)(terser@5.44.1)(tsx@4.20.6)(typescript@5.9.3)
