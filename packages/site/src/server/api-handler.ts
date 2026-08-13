@@ -33,11 +33,15 @@ const CORS = {
 };
 
 function json(body: unknown, status = 200, cacheSeconds = 60): Response {
+  // Successful responses are stable until the next dataset publish (hourly at
+  // most): browsers keep the short TTL, the edge cache (middleware) holds them
+  // for an hour so repeat bot hits skip the search/lookup CPU entirely.
+  const edge = status === 200 && cacheSeconds > 0 ? ", s-maxage=3600" : "";
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": `public, max-age=${cacheSeconds}`,
+      "cache-control": `public, max-age=${cacheSeconds}${edge}`,
       ...CORS,
     },
   });
