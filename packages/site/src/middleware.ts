@@ -27,6 +27,16 @@ function ttlOf(res: Response): number {
 }
 
 export const onRequest = defineMiddleware(async (context, next) => {
+  // Canonical host: crawlers reached the production mirror via errlookup.pages.dev
+  // links and burned duplicate renders there. Exact-host match keeps preview
+  // deployments (<hash>.errlookup.pages.dev) reachable; static-excluded paths
+  // never enter the worker, so only worker-routed pages redirect — page
+  // canonicals cover the rest.
+  const url = new URL(context.request.url);
+  if (url.hostname === "errlookup.pages.dev") {
+    return Response.redirect(`https://errors.standardbeagle.com${url.pathname}${url.search}`, 301);
+  }
+
   const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default;
   if (!cache || context.request.method !== "GET") return next();
 
