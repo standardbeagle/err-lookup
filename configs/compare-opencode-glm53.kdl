@@ -1,0 +1,18 @@
+// Comparison run: GLM 5.3 via opencode ACP (Z.AI coding plan) — challenger to
+// the 5.2 baseline in docs/model-comparison-2026-07-31.md. Same repo
+// (sindresorhus/is), same single-provider shape, so columns compare directly.
+// skip-peak: comparison credits are discretionary — never spend them at 2x.
+// Use with: ERRLOOKUP_CONFIG=configs/compare-opencode-glm53.kdl ERRLOOKUP_DB=data/compare-glm53.db
+provider "opencode" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "zai-coding-plan/glm-5.3"
+    timeout-ms 600000
+}
+defaults {
+    primary "opencode"
+    max-concurrent 1
+    skip-peak true
+    delay-between-phases-ms 2000
+}
