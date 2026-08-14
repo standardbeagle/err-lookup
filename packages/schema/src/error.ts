@@ -189,6 +189,7 @@ export const RepoStatus = z.enum([
 export type RepoStatus = z.infer<typeof RepoStatus>;
 
 export const PhaseName = z.enum([
+  "scope",
   "discovery",
   "enrichment",
   "defense",

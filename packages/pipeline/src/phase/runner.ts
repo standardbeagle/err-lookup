@@ -12,6 +12,8 @@ import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider } from "../provider/types.js";
 import { ProviderError } from "../provider/types.js";
 import { runDiscovery } from "./discovery.js";
+import { runScope } from "./scope.js";
+import type { ScanScope } from "./candidates.js";
 import { runAnalysis } from "./analysis.js";
 import { runVerify, applyPatches } from "./verify.js";
 import { assemble } from "./assembler.js";
@@ -87,6 +89,55 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
   const wanted = (phase: PhaseName) => opts.phases?.[phase] ?? true;
   const skipped: PhaseName[] = [];
 
+  // ----- Phase 0: Scope -----
+  // LLM-derived per-repo scan scope (include-roots + exclude-dirs on top of
+  // the static floor). Runs only when discovery will actually run — a resumed
+  // discovery already baked its scope into the persisted result.
+  let scope: ScanScope | undefined;
+  const discoveryNeeded = wanted("discovery") && !phaseDone(db, repo, sha, "discovery", opts.force);
+  if (discoveryNeeded && wanted("scope") && process.env.ERRLOOKUP_SCOPE !== "off") {
+    if (phaseDone(db, repo, sha, "scope", opts.force)) {
+      try {
+        scope = JSON.parse(latestPhaseRun(db, repo, sha, "scope")?.result ?? "") as ScanScope;
+      } catch {
+        scope = undefined;
+      }
+      skipped.push("scope");
+      log(`phase scope: skipped (already succeeded for ${sha.slice(0, 8)})`);
+    } else {
+      const started = Date.now();
+      recordPhase(db, { repo, phase: "scope", status: "running", startedAt: started, analyzedSha: sha });
+      try {
+        const r = await runScope(repoPath, repo, providers, cfg, (m) => log(`phase scope: ${m}`));
+        scope = r.scope;
+        recordPhase(db, {
+          repo,
+          phase: "scope",
+          status: "success",
+          startedAt: started,
+          completedAt: Date.now(),
+          analyzedSha: sha,
+          result: JSON.stringify(scope),
+        });
+        log(`phase scope: ${r.mode} via ${r.providerUsed} (${r.durationMs}ms)`);
+      } catch (e) {
+        const msg = e instanceof ProviderError ? `[${e.kind}] ${e.message}` : (e as Error).message;
+        recordPhase(db, {
+          repo,
+          phase: "scope",
+          status: "failed",
+          startedAt: started,
+          completedAt: Date.now(),
+          analyzedSha: sha,
+          errorLog: msg,
+        });
+        recordAnalysisFailure(db, repo, `scope: ${msg}`);
+        log(`phase scope: FAILED — ${msg}`);
+        return { errorCount: 0, rejects: [], skipped, failed: `scope: ${msg}` };
+      }
+    }
+  }
+
   // ----- Phase 1: Discovery -----
   let discovered: DiscoveredErrorJson[] = [];
   if (wanted("discovery")) {
@@ -111,7 +162,8 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           providers,
           cfg,
           (b, t) => log(`phase discovery: batch ${b}/${t}`),
-          (m) => log(`phase discovery: ${m}`)
+          (m) => log(`phase discovery: ${m}`),
+          scope
         );
         discovered = r.errors;
         recordPhase(db, {

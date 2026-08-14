@@ -39,7 +39,7 @@ export interface ErrlookupConfig {
    * Per-phase provider overrides (model routing): cheap models for bulk
    * phases, a stronger model for verify. Falls back to defaults.primary.
    */
-  phaseProviders?: Partial<Record<"discovery" | "enrichment" | "defense" | "verify", string>>;
+  phaseProviders?: Partial<Record<"scope" | "discovery" | "enrichment" | "defense" | "verify", string>>;
 }
 
 export const DEFAULT_CONFIG: ErrlookupConfig = {
@@ -106,7 +106,7 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
       };
     } else if (node.name === "phase-providers") {
       cfg.phaseProviders = {};
-      for (const phase of ["discovery", "enrichment", "defense", "verify"] as const) {
+      for (const phase of ["scope", "discovery", "enrichment", "defense", "verify"] as const) {
         const v = childByName(node, phase)?.values[0];
         if (typeof v === "string" && v) cfg.phaseProviders[phase] = v;
       }

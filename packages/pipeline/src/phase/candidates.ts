@@ -40,6 +40,39 @@ export interface ExtractOptions {
   maxCandidates?: number;
   maxPerFile?: number;
   maxFileBytes?: number;
+  /** LLM-derived per-repo scope (scope phase). Tightens on top of the static
+   *  SKIP_DIRS floor — it can exclude more, never re-include floor dirs. */
+  scope?: ScanScope;
+  /** When supplied, scope exclusions are tallied here by top-level dir so the
+   *  caller can log what the LLM scope dropped — silent over-exclusion would
+   *  swallow real errors with no trace. */
+  excludedByScope?: Map<string, number>;
+}
+
+/**
+ * Per-repo scan scope decided by the scope phase. Empty includeRoots = whole
+ * repo. Paths are repo-relative directory paths without trailing slash.
+ */
+export interface ScanScope {
+  includeRoots: string[];
+  excludeDirs: string[];
+}
+
+function underDir(rel: string, dir: string): boolean {
+  return rel === dir || rel.startsWith(dir + "/");
+}
+
+/** True when the LLM scope (not the static floor) excludes this path. */
+export function isOutOfScope(rel: string, scope?: ScanScope | null): boolean {
+  if (!scope) return false;
+  if (scope.includeRoots.length > 0 && !scope.includeRoots.some((r) => underDir(rel, r))) return true;
+  return scope.excludeDirs.some((d) => underDir(rel, d));
+}
+
+function tallyScopeExclusion(counts: Map<string, number> | undefined, rel: string): void {
+  if (!counts) return;
+  const top = rel.split("/")[0]!;
+  counts.set(top, (counts.get(top) ?? 0) + 1);
 }
 
 const SKIP_DIRS = new Set([
@@ -51,6 +84,17 @@ const SKIP_DIRS = new Set([
 
 const TEST_FILE = /(\.test\.|\.spec\.|_test\.(go|py|rb|c|cc|cpp)$|^test_|Test\.(java|kt|cs)$)/;
 
+/** The static floor, as a directory-name predicate. The scope phase reuses it
+ *  when collecting the tree it feeds the LLM. */
+export function isFloorSkippedDir(name: string): boolean {
+  return SKIP_DIRS.has(name) || /^tests?$|^spec$/.test(name);
+}
+
+/** True when `file` has a source extension the extractor recognizes. */
+export function isSourceFile(file: string): boolean {
+  return !!EXT_TO_FAMILY[extname(file)];
+}
+
 /** Same exclusions the built-in walk applies during traversal, as a path
  *  predicate — the lci backend gets repo-wide hits and must filter after the
  *  fact, or demo/example scripts (e.g. prisma's examples/…/scripts/seed.ts)
@@ -58,7 +102,7 @@ const TEST_FILE = /(\.test\.|\.spec\.|_test\.(go|py|rb|c|cc|cpp)$|^test_|Test\.(
 export function isExcludedPath(rel: string): boolean {
   const segs = rel.split("/");
   for (const d of segs.slice(0, -1)) {
-    if (SKIP_DIRS.has(d) || /^tests?$|^spec$/.test(d)) return true;
+    if (isFloorSkippedDir(d)) return true;
   }
   return TEST_FILE.test(rel);
 }
@@ -128,7 +172,7 @@ function* walk(dir: string, root: string): Generator<string> {
     if (e.name.startsWith(".") && e.name !== ".") continue;
     const full = join(dir, e.name);
     if (e.isDirectory()) {
-      if (SKIP_DIRS.has(e.name) || /^tests?$|^spec$/.test(e.name)) continue;
+      if (isFloorSkippedDir(e.name)) continue;
       yield* walk(full, root);
     } else if (e.isFile()) {
       yield full;
@@ -162,13 +206,24 @@ export interface LciGrepResult {
 }
 
 /** Map one `lci grep --json` payload to candidate sites (exported for tests). */
-export function candidatesFromLciJson(kind: string, repoPath: string, payload: LciGrepResult, seen: Set<string>): CandidateSite[] {
+export function candidatesFromLciJson(
+  kind: string,
+  repoPath: string,
+  payload: LciGrepResult,
+  seen: Set<string>,
+  scope?: ScanScope,
+  excludedByScope?: Map<string, number>
+): CandidateSite[] {
   const out: CandidateSite[] = [];
   for (const r of payload.results ?? []) {
     if (!r.path || !r.line) continue;
     const rel = isAbsolute(r.path) ? relative(repoPath, r.path) : r.path;
     if (rel.startsWith("..")) continue;
     if (isExcludedPath(rel)) continue;
+    if (isOutOfScope(rel, scope)) {
+      tallyScopeExclusion(excludedByScope, rel);
+      continue;
+    }
     const key = `${rel}:${r.line}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -223,7 +278,7 @@ export function extractCandidatesLci(repoPath: string, opts: ExtractOptions = {}
       timeout: 120_000,
       maxBuffer: 64 * 1024 * 1024,
     });
-    out.push(...candidatesFromLciJson(kind, repoPath, JSON.parse(stdout) as LciGrepResult, seen));
+    out.push(...candidatesFromLciJson(kind, repoPath, JSON.parse(stdout) as LciGrepResult, seen, opts.scope, opts.excludedByScope));
   }
   return Number.isFinite(maxCandidates) ? out.slice(0, maxCandidates) : out;
 }
@@ -234,17 +289,25 @@ export function extractCandidatesAuto(
   opts: ExtractOptions = {},
   onLog?: (msg: string) => void
 ): { candidates: CandidateSite[]; backend: "lci" | "builtin" } {
+  if (opts.scope && !opts.excludedByScope) opts = { ...opts, excludedByScope: new Map() };
+  const logScopeExclusions = (r: { candidates: CandidateSite[]; backend: "lci" | "builtin" }) => {
+    for (const [dir, n] of opts.excludedByScope ?? []) {
+      onLog?.(`scope: excluded ${n} candidate location(s) under ${dir}/`);
+    }
+    return r;
+  };
   if (process.env.ERRLOOKUP_EXTRACTOR !== "builtin") {
     try {
-      return { candidates: extractCandidatesLci(repoPath, opts), backend: "lci" };
+      return logScopeExclusions({ candidates: extractCandidatesLci(repoPath, opts), backend: "lci" });
     } catch (e) {
       // The built-in walk is the portable baseline, but a fallback nobody sees
       // is a fallback nobody fixes — elasticsearch quietly lost lci's richer
       // exclusions for a whole run. Name the reason.
       onLog?.(`lci extraction failed (${(e as Error).message.split("\n")[0]}) — using builtin walker`);
+      opts.excludedByScope?.clear(); // drop partial lci tallies before the rewalk
     }
   }
-  return { candidates: extractCandidates(repoPath, opts), backend: "builtin" };
+  return logScopeExclusions({ candidates: extractCandidates(repoPath, opts), backend: "builtin" });
 }
 
 export function extractCandidates(repoPath: string, opts: ExtractOptions = {}): CandidateSite[] {
@@ -261,6 +324,10 @@ export function extractCandidates(repoPath: string, opts: ExtractOptions = {}): 
     if (!family) continue;
     const rel = relative(repoPath, file);
     if (TEST_FILE.test(rel) || TEST_FILE.test(file)) continue;
+    if (isOutOfScope(rel, opts.scope)) {
+      tallyScopeExclusion(opts.excludedByScope, rel);
+      continue;
+    }
     try {
       if (statSync(file).size > maxFileBytes) continue;
     } catch {

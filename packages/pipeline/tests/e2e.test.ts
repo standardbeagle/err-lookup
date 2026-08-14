@@ -121,13 +121,14 @@ describe("pipeline e2e (fixture-replay)", () => {
       expect(r.githubUrl).not.toContain("/blob/main/");
     }
 
-    // job_history recorded all 4 phases as success
+    // job_history recorded all 5 phases as success
     const jobs = db.select().from(jobHistory).all();
     const successes = jobs.filter((j) => j.status === "success");
     expect(successes.map((j) => j.phase).sort()).toEqual([
       "defense",
       "discovery",
       "enrichment",
+      "scope",
       "verify",
     ]);
 

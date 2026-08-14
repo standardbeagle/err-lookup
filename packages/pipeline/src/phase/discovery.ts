@@ -4,7 +4,7 @@ import { runProvider, watchdogBudgetMs } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
 import { mapPool, chunk } from "../util/pool.js";
 import { DISCOVERY_PROMPT, candidateDiscoveryPrompt, type DiscoveredErrorJson } from "./prompts.js";
-import { extractCandidatesAuto, countSourceFiles } from "./candidates.js";
+import { extractCandidatesAuto, countSourceFiles, type ScanScope } from "./candidates.js";
 import { stopLciServer } from "../util/lci-server.js";
 
 export interface DiscoveryResult {
@@ -50,12 +50,13 @@ export async function runDiscovery(
   providers: Record<string, LlmProvider>,
   cfg: ErrlookupConfig,
   onBatch?: (done: number, total: number) => void,
-  onLog?: (msg: string) => void
+  onLog?: (msg: string) => void,
+  scope?: ScanScope
 ): Promise<DiscoveryResult> {
   const started = Date.now();
   const budget = watchdogBudgetMs(cfg, "discovery");
 
-  const { candidates, backend } = extractCandidatesAuto(repoPath, {}, onLog);
+  const { candidates, backend } = extractCandidatesAuto(repoPath, { scope }, onLog);
   // Candidate extraction is the index server's only consumer, but left alone
   // it survives until clone cleanup — on a symfony-class repo that is ~750MB
   // of index RAM held through 20-50min of LLM phases that never touch it.
@@ -77,8 +78,14 @@ export async function runDiscovery(
         skippedCandidates: 0,
       };
     }
+    // The agentic crawl explores the repo itself, so the scope rides along as
+    // prompt constraints instead of a path filter.
+    const scopeNote =
+      scope && (scope.includeRoots.length > 0 || scope.excludeDirs.length > 0)
+        ? `\n\nSCAN SCOPE:${scope.includeRoots.length > 0 ? ` only scan these directories: ${scope.includeRoots.join(", ")}.` : ""}${scope.excludeDirs.length > 0 ? ` NEVER scan: ${scope.excludeDirs.join(", ")}.` : ""}`
+        : "";
     const result = await withTimeout(
-      runProvider(DISCOVERY_PROMPT, { cwd: repoPath }, providers, cfg, "discovery"),
+      runProvider(DISCOVERY_PROMPT + scopeNote, { cwd: repoPath }, providers, cfg, "discovery"),
       budget
     );
     return {

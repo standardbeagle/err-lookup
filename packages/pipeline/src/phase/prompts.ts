@@ -49,6 +49,31 @@ export interface VerifyPatchJson {
 }
 
 /**
+ * Phase 0 — Scope (§4.2.0): decide per-repo which directories hold the
+ * library's own source. The static SKIP_DIRS floor already removed the
+ * universal junk; this pass catches repo-specific layouts (semantic-kernel's
+ * dotnet/samples, doc sites, vendored trees) that no static list can chase.
+ */
+export function scopePrompt(repo: string, tree: string): string {
+  return `You are configuring the scan scope for a pipeline that documents the ERRORS A LIBRARY CAN RAISE for its users. Below is the directory tree of the repository "${repo}", depth-limited, with per-directory source-file counts.
+
+DIRECTORY TREE:
+${tree}
+
+Decide which directories hold the library's own shippable source code, and which hold code that is NOT the library: sample/demo/example apps, documentation sites, website code, CI and release tooling, editor plugins, vendored or generated code, integration-test harnesses.
+
+RULES:
+- includeRoots: directories containing the library's own source. Use the tightest roots that cover ALL of it (e.g. ["src"], or ["dotnet/src","python/semantic_kernel"] for a multi-language monorepo). Empty array = scan the whole repository — right when the repo root IS the library.
+- excludeDirs: directories that must NOT be scanned.
+- Copy paths EXACTLY as they appear in the tree, without trailing slash.
+- A directory with an unusually large file count that is not the library's source root is usually vendored or generated code — exclude it.
+- When unsure whether a directory is library source, INCLUDE it: a missed exclusion adds noise, a wrong exclusion silently drops real errors.
+
+OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
+{"includeRoots":["dir1"],"excludeDirs":["dir2/sub"],"notes":"one short sentence"}`;
+}
+
+/**
  * Phase 1a — Candidate classification: the deterministic extractor already
  * located error-raising sites; the model verifies each against the surrounding
  * source and emits the discovery shape. One dense payload per batch — no
