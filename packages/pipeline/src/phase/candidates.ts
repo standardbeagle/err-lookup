@@ -46,6 +46,7 @@ const SKIP_DIRS = new Set([
   ".git", "node_modules", "vendor", "dist", "build", "out", "target",
   "third_party", "testdata", "__tests__", "__mocks__", "fixtures", "mocks",
   ".github", "docs", "examples", "example", "benchmark", "benchmarks",
+  "samples", "sample", "demo", "demos", "playground", "notebooks", "tutorials",
 ]);
 
 const TEST_FILE = /(\.test\.|\.spec\.|_test\.(go|py|rb|c|cc|cpp)$|^test_|Test\.(java|kt|cs)$)/;

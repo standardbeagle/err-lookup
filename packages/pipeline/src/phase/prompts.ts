@@ -67,6 +67,7 @@ RULES:
 - Use the candidate's file and line (correct the line only if the actual throw is adjacent).
 - Capture the error code when one is defined; note the error class and HTTP status where applicable.
 - EXCLUDE: internal assertions never shown to users, debug logging, dead code, generated files.
+- EXCLUDE demo/sample/example code: anything under samples/, examples/, demo/, getting-started/, playground/, notebooks/, or quickstart paths, and any file that is clearly a runnable walkthrough rather than the library itself (e.g. a script that configures credentials and calls the library end-to-end). Errors thrown by demo code are not errors of the library.
 - Do not invent errors that are not in the candidate list.
 
 OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
@@ -89,6 +90,7 @@ RULES:
 - Note the precise line number of the throw/raise.
 - Capture the error code when one is defined.
 - SKIP test files, mocks, fixtures, debug-only logs.
+- SKIP demo/sample/example code: samples/, examples/, demo/, getting-started/, playground/, notebooks/, quickstart paths, and runnable walkthrough scripts. Errors thrown by demo code are not errors of the library.
 - Prioritize production / user-facing errors.
 
 OUTPUT: return ONLY a JSON object, no prose, no markdown fences:

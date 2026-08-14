@@ -122,6 +122,10 @@ describe("lci JSON mapping", () => {
         { path: "/repo/src/a.ts", line: 113 }, // duplicate
         { path: "/outside/other.ts", line: 5 }, // outside repo root
         { path: "/repo/examples/prisma-8-demo-sqlite/scripts/seed.ts", line: 119 }, // demo script, not library code
+        { path: "/repo/dotnet/samples/Concepts/ChatCompletion/OpenAI_ChatCompletion.cs", line: 31 }, // samples dir (semantic-kernel shape)
+        { path: "/repo/python/samples/getting_started/step1.py", line: 12 }, // nested samples dir
+        { path: "/repo/demo/app.ts", line: 3 }, // demo dir
+        { path: "/repo/notebooks/intro.py", line: 8 }, // notebooks dir
         { path: "/repo/docs/guide.ts", line: 7 }, // docs snippet
         { path: "/repo/src/util.test.ts", line: 9 }, // test file
       ],
