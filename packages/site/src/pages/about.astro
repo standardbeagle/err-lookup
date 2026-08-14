@@ -20,12 +20,35 @@ const jsonLd = JSON.stringify({
 >
   <script slot="head" type="application/ld+json" set:html={jsonLd} />
   <h1>About ErrLookup</h1>
+
+  <h2>The problem: the error on your screen is not in the source</h2>
   <p>
-    Paste an error message into a search box and you get a decade of forum posts, half of them
-    for other versions. ErrLookup starts from the other end: we read the <em>source</em> of
-    popular open-source libraries, find every user-facing error they can raise, and document
-    each one — what it means, what triggers it, the most likely fixes, and how to write code
-    that avoids it.
+    You hit an error, copy the message, and search the library's repository. Often nothing
+    matches. The string on your screen was assembled at run time. In the source it is a
+    template — <code>Cannot find module '&#36;&#123;request&#125;'</code>, <code>%s: invalid
+    option</code>, <code>&#123;0&#125; is out of range</code> — or it is concatenated across
+    several lines, or it lives in a resource file keyed by an error code while the throw site
+    holds only the code. Frameworks then wrap it with their own prefixes before it reaches
+    your terminal.
+  </p>
+  <p>
+    Cloning the repo does not close that gap, and neither does handing the repo to a language
+    model at debug time. To connect one concrete runtime message back to the expression that
+    produced it, something has to know every placeholder syntax the library uses, follow the
+    string through builders and resource lookups, and do it against the version you are
+    actually running. That is slow, error-prone work to repeat on every debugging session.
+  </p>
+
+  <h2>What ErrLookup does about it</h2>
+  <p>
+    We do that work once per library, ahead of time. We read the <em>source</em> of popular
+    open-source libraries, find every user-facing error they can raise with its template
+    intact, and document each one — what it means, what triggers it, the most likely fixes,
+    and how to write code that avoids it. Each templated message is also compiled into a
+    match pattern: placeholders like <code>&#36;&#123;name&#125;</code>, <code>%s</code>,
+    <code>&#123;0&#125;</code>, and <code>%(name)s</code> become wildcards, so the concrete
+    message you saw — with its real path, port, or module name filled in — matches the
+    source template it came from.
   </p>
 
   <h2>Who it's for</h2>
@@ -40,9 +63,10 @@ const jsonLd = JSON.stringify({
   <h2>How records are made</h2>
   <p>
     A deterministic scanner extracts every error-raising site from a pinned commit of the
-    repository. Language models then document each site — meaning, trigger scenarios,
-    ordered solutions, defensive patterns — and a second, independent model pass verifies
-    the assembled records. Every page cites the analyzed commit SHA and links the exact
+    repository, preserving template placeholders exactly as written. Language models then
+    document each site — meaning, trigger scenarios, ordered solutions, defensive patterns —
+    and flag variable literals so the derived match pattern treats them as wildcards. A
+    second, independent model pass verifies the assembled records. Every page cites the analyzed commit SHA and links the exact
     source line on GitHub.
   </p>
   <p class="muted">
