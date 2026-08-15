@@ -222,6 +222,15 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
       ul.criteria li.excluded::before { background: var(--line); }
       ul.criteria li.excluded { color: var(--mute); }
     </style>
+    <!-- Cloudflare Web Analytics (RUM beacon). Complements the server-side
+         Analytics Engine data: AE sees every worker-routed request including
+         crawlers; this beacon sees only the human slice (JS-executing
+         browsers) with Web Vitals. Site token is public by design. -->
+    <script
+      defer
+      src="https://static.cloudflareinsights.com/beacon.min.js"
+      data-cf-beacon='{"token": "a4497ce0625e43de96e9756e4b89acde"}'
+    ></script>
   </head>
   <body>
     <a class="skip btn" href="#main">Skip to content</a>
