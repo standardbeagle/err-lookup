@@ -1,6 +1,26 @@
 ---
 import Base from "../layouts/Base.astro";
-import { GUIDES, guideHref } from "../data/guides.js";
+import { GUIDES, guideHref, guideErrors } from "../data/guides.js";
+import { getInfoIndex } from "../data/load.js";
+
+// Guides and background articles are one thing to the reader — an explainer
+// for a class of errors. One index, ranked by documented occurrences; the
+// hand-written guides and the collector's articles just come from different
+// pipelines (articles grow twice a day as the collector runs).
+const entries = [
+  ...GUIDES.map((g) => ({
+    href: guideHref(g.slug),
+    title: g.title,
+    summary: g.description,
+    count: guideErrors(g).length,
+  })),
+  ...getInfoIndex().map((p) => ({
+    href: `/info/${p.slug}/`,
+    title: p.title,
+    summary: p.summary,
+    count: p.errorCount,
+  })),
+].sort((a, b) => b.count - a.count);
 ---
 <Base title="Troubleshooting — guides, demo, and agent setup | ErrLookup" description="Failure-class guides for the errors ErrLookup documents, a demo of the MCP server fixing a real error, and the one-block install for coding agents.">
   <h1>Troubleshooting with ErrLookup</h1>
@@ -8,18 +28,19 @@ import { GUIDES, guideHref } from "../data/guides.js";
 
   <h2>Failure class guides</h2>
   <p class="muted">
-    Most production errors belong to a handful of failure classes. Each <a href="/guides/">guide</a>
-    explains one from the mechanism up and links every documented occurrence:
+    Most production errors belong to a recognizable failure class. Each guide explains one
+    class from the mechanism up and links every documented occurrence:
   </p>
   <ul>
-    {GUIDES.map((g) => (
-      <li><a href={guideHref(g.slug)}>{g.title}</a></li>
+    {entries.map((e) => (
+      <li>
+        <a href={e.href}><strong>{e.title}</strong></a>
+        <br />
+        {e.summary}
+        {e.count > 0 && <span class="muted"> ({e.count.toLocaleString()} documented occurrences)</span>}
+      </li>
     ))}
   </ul>
-  <p class="muted">
-    For error families the guides don't cover, the <a href="/info/">background articles</a> distill
-    common causes across every documented occurrence — and grow twice a day as the collector runs.
-  </p>
 
   <h2>See it in action</h2>
   <p class="muted">opencode hits an <code>AxiosError</code>, asks the ErrLookup MCP server what it means, and applies the fix the library authors recommend.</p>
