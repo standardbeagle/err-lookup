@@ -109,6 +109,13 @@ else
     send_alert "publish recovered on $(hostname) after $streak failures (dataset $latest)"
   fi
   printf '0' > "$STREAK_FILE"
+  # Success updates (optional, separate topic so alerts stay high-signal):
+  # one low-priority note per shipped dataset.
+  if [ -n "${ERRLOOKUP_UPDATE_URL:-}" ]; then
+    curl -sf -m 20 -H "Title: errlookup publish" -H "Priority: low" \
+      -d "published dataset $latest (${repo_count:-?} repos)" "$ERRLOOKUP_UPDATE_URL" >/dev/null \
+      || echo "$(date -u +%FT%TZ) update notification failed (webhook unreachable)" >>"$LOG"
+  fi
 fi
 
 # keep the 10 most recent publish run logs
