@@ -3,7 +3,8 @@
  * site build test. In production the pipeline's `errlookup export` produces
  * these files; this script stands in so the site can build without the DB.
  */
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { buildSearchIndex } from "../../schema/src/search-core.js";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
@@ -174,13 +175,18 @@ const indexErrors = errors.map((e) => ({
 function write(rel, content) {
   const abs = resolve(dataDir, rel);
   mkdirSync(dirname(abs), { recursive: true });
-  writeFileSync(abs, typeof content === "string" ? content : JSON.stringify(content), "utf8");
+  if (Buffer.isBuffer(content)) writeFileSync(abs, content);
+  else writeFileSync(abs, typeof content === "string" ? content : JSON.stringify(content), "utf8");
 }
 
 const indexJson = JSON.stringify({ schemaVersion: 2, datasetVersion, errors: indexErrors });
 const reposJson = JSON.stringify(repos);
 
-write("index.json", indexJson);
+// Gzipped like production (the raw index outgrew Pages' 25 MiB file cap);
+// drop a stale plain index.json so tests can't accidentally read old data.
+const indexGz = gzipSync(indexJson);
+rmSync(resolve(dataDir, "index.json"), { force: true });
+write("index.json.gz", indexGz);
 write("repos.json", reposJson);
 for (const r of repos) {
   const [owner, name] = r.repo.split("/");
@@ -230,7 +236,14 @@ const manifest = {
   datasetVersion,
   counts: { repos: repos.length, errors: errors.length },
   files: {
-    index: { path: "/data/index.json", bytes: Buffer.byteLength(indexJson), sha256: sha(indexJson) },
+    index: {
+      path: "/data/index.json.gz",
+      bytes: indexGz.byteLength,
+      sha256: sha(indexGz),
+      encoding: "gzip",
+      rawBytes: Buffer.byteLength(indexJson),
+      rawSha256: sha(indexJson),
+    },
     repos: { path: "/data/repos.json", bytes: Buffer.byteLength(reposJson), sha256: sha(reposJson) },
   },
 };

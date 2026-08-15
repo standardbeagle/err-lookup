@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import {
   mkdirSync,
   writeFileSync,
@@ -34,7 +35,7 @@ export interface ExportOptions {
 
 interface RepoIndex extends RepoEntry {}
 
-function sha256(content: string): string {
+function sha256(content: string | Buffer): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
@@ -128,7 +129,7 @@ function rowToInfoPageEntry(r: typeof infoPages.$inferSelect): InfoPageEntry {
 
 interface FileOut {
   relPath: string;
-  content: string;
+  content: string | Buffer;
 }
 
 /**
@@ -221,13 +222,19 @@ export function buildDataset(
 
   // manifest.json — MCP freshness poll target (§5.1)
   const indexStr = JSON.stringify(indexJson);
+  // Gzipped: the raw index crossed Cloudflare Pages' 25 MiB per-file cap at
+  // ~660 repos (38.4 MiB) and every deploy failed until the site froze. The
+  // manifest advertises the real path + encoding; the MCP follows it and
+  // gunzips. gzipSync writes no mtime, so equal input bytes → equal gz bytes
+  // and the sha stays deterministic.
+  const indexGz = gzipSync(indexStr);
   const reposStr = JSON.stringify(reposJson);
   // Sharded search index (§5.4): lets the site's API answer queries without
   // ever loading index.json — required once the corpus outgrows what a Pages
   // Function isolate can parse per request.
   const searchFiles = buildSearchIndex(indexErrors);
   const files: FileOut[] = [
-    { relPath: "index.json", content: indexStr },
+    { relPath: "index.json.gz", content: indexGz },
     { relPath: "repos.json", content: reposStr },
     ...repoFiles,
     ...searchFiles,
@@ -235,8 +242,15 @@ export function buildDataset(
   ];
 
   const summaryStr = searchFiles.find((f) => f.relPath === "search/summary.json")!.content;
-  const inventory: Record<string, { path: string; bytes: number; sha256: string }> = {
-    index: { path: "/data/index.json", bytes: Buffer.byteLength(indexStr), sha256: sha256(indexStr) },
+  const inventory: Record<string, { path: string; bytes: number; sha256: string; encoding?: string; rawBytes?: number; rawSha256?: string }> = {
+    index: {
+      path: "/data/index.json.gz",
+      bytes: indexGz.byteLength,
+      sha256: sha256(indexGz),
+      encoding: "gzip",
+      rawBytes: Buffer.byteLength(indexStr),
+      rawSha256: sha256(indexStr),
+    },
     repos: { path: "/data/repos.json", bytes: Buffer.byteLength(reposStr), sha256: sha256(reposStr) },
     searchSummary: {
       path: "/data/search/summary.json",
@@ -274,7 +288,8 @@ export function publishDataset(
   for (const f of files) {
     const abs = join(tmpDir, f.relPath);
     mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, f.content, "utf8");
+    if (typeof f.content === "string") writeFileSync(abs, f.content, "utf8");
+    else writeFileSync(abs, f.content);
   }
 
   // Atomic swap: move current outDir aside, move tmp into place, remove old.

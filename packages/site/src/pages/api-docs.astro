@@ -4,7 +4,7 @@ import { getManifest } from "../data/load.js";
 const m = getManifest();
 const examples = [
   { path: "/data/manifest.json", desc: "Freshness poll target. Tiny. MCP checks this first." },
-  { path: "/data/index.json", desc: "Compact search index — one record per error, all repos." },
+  { path: "/data/index.json.gz", desc: "Compact search index (gzip) — one record per error, all repos." },
   { path: "/data/repos.json", desc: "RepoEntry[] — the list of analyzed repos." },
   { path: "/data/repos/{owner}/{name}.json", desc: "Full ErrorEntry[] for one repo." },
 ];

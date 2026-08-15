@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
+import { gzipSync } from "node:zlib";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
@@ -185,7 +186,8 @@ describe("MCP sync + search (§8.4)", () => {
     mkdirSync(join(tamperedRoot), { recursive: true });
     writeFileSync(join(tamperedRoot, "manifest.json"), readFileSync(join(tmpCache, "manifest.json")));
     const tamperedIndex = { ...goodIndex, errors: [] };
-    writeFileSync(join(tamperedRoot, "index.json"), JSON.stringify(tamperedIndex));
+    // production layout: the manifest points at the gzipped index
+    writeFileSync(join(tamperedRoot, "index.json.gz"), gzipSync(JSON.stringify(tamperedIndex)));
     const s2 = await startStaticServer(tamperedRoot);
     try {
       const badBaseUrl = `http://127.0.0.1:${(s2.server.address() as { port: number }).port}`;

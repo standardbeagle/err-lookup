@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -25,7 +26,7 @@ export interface Manifest {
   schemaVersion: number;
   datasetVersion: string;
   counts: { repos: number; errors: number };
-  files: Record<string, { path: string; bytes: number; sha256: string }>;
+  files: Record<string, { path: string; bytes: number; sha256: string; encoding?: string }>;
 }
 
 export type { IndexError } from "@errlookup/schema";
@@ -52,7 +53,7 @@ function atomicWrite(p: string, content: string): void {
   renameSync(tmp, p);
 }
 
-function sha256(content: string): string {
+function sha256(content: string | Buffer): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
@@ -97,15 +98,20 @@ export class CacheStore {
    * Returns false (and keeps the old cache) if the hash mismatches — corrupt
    * downloads are rejected, never served (§8 mcp suite).
    */
-  async fetchVerified(urlPath: string, dest: string, expectedSha?: string): Promise<boolean> {
+  async fetchVerified(urlPath: string, dest: string, expectedSha?: string, encoding?: string): Promise<boolean> {
     const url = `${this.cfg.baseUrl}${urlPath}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`GET ${urlPath} → ${res.status}`);
-    const text = await res.text();
-    if (expectedSha && sha256(text) !== expectedSha) {
+    // The sha covers the bytes as published (for gzip, the compressed bytes) —
+    // verify before decoding, then store decoded so readers stay plain JSON.
+    const raw = Buffer.from(await res.arrayBuffer());
+    if (expectedSha && sha256(raw) !== expectedSha) {
       // corrupt download: do NOT overwrite the existing cache file.
       return false;
     }
+    const text = encoding === "gzip" || (!encoding && urlPath.endsWith(".gz"))
+      ? gunzipSync(raw).toString("utf8")
+      : raw.toString("utf8");
     atomicWrite(dest, text);
     return true;
   }

@@ -1,3 +1,4 @@
+import { gunzipSync } from "node:zlib";
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, rmSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
@@ -70,7 +71,7 @@ describe("exporter", () => {
     // All expected files present
     for (const rel of [
       "manifest.json",
-      "index.json",
+      "index.json.gz",
       "repos.json",
       "repos/axios/axios.json",
     ]) {
@@ -88,7 +89,7 @@ describe("exporter", () => {
     expect((manifest as { datasetVersion: string }).datasetVersion).toBeTruthy();
 
     // index validates
-    const index = JSON.parse(readFileSync(resolve(outDir, "index.json"), "utf8"));
+    const index = JSON.parse(gunzipSync(readFileSync(resolve(outDir, "index.json.gz"))).toString("utf8"));
     expect(index.errors).toHaveLength(1);
     expect(index.errors[0].code).toBe("ERR_BAD_RESPONSE");
 

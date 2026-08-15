@@ -16,7 +16,7 @@ export const GET: APIRoute = () => {
   lines.push("");
   lines.push("## Dataset");
   lines.push("- [manifest](https://errors.standardbeagle.com/data/manifest.json): freshness + inventory");
-  lines.push("- [index](https://errors.standardbeagle.com/data/index.json): compact search index");
+  lines.push("- [index](https://errors.standardbeagle.com/data/index.json.gz): compact search index (gzip)");
   lines.push("- [repos](https://errors.standardbeagle.com/data/repos.json): repo list");
   lines.push("- [schema](https://errors.standardbeagle.com/schema.json): JSON Schema (Draft-07)");
   lines.push("");

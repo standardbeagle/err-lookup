@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 import { resolve, dirname } from "node:path";
 import type { ErrorEntry, RepoEntry, InfoPageEntry, InfoPageIndexEntry } from "@errlookup/schema";
 
@@ -51,7 +52,10 @@ export function getRepos(): RepoEntry[] {
 }
 
 export function getIndex(): { schemaVersion: number; datasetVersion: string; errors: IndexError[] } {
-  return readJson("index.json");
+  // Gzipped in the dataset (the raw file broke Pages' 25 MiB per-file cap).
+  // Build-time only — prerendered routes read it under node, never the worker.
+  const gz = readFileSync(resolve(siteRoot, "public", "data", "index.json.gz"));
+  return JSON.parse(gunzipSync(gz).toString("utf8"));
 }
 
 /** Info-page hub rows. A dataset published before the collector first ran has

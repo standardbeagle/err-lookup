@@ -46,10 +46,14 @@ export async function syncDataset(store: CacheStore, ttlOk: boolean): Promise<Sy
   }
 
   try {
+    // Follow the manifest's advertised path: the index publishes gzipped now
+    // (the raw file outgrew Pages' 25 MiB cap). Datasets from before the
+    // change carry no index.path override and keep the legacy URL.
     const ok = await store.fetchVerified(
-      "/data/index.json",
+      manifest.files.index?.path ?? "/data/index.json",
       store.indexPath(),
-      manifest.files.index?.sha256
+      manifest.files.index?.sha256,
+      manifest.files.index?.encoding
     );
     if (!ok) {
       // sha mismatch on index — keep old cache, report stale.
