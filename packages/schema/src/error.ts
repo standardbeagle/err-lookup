@@ -195,6 +195,7 @@ export const PhaseName = z.enum([
   "defense",
   "cross-linking",
   "verify",
+  "review",
 ]);
 export type PhaseName = z.infer<typeof PhaseName>;
 

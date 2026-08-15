@@ -38,7 +38,7 @@ function sha256(content: string): string {
   return createHash("sha256").update(content).digest("hex");
 }
 
-function rowToErrorEntry(r: typeof errors.$inferSelect): ErrorEntry {
+export function rowToErrorEntry(r: typeof errors.$inferSelect): ErrorEntry {
   return {
     id: r.id,
     repo: r.repo,

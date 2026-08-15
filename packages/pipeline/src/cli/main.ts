@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { resolve } from "node:path";
-import { readFileSync } from "node:fs";
+import { resolve, join } from "node:path";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { openDb } from "../db/client.js";
 import { loadConfig } from "../config/index.js";
 import { buildProviders } from "../providers.js";
 import { analyzeRepo } from "../pipeline.js";
 import { runScan } from "../scan.js";
-import { publishDataset } from "../exporter/index.js";
-import { resetRepo, reposByStatus, purgeOrphanedJobs } from "../db/store.js";
+import { publishDataset, rowToErrorEntry } from "../exporter/index.js";
+import { resetRepo, reposByStatus, purgeOrphanedJobs, errorBySlug, updateErrorFields, recordPhase } from "../db/store.js";
+import { runReviewOne, parseReviewTarget } from "../phase/review.js";
 import { collectInfoPages } from "../info/collector.js";
 import { printStatus } from "./status.js";
 
@@ -133,6 +135,95 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === "review") {
+    // Popularity-driven quality pass: deep-review the records behind the
+    // site's most-visited pages. Targets come from scripts/report-top-pages.sh
+    // or Search Console, as page URLs or owner/repo/slug.
+    const { values } = parseArgs({
+      options: { "dry-run": { type: "boolean", default: false } },
+      allowPositionals: true,
+      args: rest,
+    });
+    if (positional.length === 0) {
+      console.error("usage: errlookup review [--dry-run] <page-url | owner/repo/slug>...");
+      process.exit(2);
+    }
+    const cfg = loadConfig();
+    const providers = buildProviders(cfg);
+    const { db, raw } = openDb(dbPath());
+    // The provider needs a cwd for its output-file handoff; reviews are
+    // grounded in the stored record, so an empty scratch dir is the sandbox.
+    const scratch = mkdtempSync(join(tmpdir(), "errlookup-review-"));
+    let improved = 0;
+    let defective = 0;
+    let failed = 0;
+    try {
+      for (const target of positional) {
+        const t = parseReviewTarget(target);
+        if (!t) {
+          console.error(`unparseable target (want page URL or owner/repo/slug): ${target}`);
+          failed++;
+          continue;
+        }
+        const row = errorBySlug(db, t.repo, t.slug);
+        if (!row) {
+          console.error(`no record for ${t.repo}/${t.slug}`);
+          failed++;
+          continue;
+        }
+        const entry = rowToErrorEntry(row);
+        const started = Date.now();
+        try {
+          const r = await runReviewOne(entry, providers, cfg, scratch, (m) => console.log(`  ${m}`));
+          console.log(`${t.repo}/${t.slug}: ${r.quality} via ${r.providerUsed} (${r.durationMs}ms)`);
+          if (r.notes) console.log(`  ${r.notes}`);
+          if (r.quality === "improved") improved++;
+          if (r.quality === "defective") defective++;
+          if (r.patches.length > 0) {
+            console.log(`  fields: ${r.patches.map((p) => p.field).join(", ")}${values["dry-run"] ? " (dry-run, not written)" : ""}`);
+          }
+          if (!values["dry-run"]) {
+            if (r.patches.length > 0) {
+              updateErrorFields(db, entry.id, {
+                documentation: r.entry.documentation,
+                triggerScenarios: r.entry.triggerScenarios,
+                commonSituations: r.entry.commonSituations,
+                solutions: r.entry.solutions,
+                exampleFix: r.entry.exampleFix,
+                sourceCode: r.entry.sourceCode,
+                filePath: r.entry.filePath,
+              });
+            }
+            // Persist the verdict either way: reviews are provenance, and a
+            // later rescan that rebuilds the records can replay them from here.
+            recordPhase(db, {
+              repo: t.repo,
+              phase: "review",
+              status: "success",
+              startedAt: started,
+              completedAt: Date.now(),
+              analyzedSha: entry.analyzedSha,
+              result: JSON.stringify({ slug: t.slug, quality: r.quality, notes: r.notes, patches: r.patches }),
+            });
+          }
+        } catch (e) {
+          console.error(`${t.repo}/${t.slug}: FAILED — ${(e as Error).message}`);
+          failed++;
+        }
+      }
+      console.log(
+        `review done: ${positional.length - failed}/${positional.length} reviewed, ${improved} improved, ${defective} defective` +
+          (values["dry-run"] ? " (dry-run)" : "")
+      );
+      if (defective > 0) console.log("defective records need a rescan or removal — see notes above");
+      if (failed > 0) process.exit(1);
+    } finally {
+      raw.close();
+      rmSync(scratch, { recursive: true, force: true });
+    }
+    return;
+  }
+
   if (cmd === "reset") {
     const { values } = parseArgs({
       options: {
@@ -238,8 +329,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.error("err-lookup pipeline. commands: analyze, scan, collect-info, reset, export, status");
+  console.error("err-lookup pipeline. commands: analyze, scan, collect-info, review, reset, export, status");
   console.error("  errlookup analyze <owner/repo> [--phases 1,2,3,4,5] [--force]");
+  console.error("  errlookup review [--dry-run] <page-url | owner/repo/slug>...");
   console.error("  errlookup scan <file.txt> [--phases 1,2,3,5] [--force] [--seed-only]");
   console.error("  errlookup collect-info [--max-pages 5] [--min-errors 5] [--min-repos 2]");
   console.error("  errlookup reset [--failed] [--dry-run] [owner/repo ...]");

@@ -56,7 +56,7 @@ function withOutputInstruction(prompt: string, outputFile: string): string {
  */
 export function watchdogBudgetMs(
   cfg: ErrlookupConfig,
-  phase?: "scope" | "discovery" | "enrichment" | "defense" | "verify"
+  phase?: "scope" | "discovery" | "enrichment" | "defense" | "verify" | "review"
 ): number {
   const primaryName = (phase && cfg.phaseProviders?.[phase]) || cfg.defaults.primary;
   return (cfg.providers[primaryName]?.timeoutMs ?? 600_000) * 4;
@@ -81,7 +81,7 @@ export async function runProvider(
   opts: InvokeOptions,
   providers: Record<string, LlmProvider>,
   cfg: ErrlookupConfig,
-  phase?: "scope" | "discovery" | "enrichment" | "defense" | "verify",
+  phase?: "scope" | "discovery" | "enrichment" | "defense" | "verify" | "review",
   sleep: (ms: number) => Promise<void> = realSleep
 ): Promise<RunResult> {
   const primaryName = (phase && cfg.phaseProviders?.[phase]) || cfg.defaults.primary;

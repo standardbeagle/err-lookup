@@ -134,6 +134,23 @@ export function errorsForRepo(db: Db, repo: string): ErrorRow[] {
   return db.select().from(errors).where(eq(errors.repo, repo)).all();
 }
 
+/** One error record by its page identity (repo + slug), for the review pass. */
+export function errorBySlug(db: Db, repo: string, slug: string): ErrorRow | undefined {
+  return db
+    .select()
+    .from(errors)
+    .where(and(eq(errors.repo, repo), eq(errors.slug, slug)))
+    .get();
+}
+
+/** Targeted field update for one error row (review patches). */
+export function updateErrorFields(db: Db, id: string, fields: Partial<Omit<ErrorRow, "id">>): void {
+  db.update(errors)
+    .set({ ...fields, updatedAt: Date.now() })
+    .where(eq(errors.id, id))
+    .run();
+}
+
 /**
  * Integrate a COMPLETE analysis for `sha` as the repo's published version:
  * replace the records and advance the version pointer (status/analyzedSha/

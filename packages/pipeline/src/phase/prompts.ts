@@ -201,6 +201,42 @@ OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
 {${shapes.join(",")}}`;
 }
 
+export interface ReviewResultJson {
+  quality: "good" | "improved" | "defective";
+  notes: string;
+  patches: { field: VerifyPatchJson["field"]; value: unknown }[];
+}
+
+/**
+ * Popularity-driven quality review: one record, full depth. Verify (§4.2.5)
+ * fills gaps across a whole repo; this pass instead makes the pages people
+ * actually land on excellent. Grounded in the record's own stored source
+ * region — the reviewer must not invent what it cannot see.
+ */
+export function reviewPrompt(record: unknown): string {
+  return `You are reviewing ONE published error-documentation page that receives significant search traffic. Real developers land on it mid-debugging — it must be accurate, specific, and immediately useful.
+
+RECORD (the full published data, including the throwing SOURCE region):
+${JSON.stringify(record, null, 1)}
+
+Review every user-facing field against the sourceCode region and the error message itself:
+- documentation: accurate to the source? Explains what the error MEANS and WHY the library raises it, not just a paraphrase of the message?
+- triggerScenarios: SPECIFIC conditions and API calls, not generic filler?
+- commonSituations: real-world contexts (config mistakes, env issues, version changes)?
+- solutions: ordered most-likely-fix FIRST, each step concrete enough to act on? Wrong or vague steps are worse than fewer steps.
+- exampleFix: does the before/after actually address this error? Correct API usage for this library?
+
+RULES:
+- Ground every change in the provided sourceCode and message. If something cannot be verified from what is provided, do NOT invent it — leave the field unpatched and say so in notes.
+- Patch only fields you can make clearly better. quality="good" means no patches needed.
+- quality="defective" means the record is wrong at its core (message/file mismatch, not a real user-facing error) — explain in notes, do not patch around it.
+- Keep the author's voice: plain, technical, no marketing.
+
+OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
+{"quality":"good|improved|defective","notes":"one or two sentences","patches":[{"field":"documentation|triggerScenarios|commonSituations|solutions|exampleFix","value":"..."}]}
+(solutions value is an array of strings; others are strings)`;
+}
+
 /** Phase 5 — Verify (§4.2.5): review assembled records for gaps, emit patches. */
 export function verifyPrompt(compact: { id: string; message: string; file: string; line: number | null; hasDoc: boolean; hasSolutions: boolean; hasSource: boolean; hasDefense: boolean }[]): string {
   const list = compact
