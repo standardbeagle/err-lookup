@@ -76,6 +76,41 @@ RUN_LOG="$LOG_DIR/publish-$(date -u +%Y%m%d-%H%M%S).log"
 publish_exit=$?
 echo "$(date -u +%FT%TZ) publish exit=$publish_exit (analysis up to $latest) log=$RUN_LOG" >>"$LOG"
 
+# Failure-streak alerting: the index.json>25MiB breakage failed silently every
+# hour for ~30h before anyone noticed. Track consecutive failures; at
+# ERRLOOKUP_ALERT_AFTER (default 2) POST a plain-text alert to
+# ERRLOOKUP_ALERT_URL (any webhook that accepts a text body — ntfy, Slack
+# incoming hook), re-alert every 12 further failures, and send a recovery
+# note when a streak >= threshold ends. URL comes from the environment or
+# ~/.config/errlookup/alert.env; without one the streak still logs loudly.
+STREAK_FILE="$LOG_DIR/publish-failure-streak"
+ALERT_ENV="${ERRLOOKUP_ALERT_ENV:-$HOME/.config/errlookup/alert.env}"
+[ -z "${ERRLOOKUP_ALERT_URL:-}" ] && [ -f "$ALERT_ENV" ] && . "$ALERT_ENV"
+ALERT_AFTER="${ERRLOOKUP_ALERT_AFTER:-2}"
+
+send_alert() { # $1 = message
+  echo "$(date -u +%FT%TZ) ALERT: $1" >>"$LOG"
+  if [ -n "${ERRLOOKUP_ALERT_URL:-}" ]; then
+    curl -sf -m 20 -H "Title: errlookup publish" -d "$1" "$ERRLOOKUP_ALERT_URL" >/dev/null \
+      || echo "$(date -u +%FT%TZ) alert delivery failed (webhook unreachable)" >>"$LOG"
+  fi
+}
+
+streak=$(cat "$STREAK_FILE" 2>/dev/null || echo 0)
+if [ "$publish_exit" -ne 0 ]; then
+  streak=$(( streak + 1 ))
+  printf '%s' "$streak" > "$STREAK_FILE"
+  if [ "$streak" -eq "$ALERT_AFTER" ] || [ $(( streak % 12 )) -eq 0 ]; then
+    err_line=$(grep -m1 -iE "ERROR|error:" "$RUN_LOG" | head -c 200)
+    send_alert "publish failing on $(hostname): $streak consecutive failures. ${err_line:-see $RUN_LOG}"
+  fi
+else
+  if [ "$streak" -ge "$ALERT_AFTER" ]; then
+    send_alert "publish recovered on $(hostname) after $streak failures (dataset $latest)"
+  fi
+  printf '0' > "$STREAK_FILE"
+fi
+
 # keep the 10 most recent publish run logs
 ls -1t "$LOG_DIR"/publish-*.log 2>/dev/null | tail -n +11 | xargs -r rm --
 exit "$publish_exit"
