@@ -7,3 +7,11 @@ name = "errlookup"
 pages_build_output_dir = "dist"
 compatibility_date = "2026-08-01"
 compatibility_flags = ["nodejs_compat"]
+
+# Server-side traffic analytics (Workers Analytics Engine). The site's traffic
+# is >90% crawlers, which no JS beacon can see — the middleware writes one data
+# point per worker-routed request instead. Query via the AE SQL API
+# (scripts/report-top-pages.sh).
+[[analytics_engine_datasets]]
+binding = "TRAFFIC"
+dataset = "errlookup_traffic"

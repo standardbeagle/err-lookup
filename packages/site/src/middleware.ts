@@ -1,4 +1,5 @@
 import { defineMiddleware } from "astro:middleware";
+import { recordTraffic, type AnalyticsEngineDataset } from "./analytics.js";
 
 /**
  * Read-through edge cache for on-demand routes (error pages, /api/*). No zone
@@ -15,7 +16,10 @@ import { defineMiddleware } from "astro:middleware";
  */
 
 interface WaitUntilLocals {
-  runtime?: { ctx?: { waitUntil?: (p: Promise<unknown>) => void } };
+  runtime?: {
+    ctx?: { waitUntil?: (p: Promise<unknown>) => void };
+    env?: { TRAFFIC?: AnalyticsEngineDataset };
+  };
 }
 
 function ttlOf(res: Response): number {
@@ -37,14 +41,22 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return Response.redirect(`https://errors.standardbeagle.com${url.pathname}${url.search}`, 301);
   }
 
+  const traffic = (context.locals as WaitUntilLocals).runtime?.env?.TRAFFIC;
+  const ua = context.request.headers.get("user-agent");
+
   const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default;
-  if (!cache || context.request.method !== "GET") return next();
+  if (!cache || context.request.method !== "GET") {
+    const res = await next();
+    recordTraffic(traffic, url, ua, res.status, "-");
+    return res;
+  }
 
   const key = context.request.url;
   const hit = await cache.match(key);
   if (hit) {
     const res = new Response(hit.body, hit);
     res.headers.set("x-errlookup-cache", "hit");
+    recordTraffic(traffic, url, ua, res.status, "hit");
     return res;
   }
 
@@ -56,5 +68,6 @@ export const onRequest = defineMiddleware(async (context, next) => {
     else await put;
   }
   res.headers.set("x-errlookup-cache", "miss");
+  recordTraffic(traffic, url, ua, res.status, "miss");
   return res;
 });
