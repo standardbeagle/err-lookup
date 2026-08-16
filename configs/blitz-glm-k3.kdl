@@ -15,6 +15,17 @@ provider "k3" {
     model "kimi-for-coding/k3"
     timeout-ms 600000
 }
+// Review-phase winner of docs/model-comparison-2026-08-16-review-phase.md:
+// only candidate with a calibrated verdict distribution (says "good", patches
+// single fields). 5.3 stays off the bulk phases — it lost that comparison
+// (docs/model-comparison-2026-08-14-glm53.md).
+provider "glm53" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "zai-coding-plan/glm-5.3"
+    timeout-ms 600000
+}
 defaults {
     primary "glm"
     // GLM 5.2 allows 10 concurrent requests, enforced process-wide below. The
@@ -36,4 +47,5 @@ defaults {
 }
 phase-providers {
     verify "k3"
+    review "glm53"
 }
