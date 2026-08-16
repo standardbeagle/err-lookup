@@ -1,0 +1,19 @@
+// Review-phase candidate: GLM 5.3 via opencode ACP (Z.AI coding plan). It lost
+// the scan-primary comparison to 5.2 (docs/model-comparison-2026-08-14-glm53.md)
+// but the review phase is a different job: deep-review one stored record per
+// call, no repo exploration.
+// skip-peak: z.ai bills Mon-Fri 06:00-10:00 UTC at 2x — discretionary runs wait.
+// Use with: ERRLOOKUP_CONFIG=configs/review-glm53.kdl
+provider "glm53" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "zai-coding-plan/glm-5.3"
+    timeout-ms 600000
+}
+defaults {
+    primary "glm53"
+    max-concurrent 1
+    skip-peak true
+    delay-between-phases-ms 2000
+}

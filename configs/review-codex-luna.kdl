@@ -1,0 +1,15 @@
+// Review-phase candidate: GPT-5.6 Luna at high reasoning effort via opencode
+// ACP (OpenAI Codex plan). Effort pinned in ~/.config/opencode/opencode.json.
+// Use with: ERRLOOKUP_CONFIG=configs/review-codex-luna.kdl
+provider "codex-luna" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "openai/gpt-5.6-luna"
+    timeout-ms 600000
+}
+defaults {
+    primary "codex-luna"
+    max-concurrent 1
+    delay-between-phases-ms 2000
+}

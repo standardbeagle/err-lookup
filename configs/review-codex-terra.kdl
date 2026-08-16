@@ -1,0 +1,17 @@
+// Review-phase candidate: GPT-5.6 Terra at low reasoning effort via opencode
+// ACP (OpenAI Codex plan). Effort is pinned per-model in
+// ~/.config/opencode/opencode.json (OPENCODE_CONFIG_CONTENT only sets `model`
+// and merges over the file config, so the per-model option survives).
+// Use with: ERRLOOKUP_CONFIG=configs/review-codex-terra.kdl
+provider "codex-terra" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "openai/gpt-5.6-terra"
+    timeout-ms 600000
+}
+defaults {
+    primary "codex-terra"
+    max-concurrent 1
+    delay-between-phases-ms 2000
+}
