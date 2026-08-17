@@ -24,8 +24,22 @@ if ! flock -n 9; then
   exit 0
 fi
 
+# ntfy notifications, same routing as the publisher: failures go to
+# ERRLOOKUP_ALERT_URL, one low-priority note per successful upload to
+# ERRLOOKUP_UPDATE_URL. This job runs daily, so every failure alerts —
+# the missing-credentials misconfiguration failed silently for 11 days.
+ALERT_ENV="${ERRLOOKUP_ALERT_ENV:-$HOME/.config/errlookup/alert.env}"
+[ -z "${ERRLOOKUP_ALERT_URL:-}" ] && [ -f "$ALERT_ENV" ] && . "$ALERT_ENV"
+
+notify() { # $1 = url, $2 = priority, $3 = message
+  [ -n "$1" ] || return 0
+  curl -sf -m 20 -H "Title: errlookup backup" -H "Priority: $2" -d "$3" "$1" >/dev/null \
+    || echo "$(date -u +%FT%TZ) notification delivery failed (webhook unreachable)" >>"$LOG"
+}
+
 fail() {
   echo "$(date -u +%FT%TZ) FAILED: $1" >>"$LOG"
+  notify "${ERRLOOKUP_ALERT_URL:-}" default "db backup FAILED on $(hostname): $1"
   exit 1
 }
 
@@ -61,3 +75,4 @@ rclone delete --min-age "${RETENTION_DAYS}d" "$REMOTE" || fail "retention prune"
 
 bytes=$(stat -c %s "$snapshot.gz")
 echo "$(date -u +%FT%TZ) OK: errlookup-$stamp.db.gz ($bytes bytes) → b2:$ERRLOOKUP_B2_BUCKET/db, retention ${RETENTION_DAYS}d" >>"$LOG"
+notify "${ERRLOOKUP_UPDATE_URL:-}" low "db backup OK on $(hostname): errlookup-$stamp.db.gz ($bytes bytes) → b2"
