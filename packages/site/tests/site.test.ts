@@ -208,7 +208,7 @@ describe("site build (§8.3)", () => {
 
   it("robots.txt points at the canonical sitemap", () => {
     const robots = readFileSync(resolve(dist, "robots.txt"), "utf8");
-    expect(robots).toContain("Sitemap: https://errors.standardbeagle.com/sitemap.xml");
+    expect(robots).toContain("Sitemap: https://errors.standardbeagle.com/sitemap-index.xml");
   });
 });
 
