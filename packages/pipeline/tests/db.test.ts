@@ -127,3 +127,37 @@ describe("sqlite working db", () => {
     raw.close();
   });
 });
+
+describe("phase batch checkpoints", () => {
+  it("round-trips a batch result and scopes it to repo+sha+phase", async () => {
+    const { phaseBatchCheckpoint } = await import("../src/db/checkpoints.js");
+    const { db, raw } = openDb(tmpDbPath("ckpt-rt"));
+    const ckpt = phaseBatchCheckpoint(db, "o/r", "sha1", "discovery");
+    expect(ckpt.get("k1")).toBeNull();
+    ckpt.put("k1", '{"errors":[]}');
+    expect(ckpt.get("k1")).toBe('{"errors":[]}');
+    // a different phase at the same key sees nothing
+    expect(phaseBatchCheckpoint(db, "o/r", "sha1", "analysis").get("k1")).toBeNull();
+    // put is an upsert — a resumed batch may legitimately re-complete
+    ckpt.put("k1", '{"errors":[1]}');
+    expect(ckpt.get("k1")).toBe('{"errors":[1]}');
+    raw.close();
+  });
+
+  it("drops stale other-sha rows when a checkpoint opens, and clears on demand", async () => {
+    const { phaseBatchCheckpoint, clearPhaseBatches } = await import("../src/db/checkpoints.js");
+    const { db, raw } = openDb(tmpDbPath("ckpt-stale"));
+    phaseBatchCheckpoint(db, "o/r", "old-sha", "discovery").put("k1", "old");
+    // HEAD moved: opening at the new sha reaps the old sha's rows
+    const fresh = phaseBatchCheckpoint(db, "o/r", "new-sha", "discovery");
+    expect(fresh.get("k1")).toBeNull();
+    const count = () =>
+      (raw.prepare("SELECT count(*) c FROM phase_batches").get() as { c: number }).c;
+    expect(count()).toBe(0);
+    fresh.put("k2", "v");
+    expect(count()).toBe(1);
+    clearPhaseBatches(db, "o/r", "discovery");
+    expect(count()).toBe(0);
+    raw.close();
+  });
+});

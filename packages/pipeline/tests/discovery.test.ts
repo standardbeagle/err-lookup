@@ -158,3 +158,45 @@ describe("runDiscovery batching", () => {
     expect(r.errors.some((e) => e.line === 99)).toBe(true);
   });
 });
+
+describe("runDiscovery batch checkpointing", () => {
+  const memCkpt = () => {
+    const store = new Map<string, string>();
+    return { store, get: (k: string) => store.get(k) ?? null, put: (k: string, v: string) => void store.set(k, v) };
+  };
+
+  it("resumes entirely from checkpoints — zero provider calls, identical output", { timeout: 30_000 }, async () => {
+    const ckpt = memCkpt();
+    const first = new BatchProvider("bulk");
+    const a = await runDiscovery(repoPath, { bulk: first }, cfg(), undefined, undefined, undefined, ckpt);
+    expect(first.calls).toBeGreaterThan(0);
+    // A killed-and-relaunched drain: fresh provider, same persisted batches.
+    const resumed = new BatchProvider("bulk");
+    const b = await runDiscovery(repoPath, { bulk: resumed }, cfg(), undefined, undefined, undefined, ckpt);
+    expect(resumed.calls).toBe(0);
+    expect(b.errors.map((e) => e.line)).toEqual(a.errors.map((e) => e.line));
+  });
+
+  it("re-runs only the batches missing from the checkpoint", { timeout: 30_000 }, async () => {
+    const ckpt = memCkpt();
+    const a = await runDiscovery(repoPath, { bulk: new BatchProvider("bulk") }, cfg(), undefined, undefined, undefined, ckpt);
+    const [firstKey] = ckpt.store.keys();
+    ckpt.store.delete(firstKey!);
+    const resumed = new BatchProvider("bulk");
+    const b = await runDiscovery(repoPath, { bulk: resumed }, cfg(), undefined, undefined, undefined, ckpt);
+    expect(resumed.calls).toBe(1);
+    expect(b.errors.map((e) => e.line)).toEqual(a.errors.map((e) => e.line));
+  });
+
+  it("restores the abandoned-candidate count from checkpointed batches", { timeout: 30_000 }, async () => {
+    const ckpt = memCkpt();
+    const p = new BatchProvider("bulk", { failPrompts: (t) => t.includes('"line":99,') });
+    const r1 = await runDiscovery(repoPath, { bulk: p }, cfg(["  batch-concurrency 2"]), undefined, undefined, undefined, ckpt);
+    expect(r1.skippedCandidates).toBeGreaterThan(0);
+    const resumed = new BatchProvider("bulk");
+    const r2 = await runDiscovery(repoPath, { bulk: resumed }, cfg(), undefined, undefined, undefined, ckpt);
+    expect(resumed.calls).toBe(0);
+    expect(r2.skippedCandidates).toBe(r1.skippedCandidates);
+    expect(r2.errors.map((e) => e.line)).toEqual(r1.errors.map((e) => e.line));
+  });
+});

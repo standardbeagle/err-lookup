@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider } from "../provider/types.js";
+import type { BatchCheckpoint } from "../db/checkpoints.js";
 import { runProvider, watchdogBudgetMs } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
 import { mapPool, chunk } from "../util/pool.js";
@@ -43,7 +45,8 @@ export async function runAnalysis(
   cfg: ErrlookupConfig,
   need: AnalysisNeed,
   onProgress?: (done: number, total: number) => void,
-  onLog?: (msg: string) => void
+  onLog?: (msg: string) => void,
+  checkpoint?: BatchCheckpoint
 ): Promise<AnalysisResult> {
   const started = Date.now();
   const enrichedByIndex = new Map<number, EnrichedErrorJson>();
@@ -71,9 +74,42 @@ export async function runAnalysis(
   let failedBatches = 0;
   let done = 0;
 
+  // Checkpoint key: pass + position + the batch's error identity. The
+  // discovered list a resume works from is the persisted discovery result, so
+  // positions are stable; the content hash guards against reusing an answer
+  // for a batch whose input somehow shifted.
+  const keyOf = (unit: { pass: AnalysisNeed; batch: DiscoveredErrorJson[]; startIndex: number }): string => {
+    const pass = unit.pass.enrichment ? (unit.pass.defense ? "both" : "enrichment") : "defense";
+    const content = createHash("sha1")
+      .update(unit.batch.map((e) => `${e.file}:${e.line}:${e.message}`).join("\n"))
+      .digest("hex");
+    return `${pass}:${unit.startIndex}:${content}`;
+  };
+  const applyParsed = (
+    pass: AnalysisNeed,
+    parsed: { enriched?: EnrichedErrorJson[]; defenseStrategies?: DefenseStrategyJson[] }
+  ): void => {
+    if (pass.enrichment) {
+      for (const e of parsed.enriched ?? []) {
+        if (typeof e?.errorIndex === "number") enrichedByIndex.set(e.errorIndex, e);
+      }
+    }
+    if (pass.defense) {
+      for (const d of parsed.defenseStrategies ?? []) {
+        if (typeof d?.errorIndex === "number") defenseByIndex.set(d.errorIndex, d);
+      }
+    }
+  };
+
   await mapPool(units, cfg.defaults.batchConcurrency, async (unit) => {
     const routingPhase = unit.pass.enrichment ? "enrichment" : "defense";
     try {
+      const key = keyOf(unit);
+      const cached = checkpoint?.get(key);
+      if (cached) {
+        applyParsed(unit.pass, JSON.parse(cached));
+        return;
+      }
       const budget = watchdogBudgetMs(cfg, routingPhase);
       const result = await withTimeout(
         runProvider(
@@ -90,16 +126,14 @@ export async function runAnalysis(
         enriched?: EnrichedErrorJson[];
         defenseStrategies?: DefenseStrategyJson[];
       };
-      if (unit.pass.enrichment) {
-        for (const e of parsed.enriched ?? []) {
-          if (typeof e?.errorIndex === "number") enrichedByIndex.set(e.errorIndex, e);
-        }
-      }
-      if (unit.pass.defense) {
-        for (const d of parsed.defenseStrategies ?? []) {
-          if (typeof d?.errorIndex === "number") defenseByIndex.set(d.errorIndex, d);
-        }
-      }
+      // Persist only what applyParsed will read back, not the raw provider
+      // output. A failed unit is deliberately never persisted — it retries on
+      // the next resume, which also converts rate-limit losses into retries.
+      checkpoint?.put(
+        key,
+        JSON.stringify({ enriched: parsed.enriched ?? [], defenseStrategies: parsed.defenseStrategies ?? [] })
+      );
+      applyParsed(unit.pass, parsed);
     } catch (err) {
       failedBatches++;
       const msg = err instanceof Error ? err.message : String(err);

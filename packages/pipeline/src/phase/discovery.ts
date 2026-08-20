@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider } from "../provider/types.js";
+import type { BatchCheckpoint } from "../db/checkpoints.js";
 import { runProvider, watchdogBudgetMs } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
 import { mapPool, chunk } from "../util/pool.js";
@@ -51,7 +53,8 @@ export async function runDiscovery(
   cfg: ErrlookupConfig,
   onBatch?: (done: number, total: number) => void,
   onLog?: (msg: string) => void,
-  scope?: ScanScope
+  scope?: ScanScope,
+  checkpoint?: BatchCheckpoint
 ): Promise<DiscoveryResult> {
   const started = Date.now();
   const budget = watchdogBudgetMs(cfg, "discovery");
@@ -112,7 +115,9 @@ export async function runDiscovery(
   // the per-call timeout even at 40) splits in half and each half tries again —
   // smaller calls fit the budget. A stub that still fails abandons only its own
   // candidates: one indigestible batch must not fail a 20,000-site repo.
-  const classify = async (batch: typeof candidates): Promise<DiscoveredErrorJson[]> => {
+  const classify = async (
+    batch: typeof candidates
+  ): Promise<{ errors: DiscoveredErrorJson[]; skipped: number }> => {
     try {
       const result = await withTimeout(
         runProvider(candidateDiscoveryPrompt(batch), { cwd: repoPath }, providers, cfg, "discovery"),
@@ -120,21 +125,39 @@ export async function runDiscovery(
       );
       providerUsed = result.providerUsed;
       raw = result.raw;
-      return parseErrors(result.parsed);
+      return { errors: parseErrors(result.parsed), skipped: 0 };
     } catch (e) {
       if (batch.length >= 10) {
         const mid = Math.ceil(batch.length / 2);
-        const [a, b] = [batch.slice(0, mid), batch.slice(mid)];
-        return [...(await classify(a)), ...(await classify(b))];
+        const [a, b] = [await classify(batch.slice(0, mid)), await classify(batch.slice(mid))];
+        return { errors: [...a.errors, ...b.errors], skipped: a.skipped + b.skipped };
       }
-      skippedCandidates += batch.length;
-      return [];
+      return { errors: [], skipped: batch.length };
     }
   };
 
+  // Checkpoint key: the batch's candidate identity, not its position — the
+  // candidate list is deterministic per SHA+scope, but content addressing means
+  // a resume whose extraction shifted (lci vs builtin backend) simply misses
+  // and re-runs instead of reusing a wrong answer.
+  const keyOf = (batch: typeof candidates): string =>
+    createHash("sha1")
+      .update(batch.map((c) => `${c.file}:${c.line}`).join("\n"))
+      .digest("hex");
+
   const perBatch = await mapPool(batches, cfg.defaults.batchConcurrency, async (batch) => {
     try {
-      return await classify(batch);
+      const key = keyOf(batch);
+      const cached = checkpoint?.get(key);
+      if (cached) {
+        const r = JSON.parse(cached) as { errors: DiscoveredErrorJson[]; skipped: number };
+        skippedCandidates += r.skipped;
+        return r.errors;
+      }
+      const r = await classify(batch);
+      checkpoint?.put(key, JSON.stringify(r));
+      skippedCandidates += r.skipped;
+      return r.errors;
     } finally {
       onBatch?.(++done, batches.length);
     }
@@ -143,7 +166,7 @@ export async function runDiscovery(
   return {
     errors: perBatch.flat(),
     raw,
-    providerUsed,
+    providerUsed: providerUsed || "checkpoint",
     durationMs: Date.now() - started,
     mode: backend === "lci" ? "candidates-lci" : "candidates-builtin",
     skippedCandidates,

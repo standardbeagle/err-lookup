@@ -274,3 +274,40 @@ describe("provider rate-limit gate", () => {
     expect(buildProviders(cfg).a).not.toBeInstanceOf(ThrottledProvider);
   });
 });
+
+describe("runAnalysis batch checkpointing", () => {
+  const memCkpt = () => {
+    const store = new Map<string, string>();
+    return { store, get: (k: string) => store.get(k) ?? null, put: (k: string, v: string) => void store.set(k, v) };
+  };
+
+  it("resumes from checkpoints without re-calling the provider", async () => {
+    const ckpt = memCkpt();
+    const cfg = cfgFrom(["  analysis-batch-size 10"]);
+    const first = new RecordingProvider("bulk");
+    const a = await runAnalysis(FAKE_REPO_A, discovered(25), { bulk: first }, cfg, BOTH, undefined, undefined, ckpt);
+    expect(first.prompts).toHaveLength(3);
+    expect(a.enrichedByIndex.size).toBe(25);
+    const resumed = new RecordingProvider("bulk");
+    const b = await runAnalysis(FAKE_REPO_A, discovered(25), { bulk: resumed }, cfg, BOTH, undefined, undefined, ckpt);
+    expect(resumed.prompts).toHaveLength(0);
+    expect(b.enrichedByIndex.size).toBe(25);
+    expect(b.defenseByIndex.size).toBe(25);
+  });
+
+  it("retries failed batches on resume instead of reusing the failure", async () => {
+    const ckpt = memCkpt();
+    const cfg = cfgFrom(["  analysis-batch-size 10"]);
+    // The batch carrying index 10 fails at every attempt on the first run.
+    const failing = new RecordingProvider("bulk", { failPrompts: (t) => t.includes("[10]") });
+    const a = await runAnalysis(FAKE_REPO_A, discovered(25), { bulk: failing }, cfg, BOTH, undefined, undefined, ckpt);
+    expect(a.failedBatches).toBe(1);
+    expect(a.enrichedByIndex.has(10)).toBe(false);
+    // Resume: the two persisted batches load, only the failed one re-runs.
+    const resumed = new RecordingProvider("bulk");
+    const b = await runAnalysis(FAKE_REPO_A, discovered(25), { bulk: resumed }, cfg, BOTH, undefined, undefined, ckpt);
+    expect(resumed.prompts).toHaveLength(1);
+    expect(b.failedBatches).toBe(0);
+    expect(b.enrichedByIndex.size).toBe(25);
+  });
+});

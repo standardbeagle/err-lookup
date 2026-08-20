@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, uniqueIndex, index, primaryKey } from "drizzle-orm/sqlite-core";
 
 /**
  * SQLite schema — pipeline working state only (§3.2). Never shipped.
@@ -146,6 +146,29 @@ export const infoPages = sqliteTable(
     createdAt: integer("created_at").notNull().$defaultFn(() => Date.now()),
   },
   (table) => [uniqueIndex("idx_info_pages_cluster").on(table.clusterKey)]
+);
+
+/**
+ * Intra-phase batch checkpoints. job_history resumes a repo per PHASE, but a
+ * killed drain still lost every completed batch inside the running phase — a
+ * 94-batch discovery dying at batch 83 restarted from batch 1, and on this
+ * host (a WSL2 VM the Windows side restarts at will) that happened often
+ * enough to reduce net throughput to ~zero. Each completed batch persists
+ * here as it finishes, keyed by content so a resume only re-runs batches
+ * whose exact input was never answered. Rows are deleted when their phase
+ * records success (the payload then lives in job_history.result).
+ */
+export const phaseBatches = sqliteTable(
+  "phase_batches",
+  {
+    repo: text("repo").notNull(),
+    sha: text("sha").notNull(),
+    phase: text("phase").notNull(), // discovery | analysis
+    batchKey: text("batch_key").notNull(),
+    result: text("result").notNull(),
+    updatedAt: integer("updated_at").notNull().$defaultFn(() => Date.now()),
+  },
+  (table) => [primaryKey({ columns: [table.repo, table.sha, table.phase, table.batchKey] })]
 );
 
 export type RepositoryRow = typeof repositories.$inferSelect;

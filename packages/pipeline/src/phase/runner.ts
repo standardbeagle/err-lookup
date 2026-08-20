@@ -11,6 +11,7 @@ import { validateErrorEntry } from "@errlookup/schema";
 import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider } from "../provider/types.js";
 import { ProviderError } from "../provider/types.js";
+import { phaseBatchCheckpoint, clearPhaseBatches } from "../db/checkpoints.js";
 import { runDiscovery } from "./discovery.js";
 import { runScope } from "./scope.js";
 import type { ScanScope } from "./candidates.js";
@@ -163,7 +164,8 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           cfg,
           (b, t) => log(`phase discovery: batch ${b}/${t}`),
           (m) => log(`phase discovery: ${m}`),
-          scope
+          scope,
+          phaseBatchCheckpoint(db, repo, sha, "discovery")
         );
         discovered = r.errors;
         recordPhase(db, {
@@ -175,6 +177,7 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           analyzedSha: sha,
           result: JSON.stringify(discovered),
         });
+        clearPhaseBatches(db, repo, "discovery");
         if (r.skippedCandidates > 0) {
           log(`phase discovery: ${r.skippedCandidates} candidates abandoned after batch-splitting retries`);
         }
@@ -262,7 +265,8 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         cfg,
         need,
         (d, t) => log(`phase analysis: ${d}/${t} batches`),
-        (m) => log(`phase analysis: ${m}`)
+        (m) => log(`phase analysis: ${m}`),
+        phaseBatchCheckpoint(db, repo, sha, "analysis")
       );
       if (need.enrichment) {
         enrichedMap = res.enrichedByIndex;
@@ -293,6 +297,7 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
       log(
         `phase analysis: ${res.batches} batches, ${res.failedBatches} failed via ${res.providerUsed} (${res.durationMs}ms)`
       );
+      clearPhaseBatches(db, repo, "analysis");
     } catch (e) {
       // Only a whole-phase fault reaches here — individual batch failures are
       // absorbed inside runAnalysis. Enrichment is required, defense is not.
