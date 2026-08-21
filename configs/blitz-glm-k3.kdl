@@ -43,6 +43,9 @@ defaults {
     // credit rate, so a long unattended run holds between repos rather than
     // spending double for the same output.
     skip-peak true
+    // While never-analyzed repos remain queued, one analysis start in four
+    // refreshes an already-published repo; the rest import new ones.
+    rescan-share 0.25
     delay-between-phases-ms 2000
 }
 phase-providers {

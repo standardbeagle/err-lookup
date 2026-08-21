@@ -10,6 +10,7 @@ import {
   claimNextQueued,
   settleQueueItem,
   requeueInfraFailure,
+  type ClaimPreference,
   queueByStatus,
 } from "./db/queue.js";
 import { remoteHeadSha } from "./vcs/git.js";
@@ -35,6 +36,19 @@ export interface ScanOptions {
 function zeroYieldRescanMs(): number {
   const days = Number(process.env.ERRLOOKUP_ZERO_YIELD_RESCAN_DAYS ?? 14);
   return (Number.isFinite(days) && days >= 0 ? days : 14) * 24 * 60 * 60 * 1000;
+}
+
+/**
+ * Which kind of repo the next claim should reach for, given how many
+ * analyses of each kind this drain has started. Rescans get `share` of the
+ * starts: with 0.25, every fourth start refreshes a published repo and the
+ * other three import new ones. Pure so the rule is testable without a drain.
+ */
+export function pickClaimKind(started: { fresh: number; rescan: number }, share: number): ClaimPreference {
+  if (share <= 0) return "fresh";
+  if (share >= 1) return "rescan";
+  const total = started.fresh + started.rescan;
+  return started.rescan + 1 <= share * (total + 1) ? "rescan" : "fresh";
 }
 
 export interface ScanSummary {
@@ -90,6 +104,11 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
 
   let consecutiveFailures = 0;
   let tripped = false;
+  // Analysis starts by kind, shared by all workers. Counted at claim time
+  // (synchronously, so concurrent workers cannot all pick the same kind off a
+  // stale count) and given back when the claim settles without an analysis —
+  // an unchanged or damped rescan spends nothing, so it earns no share.
+  const started = { fresh: 0, rescan: 0 };
 
   // Both failure paths (phase-level and thrown) settle through here so infra
   // classification cannot drift between them. Infra failures escalate instead
@@ -116,9 +135,12 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
   const worker = async (which: "concurrent" | "exclusive"): Promise<void> => {
     for (;;) {
       if (tripped) return;
-      const item = claimNextQueued(db, which);
+      const item = claimNextQueued(db, which, pickClaimKind(started, cfg.defaults.rescanShare));
       if (!item) return;
       const repo = item.repo;
+      const row = getRepo(db, repo);
+      const kind: ClaimPreference = row?.analyzedSha ? "rescan" : "fresh";
+      started[kind]++;
 
       // Peak-price gate: checked between repos, never mid-repo (§ batch note).
       if (cfg.defaults.skipPeak) {
@@ -134,7 +156,6 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
       // the full analysis path does its own clone and reports properly.
       const cloneUrl = opts.cloneUrlFor?.(repo);
       if (!opts.force) {
-        const row = getRepo(db, repo);
         // Zero-yield damping: a published analysis that found nothing marks a
         // repo as docs/config-shaped, and those repos churn HEAD on README
         // edits. Re-analyzing on every HEAD move re-spends the whole LLM
@@ -147,6 +168,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
           Date.now() - Date.parse(row.analyzedAt) < zeroYieldRescanMs()
         ) {
           settleQueueItem(db, repo, "skipped");
+          started[kind]--;
           summary.dampened++;
           log(repo, `zero-yield damping: re-scan not due until ${new Date(Date.parse(row.analyzedAt) + zeroYieldRescanMs()).toISOString().slice(0, 10)}`);
           continue;
@@ -156,6 +178,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
             const remote = await remoteHeadSha(repo, cloneUrl);
             if (remote === row.analyzedSha) {
               settleQueueItem(db, repo, "skipped");
+              started[kind]--;
               summary.unchanged++;
               log(repo, `unchanged at ${remote.slice(0, 8)} — skipped without clone`);
               continue;

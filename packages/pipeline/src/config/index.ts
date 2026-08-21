@@ -34,6 +34,12 @@ export interface ErrlookupConfig {
     /** Pause between repos during the provider's peak-price window. */
     skipPeak: boolean;
     delayBetweenPhasesMs: number;
+    /**
+     * Share of analysis starts the drain gives to rescans of already-published
+     * repos while never-analyzed repos are still queued (0 = import first,
+     * 1 = rescans first). Balances growing the index against keeping it fresh.
+     */
+    rescanShare: number;
   };
   /**
    * Per-phase provider overrides (model routing): cheap models for bulk
@@ -62,6 +68,7 @@ export const DEFAULT_CONFIG: ErrlookupConfig = {
     analysisBatchSize: 20,
     skipPeak: false,
     delayBetweenPhasesMs: 5_000,
+    rescanShare: 0.25,
   },
 };
 
@@ -124,6 +131,7 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
         analysisBatchSize: asConcurrency(childByName(node, "analysis-batch-size")?.values[0], 20),
         skipPeak: childByName(node, "skip-peak")?.values[0] === true,
         delayBetweenPhasesMs: asNumber(childByName(node, "delay-between-phases-ms")?.values[0], 5_000),
+        rescanShare: Math.min(1, Math.max(0, asNumber(childByName(node, "rescan-share")?.values[0], 0.25))),
       };
     }
   }

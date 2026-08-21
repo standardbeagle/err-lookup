@@ -83,20 +83,30 @@ export function reclaimRunningQueue(db: Db): number {
     .run().changes;
 }
 
+/** Which kind of work a claim should reach for first. */
+export type ClaimPreference = "fresh" | "rescan";
+
 /**
  * Claim the next queued repo (optimistic update, looped on a lost race so
  * concurrent claimers stay correct without a lock). The concurrent drain
  * claims levels 0-1 only; level-2 (exclusive) rows are claimed by the
  * exclusive pass after every worker has drained out, so they truly run alone.
  *
- * Claim order: repos with no published analysis first, then priority, then
- * age. Every seed requeues the whole corpus, and an active repo's HEAD moves
- * daily, so a rescan-first order re-spends hours per already-published repo
- * while never-analyzed repos wait — the 2026-08 batch-2 import sat at 808
- * analyzed for days because each relaunch re-walked the same top rows first.
- * A repo's first analysis is worth more to the index than any refresh.
+ * `prefer` picks which kind of row sorts first — `fresh` (no published
+ * analysis yet) or `rescan` (published, HEAD may have moved) — then priority,
+ * then age. It is an ordering, not a filter: when the preferred kind is
+ * exhausted the other kind is claimed. The scan alternates the preference to
+ * balance importing new repos against refreshing published ones; left to
+ * priority/age alone the drain re-spent every relaunch on the same
+ * already-published top rows and the 2026-08 batch-2 import sat at 808
+ * analyzed for days.
  */
-export function claimNextQueued(db: Db, which: "concurrent" | "exclusive" = "concurrent"): QueueRow | null {
+export function claimNextQueued(
+  db: Db,
+  which: "concurrent" | "exclusive" = "concurrent",
+  prefer: ClaimPreference = "fresh"
+): QueueRow | null {
+  const rescanFirst = prefer === "rescan";
   for (;;) {
     const next = db
       .select({ queue })
@@ -105,7 +115,11 @@ export function claimNextQueued(db: Db, which: "concurrent" | "exclusive" = "con
       .where(
         and(eq(queue.status, "queued"), which === "exclusive" ? eq(queue.solo, 2) : lt(queue.solo, 2))
       )
-      .orderBy(sql`${repositories.analyzedSha} IS NOT NULL`, desc(queue.priority), asc(queue.updatedAt))
+      .orderBy(
+        rescanFirst ? sql`${repositories.analyzedSha} IS NULL` : sql`${repositories.analyzedSha} IS NOT NULL`,
+        desc(queue.priority),
+        asc(queue.updatedAt)
+      )
       .get()?.queue;
     if (!next) return null;
     const claimed = db

@@ -16,7 +16,7 @@ import {
   queueByStatus,
   FAILED_REQUEUE_COOLOFF_MS,
 } from "../src/db/queue.js";
-import { runScan, isInfraFailure } from "../src/scan.js";
+import { runScan, isInfraFailure, pickClaimKind } from "../src/scan.js";
 import { ScriptedProvider } from "../src/provider/fixture.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
@@ -163,7 +163,7 @@ describe("re-entrant queue", () => {
     close();
   });
 
-  it("claims never-analyzed repos before rescans of published ones, regardless of priority", () => {
+  it("claims the preferred kind first — fresh or rescan — regardless of priority, then the other kind", () => {
     seedQueue(db, ["a/published", "a/fresh", "a/unpublished"]);
     // A published analysis exists for one repo; another has a row but never
     // finished (no analyzed_sha); the third has no repositories row at all.
@@ -172,10 +172,31 @@ describe("re-entrant queue", () => {
     raw.prepare("UPDATE queue SET priority = 5 WHERE repo = 'a/published'").run();
     raw.prepare("UPDATE queue SET updated_at = updated_at - 1000 WHERE repo = 'a/unpublished'").run();
 
-    expect(claimNextQueued(db)?.repo).toBe("a/unpublished");
+    expect(claimNextQueued(db, "concurrent", "rescan")?.repo).toBe("a/published");
+    expect(claimNextQueued(db, "concurrent", "rescan")?.repo).toBe("a/unpublished");
     expect(claimNextQueued(db)?.repo).toBe("a/fresh");
-    expect(claimNextQueued(db)?.repo).toBe("a/published");
     expect(claimNextQueued(db)).toBeNull();
+
+    for (const r of ["a/published", "a/fresh", "a/unpublished"]) settleQueueItem(db, r, "done");
+    seedQueue(db, ["a/published", "a/fresh", "a/unpublished"]);
+    // Reseeding resets every row's age, so among the two never-analyzed
+    // repos order is incidental; the published one still comes last.
+    expect([claimNextQueued(db)?.repo, claimNextQueued(db)?.repo].sort()).toEqual(["a/fresh", "a/unpublished"]);
+    expect(claimNextQueued(db)?.repo).toBe("a/published");
+  });
+
+  it("gives rescans their configured share of analysis starts", () => {
+    const started = { fresh: 0, rescan: 0 };
+    const picks: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      const k = pickClaimKind(started, 0.25);
+      picks.push(k);
+      started[k]++;
+    }
+    expect(picks).toEqual(["fresh", "fresh", "fresh", "rescan", "fresh", "fresh", "fresh", "rescan"]);
+    expect(pickClaimKind({ fresh: 0, rescan: 0 }, 0)).toBe("fresh");
+    expect(pickClaimKind({ fresh: 100, rescan: 0 }, 0)).toBe("fresh");
+    expect(pickClaimKind({ fresh: 0, rescan: 100 }, 1)).toBe("rescan");
   });
 
   it("claims drain to empty and a dead scan's running rows are reclaimable", () => {

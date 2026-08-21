@@ -89,6 +89,7 @@ describe("config mapping", () => {
       analysisBatchSize: 20,
       skipPeak: false,
       delayBetweenPhasesMs: 5_000,
+      rescanShare: 0.25,
     });
   });
 
