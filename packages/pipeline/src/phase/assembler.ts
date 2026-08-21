@@ -35,6 +35,11 @@ export interface AssembleInput {
   discovered: DiscoveredErrorJson[];
   enriched: Map<number, EnrichedErrorJson>;
   defense?: Map<number, DefenseStrategyJson>;
+  /** Incremental rescan: identities/slugs already taken by records that carry
+   *  over from the published version — a reviewed site that collides with one
+   *  is a duplicate, exactly as within a single discovery. */
+  reservedIds?: Set<string>;
+  reservedSlugs?: Set<string>;
 }
 
 export interface AssembleOutput {
@@ -52,8 +57,8 @@ export function assemble(input: AssembleInput): AssembleOutput {
   const analyzedAt = new Date().toISOString();
   const records: ErrorEntry[] = [];
   const rejects: { message: string; error: string }[] = [];
-  const seenIds = new Set<string>();
-  const usedSlugs = new Set<string>();
+  const seenIds = new Set<string>(input.reservedIds ?? []);
+  const usedSlugs = new Set<string>(input.reservedSlugs ?? []);
 
   discovered.forEach((d, i) => {
     const filePath = d.file ?? "unknown";

@@ -7,7 +7,9 @@ import { promisify } from "node:util";
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { cloneShallow, headSha, tempWorkDir } from "./vcs/git.js";
+import { cloneShallow, headSha, tempWorkDir, fetchCommitShallow, diffHunks } from "./vcs/git.js";
+import { parseUnifiedDiff, deltaTooLarge } from "./phase/delta.js";
+import type { RescanDelta } from "./phase/runner.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -62,8 +64,8 @@ export async function acquireLargeRepoLock(
   }
 }
 import { fetchRepoMeta } from "./vcs/github-meta.js";
-import { countSourceFiles } from "./phase/candidates.js";
-import { upsertRepo, recordAnalysisFailure } from "./db/store.js";
+import { countSourceFiles, isSourceFile, isExcludedPath } from "./phase/candidates.js";
+import { upsertRepo, recordAnalysisFailure, getRepo } from "./db/store.js";
 import { runPhases, type RunPhasesResult } from "./phase/runner.js";
 
 /**
@@ -149,6 +151,7 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
     log(`HEAD sha ${sha}`);
     const sourceFiles = countSourceFiles(work.path);
     upsertRepo(opts.db, { repo, sourceFiles });
+    const delta = opts.force ? undefined : await rescanDelta(opts.db, repo, sha, work.path, sourceFiles, log);
 
     // The slot key is what actually loads the host: index RAM and phase
     // wall-clock scale with source files, not clone bytes (a shallow
@@ -186,6 +189,7 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
       phases: opts.phases,
       force: opts.force,
       onLog: opts.onLog,
+      delta,
     });
     return { ...result, heldLargeSlot: releaseLargeLock !== null };
   } catch (e) {
@@ -197,4 +201,39 @@ export async function analyzeRepo(repo: string, opts: AnalyzeOptions): Promise<R
     releaseLargeLock?.();
     await work.cleanup();
   }
+}
+
+/**
+ * Decide whether this analysis can be incremental: the repo has a published
+ * version at another SHA, that SHA is still fetchable, and the source-relevant
+ * part of the diff is small next to the repo. Anything else (first analysis,
+ * rewritten history, a sweeping change, ERRLOOKUP_INCREMENTAL=off) is a full
+ * analysis — named in the log, never silent.
+ */
+async function rescanDelta(
+  db: Db,
+  repo: string,
+  sha: string,
+  repoPath: string,
+  sourceFiles: number,
+  log: (m: string) => void
+): Promise<RescanDelta | undefined> {
+  if (process.env.ERRLOOKUP_INCREMENTAL === "off") return undefined;
+  const row = getRepo(db, repo);
+  const base = row?.analyzedSha;
+  if (!base || base === sha || !(row.status === "analyzed" || row.status === "exported")) return undefined;
+  let diffText: string;
+  try {
+    await fetchCommitShallow(repoPath, base);
+    diffText = await diffHunks(repoPath, base, sha);
+  } catch (e) {
+    log(`incremental: cannot diff against published ${base.slice(0, 8)} (${(e as Error).message.split("\n")[0]}) — full analysis`);
+    return undefined;
+  }
+  const files = parseUnifiedDiff(diffText).filter((f) => isSourceFile(f.path) && !isExcludedPath(f.path));
+  if (deltaTooLarge(files.length, sourceFiles)) {
+    log(`incremental: ${files.length} of ${sourceFiles} source files changed since ${base.slice(0, 8)} — full analysis`);
+    return undefined;
+  }
+  return { baseSha: base, files };
 }

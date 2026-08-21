@@ -5,7 +5,12 @@ import {
   integrateAnalyzedVersion,
   recordAnalysisFailure,
   getRepo,
+  errorsForRepo,
 } from "../db/store.js";
+import type { ErrorRow } from "../db/schema.js";
+import { computeErrorId } from "../util/ids.js";
+import { extractSourceRegion, githubPermalink } from "../util/source.js";
+import { planRescan, candidateInReview, type FileDiff, type RescanPlan } from "./delta.js";
 import type { PhaseName, ErrorEntry } from "@errlookup/schema";
 import { validateErrorEntry } from "@errlookup/schema";
 import type { ErrlookupConfig } from "../config/index.js";
@@ -31,6 +36,16 @@ export interface RunPhasesOptions {
   phases?: Partial<Record<PhaseName, boolean>>;
   force?: boolean;
   onLog?: (msg: string) => void;
+  /** Incremental rescan: the diff from the published version to `sha`. When
+   *  set, only the changed hunks are reviewed and everything else carries
+   *  over from the published records (see phase/delta.ts). */
+  delta?: RescanDelta;
+}
+
+export interface RescanDelta {
+  baseSha: string;
+  /** Source-relevant files only (extension + static exclusions applied). */
+  files: FileDiff[];
 }
 
 export interface RunPhasesResult {
@@ -39,6 +54,8 @@ export interface RunPhasesResult {
   skipped: PhaseName[];
   /** Set when a required phase failed and the repo produced no usable result. */
   failed?: string;
+  /** Incremental rescan accounting — absent on a full analysis. */
+  incremental?: { carriedOver: number; remapped: number; dropped: number; reused: number; fresh: number };
   /** Set by analyzeRepo: this run held the machine-wide large-repo slot. The
    *  scan uses it to escalate a resource failure straight to an exclusive
    *  retry — a run that already had the slot gains nothing from level 1. */
@@ -90,13 +107,38 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
   const wanted = (phase: PhaseName) => opts.phases?.[phase] ?? true;
   const skipped: PhaseName[] = [];
 
+  // Incremental rescan plan: which published records survive the diff as-is,
+  // which move, which are gone, and which files discovery must review. Built
+  // once here from the published rows — integrate is the only writer of
+  // those, so the plan is stable across a resume of this same HEAD.
+  const plan: RescanPlan | null = opts.delta
+    ? planRescan(errorsForRepo(db, repo), opts.delta.files, () => true)
+    : null;
+  if (plan) {
+    log(
+      `incremental from ${opts.delta!.baseSha.slice(0, 8)}: ${plan.reviewFiles.size} files to review, ` +
+        `${plan.carryOver.length} records carried over, ${plan.remapped.length} re-anchored, ${plan.dropped.length} dropped`
+    );
+  }
+
   // ----- Phase 0: Scope -----
   // LLM-derived per-repo scan scope (include-roots + exclude-dirs on top of
   // the static floor). Runs only when discovery will actually run — a resumed
   // discovery already baked its scope into the persisted result.
   let scope: ScanScope | undefined;
   const discoveryNeeded = wanted("discovery") && !phaseDone(db, repo, sha, "discovery", opts.force);
-  if (discoveryNeeded && wanted("scope") && process.env.ERRLOOKUP_SCOPE !== "off") {
+  const baseScope = plan ? latestPhaseRun(db, repo, opts.delta!.baseSha, "scope") : undefined;
+  if (discoveryNeeded && plan && baseScope?.status === "success" && baseScope.result) {
+    // The published version's scope still describes this repo's layout; a
+    // hunk-level review does not need a fresh provider call to re-decide it.
+    try {
+      scope = JSON.parse(baseScope.result) as ScanScope;
+      skipped.push("scope");
+      log(`phase scope: reused from ${opts.delta!.baseSha.slice(0, 8)}`);
+    } catch {
+      scope = undefined;
+    }
+  } else if (discoveryNeeded && wanted("scope") && process.env.ERRLOOKUP_SCOPE !== "off") {
     if (phaseDone(db, repo, sha, "scope", opts.force)) {
       try {
         scope = JSON.parse(latestPhaseRun(db, repo, sha, "scope")?.result ?? "") as ScanScope;
@@ -165,7 +207,8 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           (b, t) => log(`phase discovery: batch ${b}/${t}`),
           (m) => log(`phase discovery: ${m}`),
           scope,
-          phaseBatchCheckpoint(db, repo, sha, "discovery")
+          phaseBatchCheckpoint(db, repo, sha, "discovery"),
+          plan ? candidateInReview(plan.reviewFiles) : undefined
         );
         discovered = r.errors;
         recordPhase(db, {
@@ -200,11 +243,42 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
     }
   }
 
+  if (discovered.length === 0 && plan) {
+    const kept = keptRows(plan, repo, sha, repoPath);
+    integrateAnalyzedVersion(db, repo, sha, kept);
+    log(`phase discovery: no errors in the changed hunks; ${kept.length} published records carried to ${sha.slice(0, 8)}`);
+    return {
+      errorCount: kept.length,
+      rejects: [],
+      skipped,
+      incremental: { carriedOver: plan.carryOver.length, remapped: plan.remapped.length, dropped: plan.dropped.length, reused: 0, fresh: 0 },
+    };
+  }
   if (discovered.length === 0) {
     integrateAnalyzedVersion(db, repo, sha, []);
     log("phase discovery: no errors found; repo marked analyzed");
     return { errorCount: 0, rejects: [], skipped };
   }
+
+  // Incremental: a reviewed site whose identity (message/code/file) matches a
+  // published record is the same error — its documentation and defense carry
+  // over and only its location is re-derived. Only genuinely new identities
+  // go to the provider. `fresh` is the sub-list analysis runs over; indices
+  // map back to `discovered` for assembly.
+  const reuse = new Map<number, ErrorRow>();
+  const freshIdx: number[] = [];
+  if (plan) {
+    const publishedById = new Map<string, ErrorRow>();
+    for (const r of [...plan.carryOver, ...plan.remapped.map((m) => m.row), ...plan.dropped]) publishedById.set(r.id, r);
+    discovered.forEach((d, i) => {
+      const id = computeErrorId({ repo, errorCode: d.code ?? null, errorMessage: d.message, filePath: d.file ?? "unknown" });
+      const prior = publishedById.get(id);
+      if (prior) reuse.set(i, prior);
+      else freshIdx.push(i);
+    });
+    log(`incremental: ${discovered.length} reviewed sites — ${reuse.size} known identities reused, ${freshIdx.length} new`);
+  }
+  const fresh = plan ? freshIdx.map((i) => discovered[i]!) : discovered;
 
   // Fully analyzed at this SHA with enrichment recorded — nothing to redo, and
   // reassembling would clobber verify-phase patches already in the errors table.
@@ -255,12 +329,12 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
     }
   }
 
-  if (need.enrichment || need.defense) {
+  if ((need.enrichment || need.defense) && fresh.length > 0) {
     const started = Date.now();
     try {
       const res = await runAnalysis(
         repoPath,
-        discovered,
+        fresh,
         providers,
         cfg,
         need,
@@ -268,8 +342,11 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         (m) => log(`phase analysis: ${m}`),
         phaseBatchCheckpoint(db, repo, sha, "analysis")
       );
+      // Analysis indexed the `fresh` sub-list; assembly indexes `discovered`.
+      const toDiscoveredIndex = <T>(m: Map<number, T>): Map<number, T> =>
+        plan ? new Map([...m.entries()].map(([k, v]) => [freshIdx[k]!, v])) : m;
       if (need.enrichment) {
-        enrichedMap = res.enrichedByIndex;
+        enrichedMap = toDiscoveredIndex(res.enrichedByIndex);
         recordPhase(db, {
           repo,
           phase: "enrichment",
@@ -279,10 +356,10 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           analyzedSha: sha,
           result: JSON.stringify([...enrichedMap.entries()]),
         });
-        log(`phase enrichment: ${enrichedMap.size}/${discovered.length} enriched via ${res.providerUsed}`);
+        log(`phase enrichment: ${enrichedMap.size}/${fresh.length} enriched via ${res.providerUsed}`);
       }
       if (need.defense) {
-        defenseMap = res.defenseByIndex;
+        defenseMap = toDiscoveredIndex(res.defenseByIndex);
         recordPhase(db, {
           repo,
           phase: "defense",
@@ -292,7 +369,7 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           analyzedSha: sha,
           result: JSON.stringify([...defenseMap.entries()]),
         });
-        log(`phase defense: ${defenseMap.size}/${discovered.length} strategies via ${res.providerUsed}`);
+        log(`phase defense: ${defenseMap.size}/${fresh.length} strategies via ${res.providerUsed}`);
       }
       log(
         `phase analysis: ${res.batches} batches, ${res.failedBatches} failed via ${res.providerUsed} (${res.durationMs}ms)`
@@ -320,7 +397,24 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
   // ----- Assemble -----
   // Deterministic from the persisted phase outputs above; nothing is written to
   // the errors table until the whole version (verify included) is complete.
-  const assembled = assemble({ repo, sha, repoPath, discovered, enriched: enrichedMap, defense: defenseMap });
+  let kept: Omit<ErrorRow, "updatedAt">[] = [];
+  if (plan) {
+    for (const [i, prior] of reuse) {
+      enrichedMap.set(i, enrichmentFromRow(i, prior));
+      defenseMap.set(i, defenseFromRow(i, prior));
+    }
+    kept = keptRows(plan, repo, sha, repoPath);
+  }
+  const assembled = assemble({
+    repo,
+    sha,
+    repoPath,
+    discovered,
+    enriched: enrichedMap,
+    defense: defenseMap,
+    reservedIds: new Set(kept.map((r) => r.id)),
+    reservedSlugs: new Set(kept.map((r) => r.slug)),
+  });
 
   // ----- Phase 5: Verify (patch loop, max 2 rounds) -----
   if (wanted("verify") && assembled.records.length > 0) {
@@ -360,9 +454,73 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
     }
   }
 
-  integrateAnalyzedVersion(db, repo, sha, assembled.records.map(toRow));
-  log(`done: ${assembled.records.length} records (${assembled.rejects.length} rejects)`);
-  return { errorCount: assembled.records.length, rejects: assembled.rejects, skipped };
+  const rows = [...kept, ...assembled.records.map(toRow)];
+  integrateAnalyzedVersion(db, repo, sha, rows);
+  log(`done: ${rows.length} records (${assembled.rejects.length} rejects)`);
+  return {
+    errorCount: rows.length,
+    rejects: assembled.rejects,
+    skipped,
+    ...(plan
+      ? {
+          incremental: {
+            carriedOver: plan.carryOver.length,
+            remapped: plan.remapped.length,
+            dropped: plan.dropped.length,
+            reused: reuse.size,
+            fresh: fresh.length,
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * The rows an incremental rescan keeps without a provider call: untouched
+ * files verbatim, and records in modified files re-anchored to where their
+ * line moved — source region and permalink re-derived from the HEAD checkout
+ * so the page shows the code as it is now.
+ */
+function keptRows(plan: RescanPlan, repo: string, sha: string, repoPath: string): Omit<ErrorRow, "updatedAt">[] {
+  const strip = ({ updatedAt: _u, ...r }: ErrorRow): Omit<ErrorRow, "updatedAt"> => r;
+  const remapped = plan.remapped.map(({ row, newLine }) => {
+    const region = extractSourceRegion(repoPath, row.filePath, newLine);
+    return strip({
+      ...row,
+      lineNumber: newLine,
+      sourceCode: region?.sourceCode ?? row.sourceCode,
+      sourceCodeStart: region?.start ?? null,
+      sourceCodeEnd: region?.end ?? null,
+      githubUrl: githubPermalink(repo, sha, row.filePath, region?.start ?? newLine, region?.end ?? null),
+      analyzedSha: sha,
+    });
+  });
+  return [...plan.carryOver.map(strip), ...remapped];
+}
+
+function enrichmentFromRow(errorIndex: number, r: ErrorRow): EnrichedErrorJson {
+  return {
+    errorIndex,
+    documentation: r.documentation ?? "",
+    triggerScenarios: r.triggerScenarios ?? "",
+    commonSituations: r.commonSituations ?? "",
+    solutions: r.solutions ?? [],
+    exampleFix: r.exampleFix,
+    severity: (r.severity as EnrichedErrorJson["severity"]) ?? "error",
+    tags: r.tags ?? [],
+    backgroundTag: r.backgroundTag,
+  };
+}
+
+function defenseFromRow(errorIndex: number, r: ErrorRow): DefenseStrategyJson {
+  return {
+    errorIndex,
+    handlingStrategy: (r.handlingStrategy as DefenseStrategyJson["handlingStrategy"]) ?? "try-catch",
+    validationCode: r.validationCode,
+    typeGuard: r.typeGuard,
+    tryCatchPattern: r.tryCatchPattern,
+    preventionTips: r.preventionTips ?? [],
+  };
 }
 
 /** Map a validated ErrorEntry to a DB row (arrays stored as JSON text). */
