@@ -106,7 +106,64 @@ describe("lci invocation", () => {
   });
 });
 
+describe("lci grep contract", () => {
+  /**
+   * Regression + repro. lci's grep JSON carries three line-ish fields —
+   * `line`, `context.start_line`, `context.matched_lines` — and with the -C 8
+   * we ask for, the context windows of adjacent matches overlap, so all three
+   * neighbours ship the same `lines` array. `line` is the only per-result
+   * identity; everything else is window bookkeeping.
+   *
+   * A stale lci build (30850272 bytes, pre-2026-08-16) emitted start_line-like
+   * values in `line`, which collapsed consecutive throws to 1,1,2 and made the
+   * file:line dedup drop two of three. That build is not what production runs,
+   * but the failure was invisible until someone diffed two binaries that both
+   * self-report "lci version 0.8.0" — so pin the contract here instead.
+   */
+  it("gives each match on consecutive lines its own line number and message", () => {
+    const dir = tmpRepo("lci-contract-");
+    try {
+      writeFileSync(
+        join(dir, "index.js"),
+        "const a = 1;\nthrow new Error('first failed');\nthrow new Error('second failed');\nthrow new Error('third failed');\nconst b = 2;\n"
+      );
+      // Assert outside the try: an expect() failure must not be swallowed by
+      // the binary-absent catch and reported as "lci missing".
+      let candidates: ReturnType<typeof extractCandidatesLci> | null = null;
+      try {
+        candidates = extractCandidatesLci(dir).filter((s) => s.file === "index.js");
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; // only a genuinely absent binary excuses a skip
+      }
+      if (candidates) {
+        expect(candidates.map((s) => [s.line, s.literal])).toEqual([
+          [2, "first failed"],
+          [3, "second failed"],
+          [4, "third failed"],
+        ]);
+      }
+    } finally {
+      disposeRepo(dir);
+    }
+  });
+});
+
 describe("lci JSON mapping", () => {
+  it("indexes each result's snippet from its own line, not the window's first match", () => {
+    // Three matches whose -C windows overlap: identical `lines`, distinct `line`.
+    const lines = ["const a = 1;", "throw new Error('first failed');", "throw new Error('second failed');", "throw new Error('third failed');"];
+    const payload = {
+      results: [2, 3, 4].map((line) => ({ path: "/repo/index.js", line, context: { lines, matched_lines: [line], start_line: 1 } })),
+    };
+    const c = candidatesFromLciJson("throw", "/repo", payload, new Set<string>());
+    expect(c.map((s) => [s.line, s.literal])).toEqual([
+      [2, "first failed"],
+      [3, "second failed"],
+      [4, "third failed"],
+    ]);
+  });
+
+
   it("maps lci grep payloads to candidate sites and dedupes by file:line", () => {
     const payload = {
       results: [

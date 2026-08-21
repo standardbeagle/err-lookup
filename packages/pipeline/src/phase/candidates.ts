@@ -238,10 +238,15 @@ export function candidatesFromLciJson(
     const key = `${rel}:${r.line}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const matchedIdx = r.context?.matched_lines?.[0];
+    // Pick this result's own line out of the context window. `line` is the
+    // result's identity (it keys the candidate and the dedup), so the text
+    // must be indexed from it: `lines` is a window starting at `start_line`,
+    // and `matched_lines` describes matches in that window — with wide -C the
+    // windows of adjacent matches overlap, so trusting matched_lines[0] would
+    // hand three neighbouring throws the first one's message.
     const start = r.context?.start_line;
-    const lineText =
-      matchedIdx != null && start != null ? r.context?.lines?.[matchedIdx - start] ?? "" : r.context?.lines?.[0] ?? "";
+    const idx = start != null ? r.line - start : r.context?.matched_lines?.[0];
+    const lineText = idx != null ? r.context?.lines?.[idx] ?? "" : r.context?.lines?.[0] ?? "";
     const lit = lineText.match(STRING_LITERAL);
     out.push({
       file: rel,
