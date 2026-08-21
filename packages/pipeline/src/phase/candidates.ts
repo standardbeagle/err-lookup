@@ -47,6 +47,15 @@ export interface ExtractOptions {
    *  caller can log what the LLM scope dropped — silent over-exclusion would
    *  swallow real errors with no trace. */
   excludedByScope?: Map<string, number>;
+  /** Incremental rescan: restrict extraction to these files, and within them
+   *  to lines the predicate accepts (the edited hunks). */
+  only?: CandidateFilter;
+}
+
+/** File set + per-line predicate narrowing extraction to a diff (delta.ts). */
+export interface CandidateFilter {
+  files: Set<string>;
+  line: (file: string, line: number) => boolean;
 }
 
 /**
@@ -212,7 +221,8 @@ export function candidatesFromLciJson(
   payload: LciGrepResult,
   seen: Set<string>,
   scope?: ScanScope,
-  excludedByScope?: Map<string, number>
+  excludedByScope?: Map<string, number>,
+  only?: CandidateFilter
 ): CandidateSite[] {
   const out: CandidateSite[] = [];
   for (const r of payload.results ?? []) {
@@ -220,6 +230,7 @@ export function candidatesFromLciJson(
     const rel = isAbsolute(r.path) ? relative(repoPath, r.path) : r.path;
     if (rel.startsWith("..")) continue;
     if (isExcludedPath(rel)) continue;
+    if (only && !(only.files.has(rel) && only.line(rel, r.line))) continue;
     if (isOutOfScope(rel, scope)) {
       tallyScopeExclusion(excludedByScope, rel);
       continue;
@@ -278,7 +289,7 @@ export function extractCandidatesLci(repoPath: string, opts: ExtractOptions = {}
       timeout: 120_000,
       maxBuffer: 64 * 1024 * 1024,
     });
-    out.push(...candidatesFromLciJson(kind, repoPath, JSON.parse(stdout) as LciGrepResult, seen, opts.scope, opts.excludedByScope));
+    out.push(...candidatesFromLciJson(kind, repoPath, JSON.parse(stdout) as LciGrepResult, seen, opts.scope, opts.excludedByScope, opts.only));
   }
   return Number.isFinite(maxCandidates) ? out.slice(0, maxCandidates) : out;
 }
@@ -324,6 +335,7 @@ export function extractCandidates(repoPath: string, opts: ExtractOptions = {}): 
     if (!family) continue;
     const rel = relative(repoPath, file);
     if (TEST_FILE.test(rel) || TEST_FILE.test(file)) continue;
+    if (opts.only && !opts.only.files.has(rel)) continue;
     if (isOutOfScope(rel, opts.scope)) {
       tallyScopeExclusion(opts.excludedByScope, rel);
       continue;
@@ -345,6 +357,7 @@ export function extractCandidates(repoPath: string, opts: ExtractOptions = {}): 
     for (let i = 0; i < lines.length && fromFile < maxPerFile && out.length < maxCandidates; i++) {
       const line = lines[i]!;
       if (line.length > 500) continue; // minified
+      if (opts.only && !opts.only.line(rel, i + 1)) continue;
       for (const p of patterns) {
         if (!p.re.test(line)) continue;
         // literal may sit on the next line for multi-line constructors

@@ -35,6 +35,28 @@ export async function remoteHeadSha(repo: string, cloneUrl?: string): Promise<st
   return sha;
 }
 
+/**
+ * Fetch one commit (shallow) into an existing clone so it can be diffed
+ * against HEAD. GitHub serves arbitrary reachable SHAs; a SHA that no longer
+ * exists (history rewritten) throws, and the caller falls back to a full
+ * analysis.
+ */
+export async function fetchCommitShallow(dir: string, sha: string): Promise<void> {
+  await exec("git", ["fetch", "--depth", "1", "origin", sha], { cwd: dir, timeout: 300_000, maxBuffer: 50 * 1024 * 1024 });
+}
+
+/**
+ * Hunk-level diff between two commits, renames disabled and zero context:
+ * exactly the lines that changed, nothing more (parsed by phase/delta.ts).
+ */
+export async function diffHunks(dir: string, base: string, head: string): Promise<string> {
+  const { stdout } = await exec("git", ["diff", "-U0", "--no-renames", "--no-color", base, head], {
+    cwd: dir,
+    maxBuffer: 200 * 1024 * 1024,
+  });
+  return stdout;
+}
+
 /** Read HEAD SHA of a git working dir. */
 export async function headSha(dir: string): Promise<string> {
   const { stdout } = await exec("git", ["rev-parse", "HEAD"], { cwd: dir });

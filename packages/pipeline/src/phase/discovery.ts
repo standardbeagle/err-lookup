@@ -6,7 +6,7 @@ import { runProvider, watchdogBudgetMs } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
 import { mapPool, chunk } from "../util/pool.js";
 import { DISCOVERY_PROMPT, candidateDiscoveryPrompt, type DiscoveredErrorJson } from "./prompts.js";
-import { extractCandidatesAuto, countSourceFiles, type ScanScope } from "./candidates.js";
+import { extractCandidatesAuto, countSourceFiles, type ScanScope, type CandidateFilter } from "./candidates.js";
 import { stopLciServer } from "../util/lci-server.js";
 
 export interface DiscoveryResult {
@@ -16,7 +16,7 @@ export interface DiscoveryResult {
   durationMs: number;
   /** How candidates were sourced: lci / builtin extractor, or agentic scan —
    *  or skipped-low-source when the repo has too little code to justify one. */
-  mode: "candidates-lci" | "candidates-builtin" | "agentic" | "skipped-low-source";
+  mode: "candidates-lci" | "candidates-builtin" | "agentic" | "skipped-low-source" | "delta-no-candidates";
   /** Candidates abandoned after batch-splitting retries — logged, not fatal. */
   skippedCandidates: number;
 }
@@ -54,18 +54,26 @@ export async function runDiscovery(
   onBatch?: (done: number, total: number) => void,
   onLog?: (msg: string) => void,
   scope?: ScanScope,
-  checkpoint?: BatchCheckpoint
+  checkpoint?: BatchCheckpoint,
+  /** Incremental rescan: classify only candidates inside the changed hunks. */
+  only?: CandidateFilter
 ): Promise<DiscoveryResult> {
   const started = Date.now();
   const budget = watchdogBudgetMs(cfg, "discovery");
 
-  const { candidates, backend } = extractCandidatesAuto(repoPath, { scope }, onLog);
+  const { candidates, backend } = extractCandidatesAuto(repoPath, { scope, only }, onLog);
   // Candidate extraction is the index server's only consumer, but left alone
   // it survives until clone cleanup — on a symfony-class repo that is ~750MB
   // of index RAM held through 20-50min of LLM phases that never touch it.
   // Release it here; the cleanup-time stop stays as the backstop.
   if (backend === "lci") stopLciServer(repoPath);
 
+  if (candidates.length === 0 && only) {
+    // A diff-scoped extraction that finds nothing means the edits touched no
+    // error-raising site. The agentic crawl below would re-explore the whole
+    // repo — the one thing an incremental rescan exists to avoid.
+    return { errors: [], raw: "", providerUsed: "none", durationMs: Date.now() - started, mode: "delta-no-candidates", skippedCandidates: 0 };
+  }
   if (candidates.length === 0) {
     // Active ingestion filter: no extracted candidates AND next to no source
     // files means a docs-shaped repo. Confirming the obvious with a whole-repo
