@@ -163,6 +163,21 @@ describe("re-entrant queue", () => {
     close();
   });
 
+  it("claims never-analyzed repos before rescans of published ones, regardless of priority", () => {
+    seedQueue(db, ["a/published", "a/fresh", "a/unpublished"]);
+    // A published analysis exists for one repo; another has a row but never
+    // finished (no analyzed_sha); the third has no repositories row at all.
+    upsertRepo(db, { repo: "a/published", defaultBranch: "main", status: "analyzed", analyzedSha: "abc" });
+    upsertRepo(db, { repo: "a/unpublished", defaultBranch: "main", status: "pending" });
+    raw.prepare("UPDATE queue SET priority = 5 WHERE repo = 'a/published'").run();
+    raw.prepare("UPDATE queue SET updated_at = updated_at - 1000 WHERE repo = 'a/unpublished'").run();
+
+    expect(claimNextQueued(db)?.repo).toBe("a/unpublished");
+    expect(claimNextQueued(db)?.repo).toBe("a/fresh");
+    expect(claimNextQueued(db)?.repo).toBe("a/published");
+    expect(claimNextQueued(db)).toBeNull();
+  });
+
   it("claims drain to empty and a dead scan's running rows are reclaimable", () => {
     seedQueue(db, ["a/one", "a/two"]);
     expect(claimNextQueued(db)).toBeTruthy();

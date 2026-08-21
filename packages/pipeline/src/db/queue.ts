@@ -1,6 +1,6 @@
-import { eq, and, asc, desc, lt } from "drizzle-orm";
+import { eq, and, asc, desc, lt, sql } from "drizzle-orm";
 import { tx, type Db } from "./client.js";
-import { queue, type QueueRow } from "./schema.js";
+import { queue, repositories, type QueueRow } from "./schema.js";
 
 /**
  * Re-entrant work queue over the corpus (§11.1). Every scan invocation seeds;
@@ -88,17 +88,25 @@ export function reclaimRunningQueue(db: Db): number {
  * concurrent claimers stay correct without a lock). The concurrent drain
  * claims levels 0-1 only; level-2 (exclusive) rows are claimed by the
  * exclusive pass after every worker has drained out, so they truly run alone.
+ *
+ * Claim order: repos with no published analysis first, then priority, then
+ * age. Every seed requeues the whole corpus, and an active repo's HEAD moves
+ * daily, so a rescan-first order re-spends hours per already-published repo
+ * while never-analyzed repos wait — the 2026-08 batch-2 import sat at 808
+ * analyzed for days because each relaunch re-walked the same top rows first.
+ * A repo's first analysis is worth more to the index than any refresh.
  */
 export function claimNextQueued(db: Db, which: "concurrent" | "exclusive" = "concurrent"): QueueRow | null {
   for (;;) {
     const next = db
-      .select()
+      .select({ queue })
       .from(queue)
+      .leftJoin(repositories, eq(repositories.repo, queue.repo))
       .where(
         and(eq(queue.status, "queued"), which === "exclusive" ? eq(queue.solo, 2) : lt(queue.solo, 2))
       )
-      .orderBy(desc(queue.priority), asc(queue.updatedAt))
-      .get();
+      .orderBy(sql`${repositories.analyzedSha} IS NOT NULL`, desc(queue.priority), asc(queue.updatedAt))
+      .get()?.queue;
     if (!next) return null;
     const claimed = db
       .update(queue)
