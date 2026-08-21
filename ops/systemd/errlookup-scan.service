@@ -1,0 +1,39 @@
+# Rendered by scripts/install-systemd.sh — @REPO_ROOT@, @USER@ and @PATH@
+# are substituted at install time. Edit here, then re-run the installer;
+# the copy in /etc/systemd/system is not the source of truth.
+[Unit]
+Description=err-lookup corpus scanner (batch analyze, export, deploy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Batch job, not a daemon: a normal exit means the drain finished, so there is
+# nothing to restart. Cadence comes from errlookup-scan.timer (and
+# scripts/scan-watchdog.sh restarts a drain that died with work left). The
+# previous Type=simple + Restart=always turned every clean exit into an
+# immediate respawn -- 140 runs in one day, saturating all 12 cores.
+Type=oneshot
+User=@USER@
+WorkingDirectory=@REPO_ROOT@
+Environment=PATH=@PATH@
+ExecStart=@REPO_ROOT@/scripts/scan-and-export.sh
+
+# A full drain runs for hours; oneshot would otherwise inherit the 90s default
+# and kill the batch mid-repo.
+TimeoutStartSec=infinity
+TimeoutStopSec=120
+
+# Hard ceiling so a runaway scan cannot starve sshd or the haam origin again.
+# TasksMax counts threads: 3 concurrent repos of node agents + lci index
+# servers + esbuild pools exceeded 256, and the pids controller rejected
+# forks (git clone "unable to create thread"). 2048 fits the real fan-out.
+# Nice alone did not do this -- it only yields when the CPU is otherwise idle.
+# MemoryMax also sizes V8's default heap (~limit/4): any node step that needs
+# more must set --max-old-space-size itself (the exporter does).
+Nice=10
+CPUQuota=400%
+MemoryMax=8G
+TasksMax=2048
+
+[Install]
+WantedBy=multi-user.target

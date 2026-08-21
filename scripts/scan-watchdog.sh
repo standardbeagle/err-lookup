@@ -7,7 +7,10 @@
 # it exits silently while a drain holds scan.lock, and otherwise relaunches
 # scan-and-export.sh — at most once per ERRLOOKUP_WATCHDOG_MIN_GAP_S (default
 # 3600) so a provider outage becomes one breaker trip per hour, not a thrash
-# loop that burns the queue through failed attempts.
+# loop that burns the queue through failed attempts. The relaunch goes through
+# errlookup-scan.service (ops/systemd/) so it runs under the same caps as the
+# timer-started drain; the timer itself (Persistent=true) already covers a
+# drain that died while a slot was missed.
 set -u -o pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -49,4 +52,14 @@ if [ -n "${ERRLOOKUP_UPDATE_URL:-}" ]; then
     || echo "$(date -u +%FT%TZ) notification delivery failed (webhook unreachable)" >>"$LOG"
 fi
 
-setsid nohup "$REPO_ROOT/scripts/scan-and-export.sh" >>"$LOG" 2>&1 </dev/null &
+# Relaunch through the unit so the drain gets the same caps (MemoryMax,
+# CPUQuota, TasksMax, Nice) as a timer-started one. A bare nohup here put the
+# relaunch in the user slice with no ceiling at all. --no-block: the oneshot
+# unit stays active for the whole drain. Requires the unit to be installed
+# (scripts/install-systemd.sh) and passwordless sudo for systemctl.
+if ! systemctl cat errlookup-scan.service >/dev/null 2>&1; then
+  echo "$(date -u +%FT%TZ) errlookup-scan.service not installed — run scripts/install-systemd.sh" >>"$LOG"
+  exit 1
+fi
+sudo -n systemctl start --no-block errlookup-scan.service >>"$LOG" 2>&1 \
+  || echo "$(date -u +%FT%TZ) systemctl start failed (exit $?)" >>"$LOG"

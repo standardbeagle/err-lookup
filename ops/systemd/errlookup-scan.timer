@@ -1,0 +1,13 @@
+[Unit]
+Description=err-lookup corpus scan cadence (4x daily, off-peak)
+
+[Timer]
+# Same cadence the crontab used (7 2,8,14,20), now the single scheduler.
+OnCalendar=*-*-* 02,08,14,20:07:00
+# A missed slot (machine asleep, or a drain still running at the slot) fires
+# once when it can rather than not at all.
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
