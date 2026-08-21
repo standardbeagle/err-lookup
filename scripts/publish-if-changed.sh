@@ -68,7 +68,10 @@ RUN_LOG="$LOG_DIR/publish-$(date -u +%Y%m%d-%H%M%S).log"
   # Export and the site build both resolve @errlookup/schema to its dist — a
   # pull alone leaves that stale (install does not build workspace deps).
   pnpm --filter @errlookup/schema build || exit 1
-  pnpm --filter @errlookup/pipeline dev export || exit 1
+  # Exporter holds the whole dataset in memory (2.8G RSS at 808 repos); the
+  # default heap (~4G here) runs out well before the corpus does. Keep in step
+  # with scan-and-export.sh.
+  NODE_OPTIONS=--max-old-space-size=6144 pnpm --filter @errlookup/pipeline dev export || exit 1
   "$REPO_ROOT/scripts/deploy-site.sh" || exit 1
   printf '%s' "$latest" > "$STATE_FILE"
   echo "=== publish done $(date -u +%FT%TZ)"

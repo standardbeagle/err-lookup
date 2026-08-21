@@ -46,7 +46,13 @@ RUN_LOG="$LOG_DIR/scan-$(date -u +%Y%m%d-%H%M%S).log"
   pnpm --filter @errlookup/pipeline dev scan "$CORPUS"
   scan_exit=$?
   echo "=== scan exit=$scan_exit"
-  pnpm --filter @errlookup/pipeline dev export
+  # The drain runs under errlookup-scan.service (MemoryMax=8G); V8 sizes its
+  # heap from the cgroup limit (~2G) and the exporter holds the whole dataset
+  # in memory (2.8G RSS at 808 repos / 153k errors), so the export died with
+  # "heap out of memory" at the end of every run while the uncapped cron
+  # publisher succeeded. Give the exporter an explicit heap; the limit below
+  # sits under the service cap with room for the DB mapping.
+  NODE_OPTIONS=--max-old-space-size=6144 pnpm --filter @errlookup/pipeline dev export
   export_exit=$?
   echo "=== export exit=$export_exit"
   if [ -x "$REPO_ROOT/scripts/deploy-site.sh" ]; then
