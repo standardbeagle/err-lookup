@@ -43,6 +43,14 @@ defaults {
     // credit rate, so a long unattended run holds between repos rather than
     // spending double for the same output.
     skip-peak true
+    // Half the source window, and the enclosing function's callers in its
+    // place. Blind A/B over 21 error sites in three repos (judge glm-5.3):
+    // B won 15, A won 4, 2 ties, on prompts 70-80% the size. Express carried
+    // no facts at all — lci gives no span for `res.status = function ...` —
+    // and the halved window still went 4-2-2 there, so the smaller window
+    // stands on its own rather than riding on the facts.
+    source-window 6
+    call-facts true
     // While never-analyzed repos remain queued, one analysis start in four
     // refreshes an already-published repo; the rest import new ones.
     rescan-share 0.25
