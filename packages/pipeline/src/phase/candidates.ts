@@ -148,12 +148,15 @@ const PATTERNS: Record<string, Pattern[]> = {
     { kind: "http", re: /\b(?:status|sendStatus|writeHead)\s*\(\s*[45]\d\d\b/ },
   ],
   py: [
-    { kind: "throw", re: /\braise\s+[A-Z][A-Za-z0-9_.]*\s*\(/ },
+    // No `\(` requirement: `raise ConfigError` with no arguments is as real an
+    // error as one with a message, and requiring the paren silently dropped it.
+    { kind: "throw", re: /\braise\s+[A-Z][A-Za-z0-9_.]*/ },
     { kind: "http", re: /\babort\s*\(\s*[45]\d\d\b/ },
   ],
   go: [
     { kind: "error_new", re: /\berrors\.New\s*\(/ },
     { kind: "error_new", re: /\bfmt\.Errorf\s*\(/ },
+    { kind: "error_new", re: /\berrors\.(?:Errorf|Wrapf?)\s*\(/ }, // pkg/errors
     { kind: "panic", re: /\bpanic\s*\(/ },
     { kind: "http", re: /\bhttp\.Error\s*\(/ },
   ],
@@ -164,9 +167,22 @@ const PATTERNS: Record<string, Pattern[]> = {
     { kind: "error_new", re: /\bError::new\s*\(/ },
     { kind: "panic", re: /\.expect\s*\(\s*"/ },
   ],
-  jvm: [{ kind: "throw", re: /\bthrow\s+new\s+[A-Z][A-Za-z0-9_.]*(?:Exception|Error)\s*\(/ }],
-  cs: [{ kind: "throw", re: /\bthrow\s+new\s+[A-Z][A-Za-z0-9_.]*Exception\s*\(/ }],
-  rb: [{ kind: "throw", re: /\braise\s+[A-Z][A-Za-z0-9_:]*[,(\s]/ }],
+  jvm: [
+    { kind: "throw", re: /\bthrow\s+new\s+[A-Z][A-Za-z0-9_.]*(?:Exception|Error)\s*\(/ },
+    // Kotlin and Scala construct without `new`, so the java-shaped pattern
+    // matched nothing in a .kt file — the family covers all three extensions.
+    { kind: "throw", re: /\bthrow\s+[A-Z][A-Za-z0-9_.]*(?:Exception|Error)\s*\(/ },
+  ],
+  cs: [{ kind: "throw", re: /\bthrow\s+new\s+[A-Z][A-Za-z0-9_.]*(?:Exception|Error)\s*\(/ }],
+  rb: [
+    // The trailing [,(\s] made this the emptiest family of all: it missed
+    // `raise FriendlyId::Error` at end of line and every `raise Foo.new(msg)`,
+    // so friendly_id — 7 raise sites in lib/ — extracted nothing and took the
+    // agentic crawl. Allow the dotted call and stop demanding a next char.
+    { kind: "throw", re: /\braise\s+[A-Z][A-Za-z0-9_:]*(?:\.new)?/ },
+    // Ruby's other everyday form: the message with no error class at all.
+    { kind: "throw", re: /\braise\s+["']/ },
+  ],
   php: [{ kind: "throw", re: /\bthrow\s+new\s+[A-Z\\][A-Za-z0-9_\\]*\s*\(/ }],
   // C and C++ have no single raise keyword, so the family is a set of report
   // idioms. nginx returned ZERO candidates on err/fprintf alone and fell back

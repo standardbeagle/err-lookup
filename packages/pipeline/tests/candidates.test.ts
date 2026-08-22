@@ -46,6 +46,29 @@ describe("builtin candidate extractor", () => {
     disposeRepo(dir);
   });
 
+  it("catches the raise/throw forms the families used to require punctuation for", () => {
+    const dir = tmpRepo("cand-forms-");
+    // Every line here was missed before: the ruby pattern demanded a character
+    // after the class name, the python one demanded an argument list, and the
+    // jvm one demanded java's `new`.
+    writeFileSync(
+      join(dir, "finder.rb"),
+      `def find(id)\n  raise FriendlyId::Error\nrescue\n  raise ActiveRecord::RecordNotFound.new(message)\nend\ndef check(n)\n  raise "n must be positive"\nend\n`
+    );
+    writeFileSync(join(dir, "conf.py"), `def load():\n    raise ConfigError\n`);
+    writeFileSync(join(dir, "Client.kt"), `fun open(p: String) {\n    throw IllegalArgumentException("path is empty")\n}\n`);
+    writeFileSync(join(dir, "wrap.go"), `func w(err error) error {\n\treturn errors.Wrapf(err, "reading %s", path)\n}\n`);
+
+    const c = extractCandidates(dir);
+    const linesFor = (file: string) => c.filter((s) => s.file === file).map((s) => s.line).sort((a, b) => a - b);
+    expect(linesFor("finder.rb")).toEqual([2, 4, 7]);
+    expect(linesFor("conf.py")).toEqual([2]);
+    expect(linesFor("Client.kt")).toEqual([2]);
+    expect(linesFor("wrap.go")).toEqual([2]);
+    expect(c.find((s) => s.file === "finder.rb" && s.line === 7)!.literal).toBe("n must be positive");
+    disposeRepo(dir);
+  });
+
   it("finds C and C++ error sites, including the project-local logger", () => {
     const dir = tmpRepo("cand-c-");
     writeFileSync(
