@@ -119,6 +119,33 @@ describe("runVerify chunking (size-independent)", () => {
     }
   });
 
+  it("prompts only for the records that have a gap, not their complete neighbours", async () => {
+    process.env.ERRLOOKUP_VERIFY_BATCH = "100";
+    try {
+      const prompts: string[] = [];
+      const p = new (class implements LlmProvider {
+        readonly name = "p";
+        async invoke(prompt: string, _o: InvokeOptions): Promise<ProviderResult> {
+          prompts.push(prompt);
+          return { ok: true, parsed: { patches: [] }, raw: '{"patches":[]}' };
+        }
+      })();
+      // 300 complete records with 5 gappy ones scattered through them. Chunking
+      // first put a gap in three of four chunks and shipped ~300 complete
+      // records with them; the gap filter sends one chunk of 5.
+      const records = Array.from({ length: 305 }, (_, i) =>
+        i % 61 === 60 ? gappy(i) : record({ id: (2000 + i).toString(16).padStart(16, "0") })
+      );
+      await runVerify("/nonexistent", records, { p }, cfg);
+
+      expect(prompts).toHaveLength(1);
+      const ids = [...prompts[0]!.matchAll(/id=([0-9a-f]{16})/g)].map((m) => m[1]!);
+      expect(ids).toHaveLength(5);
+    } finally {
+      delete process.env.ERRLOOKUP_VERIFY_BATCH;
+    }
+  });
+
   it("a failed chunk loses only its own patches", async () => {
     process.env.ERRLOOKUP_VERIFY_BATCH = "100";
     try {

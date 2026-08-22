@@ -41,12 +41,14 @@ export async function runVerify(
     hasSource: r.sourceCode !== null && r.sourceCode.trim().length > 0,
     hasDefense: r.handlingStrategy !== null || r.preventionTips.length > 0,
   }));
-  // The provider's only job here is filling gaps; a chunk whose compact view
-  // shows none would return zero patches by instruction. Skip those chunks —
-  // on a healthy run this makes verify free regardless of repo size.
-  const withGaps = chunk(compact, verifyBatchSize()).filter(
-    (c) => !c.every((r) => r.hasDoc && r.hasSolutions && r.hasSource && r.hasDefense)
-  );
+  // The provider's only job here is filling gaps, so only a record that HAS a
+  // gap earns a line in the prompt. Chunking first and keeping every chunk
+  // that held one gap carried up to 199 complete records along with it: gaps
+  // sit above 10% density in most repos, so nearly every chunk qualified and
+  // verify re-sent the whole repo. Filtering first cuts the live corpus's
+  // verify input from ~116k records to the ~33k that have a gap.
+  const gapped = compact.filter((r) => !(r.hasDoc && r.hasSolutions && r.hasSource && r.hasDefense));
+  const withGaps = chunk(gapped, verifyBatchSize());
   if (withGaps.length === 0) {
     onLog?.("verify: no gaps — provider calls skipped");
     return { patches: [], durationMs: Date.now() - started, providerUsed: "none", failedBatches: 0 };
