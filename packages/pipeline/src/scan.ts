@@ -30,6 +30,8 @@ export interface ScanOptions {
   onLog?: (repo: string, msg: string) => void;
   /** Override clone/ls-remote URLs (tests: local fixture paths). */
   cloneUrlFor?: (repo: string) => string | undefined;
+  /** Clock, so the runtime budget is testable without waiting it out. */
+  now?: () => number;
 }
 
 /** How long a zero-error analysis suppresses re-scans (default 14 days). */
@@ -62,6 +64,12 @@ export interface ScanSummary {
   leftQueued: number;
   /** Requeued without a failed mark because the host, not the repo, was sick. */
   infraRequeued: number;
+  /**
+   * The drain stopped claiming because it reached its runtime budget, with
+   * work still queued. The caller is expected to exit so a fresh process —
+   * running whatever code is on disk by then — takes over.
+   */
+  stoppedForRestart: boolean;
   seeded: { added: number; requeued: number };
 }
 
@@ -95,7 +103,16 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
   const log = opts.onLog ?? (() => {});
 
   const seeded = seedQueue(db, opts.corpus);
-  const summary: ScanSummary = { ok: 0, failed: 0, unchanged: 0, dampened: 0, leftQueued: 0, infraRequeued: 0, seeded };
+  const summary: ScanSummary = {
+    ok: 0,
+    failed: 0,
+    unchanged: 0,
+    dampened: 0,
+    leftQueued: 0,
+    infraRequeued: 0,
+    stoppedForRestart: false,
+    seeded,
+  };
   if (opts.seedOnly) return summary;
 
   // Under the drain lock any `running` row belongs to a dead scan.
@@ -104,6 +121,14 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
 
   let consecutiveFailures = 0;
   let tripped = false;
+  // Runtime budget: a drain that runs for days keeps executing the code it
+  // started with, so a deploy only reaches production when the process ends.
+  // Rather than wait for a natural end, stop claiming after the budget and
+  // let the process exit — in-flight repos finish first, and the supervisor
+  // starts a fresh one on current code. 0 disables the budget.
+  const now = opts.now ?? Date.now;
+  const deadline = cfg.defaults.maxRuntimeMinutes > 0 ? now() + cfg.defaults.maxRuntimeMinutes * 60_000 : Infinity;
+  let budgetSpent = false;
   // Analysis starts by kind, shared by all workers. Counted at claim time
   // (synchronously, so concurrent workers cannot all pick the same kind off a
   // stale count) and given back when the claim settles without an analysis —
@@ -134,7 +159,12 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
 
   const worker = async (which: "concurrent" | "exclusive"): Promise<void> => {
     for (;;) {
-      if (tripped) return;
+      if (tripped || budgetSpent) return;
+      if (now() >= deadline) {
+        budgetSpent = true;
+        log("*", `runtime budget of ${cfg.defaults.maxRuntimeMinutes}min reached — finishing in-flight repos, then exiting for a fresh drain`);
+        return;
+      }
       const item = claimNextQueued(db, which, pickClaimKind(started, cfg.defaults.rescanShare));
       if (!item) return;
       const repo = item.repo;
@@ -233,5 +263,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
   }
 
   summary.leftQueued = queueByStatus(db, "queued").length;
+  // Only worth a restart if there is something for the next drain to claim.
+  summary.stoppedForRestart = budgetSpent && summary.leftQueued > 0;
   return summary;
 }

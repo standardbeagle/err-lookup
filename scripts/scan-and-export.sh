@@ -40,12 +40,37 @@ if [ "${free_gb:-0}" -lt "$MIN_FREE_GB" ]; then
 fi
 
 RUN_LOG="$LOG_DIR/scan-$(date -u +%Y%m%d-%H%M%S).log"
+restart_wanted=0
 {
-  echo "=== scan run start $(date -u +%FT%TZ) corpus=$CORPUS"
+  echo "=== scan run start $(date -u +%FT%TZ) corpus=$CORPUS code=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
   cd "$REPO_ROOT"
   pnpm --filter @errlookup/pipeline dev scan "$CORPUS"
   scan_exit=$?
   echo "=== scan exit=$scan_exit"
+  # 75 = the drain hit its runtime budget with work still queued. It executes
+  # the code it was started with, so a long drain silently pins production to
+  # a stale deploy; ending the process is what picks up a new one. Export and
+  # deploy are skipped on this path — the hourly publisher covers publishing,
+  # and re-exporting the whole dataset between cycles would cost more than it
+  # ships.
+  if [ "$scan_exit" -eq 75 ]; then
+    restart_wanted=1
+    echo "=== restart requested (runtime budget); skipping export/deploy this cycle"
+    echo "=== scan run end $(date -u +%FT%TZ)"
+  fi
+} >>"$RUN_LOG" 2>&1
+
+if [ "$restart_wanted" -eq 1 ]; then
+  # Exit with the same code so the supervisor restarts us: the scan unit maps
+  # 75 to a restart and re-runs its ExecStartPre pull, so the next drain
+  # starts on whatever has been deployed since this one began. Dropping the
+  # drain lock first keeps the successor from racing us for it.
+  exec 9>&-
+  ls -1t "$LOG_DIR"/scan-*.log 2>/dev/null | tail -n +31 | xargs -r rm --
+  exit 75
+fi
+
+{
   # The drain runs under errlookup-scan.service (MemoryMax=8G); V8 sizes its
   # heap from the cgroup limit (~2G) and the exporter holds the whole dataset
   # in memory (2.8G RSS at 808 repos / 153k errors), so the export died with

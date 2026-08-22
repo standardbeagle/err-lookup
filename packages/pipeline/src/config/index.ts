@@ -34,6 +34,12 @@ export interface ErrlookupConfig {
     /** Lines of source either side of an error in the analysis prompt. */
     sourceWindow: number;
     /**
+     * Minutes a drain claims new repos for before it stops and exits, so the
+     * supervisor can start one on freshly deployed code. In-flight repos
+     * still finish. 0 = run until the queue empties, however long that takes.
+     */
+    maxRuntimeMinutes: number;
+    /**
      * Attach the enclosing function and its callers, read from lci's symbol
      * index, to each error in the analysis prompt. Costs no provider tokens to
      * produce; costs roughly a fifth of a source window to send.
@@ -75,6 +81,7 @@ export const DEFAULT_CONFIG: ErrlookupConfig = {
     providerMaxConcurrent: 0,
     analysisBatchSize: 20,
     sourceWindow: 12,
+    maxRuntimeMinutes: 240,
     callFacts: false,
     skipPeak: false,
     delayBetweenPhasesMs: 5_000,
@@ -140,6 +147,7 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
         providerMaxConcurrent: Math.max(0, Math.floor(asNumber(childByName(node, "provider-max-concurrent")?.values[0], 0))),
         analysisBatchSize: asConcurrency(childByName(node, "analysis-batch-size")?.values[0], 20),
         sourceWindow: asConcurrency(childByName(node, "source-window")?.values[0], 12),
+        maxRuntimeMinutes: asNumber(childByName(node, "max-runtime-minutes")?.values[0], 240),
         callFacts: childByName(node, "call-facts")?.values[0] === true,
         skipPeak: childByName(node, "skip-peak")?.values[0] === true,
         delayBetweenPhasesMs: asNumber(childByName(node, "delay-between-phases-ms")?.values[0], 5_000),

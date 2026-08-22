@@ -88,6 +88,7 @@ describe("config mapping", () => {
       providerMaxConcurrent: 0,
       analysisBatchSize: 20,
       sourceWindow: 12,
+      maxRuntimeMinutes: 240,
       callFacts: false,
       skipPeak: false,
       delayBetweenPhasesMs: 5_000,

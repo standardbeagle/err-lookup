@@ -320,8 +320,16 @@ async function main(): Promise<void> {
       } else {
         console.log(
           `\nscan done: ${summary.ok} ok, ${summary.unchanged} unchanged, ${summary.failed} failed` +
-            (summary.leftQueued > 0 ? `, ${summary.leftQueued} left queued (breaker)` : "")
+            (summary.leftQueued > 0 ? `, ${summary.leftQueued} left queued` : "")
         );
+        if (summary.stoppedForRestart) {
+          // 75 (EX_TEMPFAIL) means "work remains, start me again": the wrapper
+          // and the systemd unit both restart on exactly this code, which is
+          // how a deploy reaches a drain that would otherwise run for days.
+          console.log(`scan stopped for restart with ${summary.leftQueued} queued — exiting 75`);
+          raw.close();
+          process.exit(75);
+        }
       }
     } finally {
       raw.close();

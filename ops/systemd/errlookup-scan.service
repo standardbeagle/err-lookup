@@ -5,23 +5,45 @@
 Description=err-lookup corpus scanner (batch analyze, export, deploy)
 After=network-online.target
 Wants=network-online.target
+# Ceiling on the restart rule below: a drain that keeps dying (OOM kill, a bad
+# deploy) stops rather than respawning forever. Six an hour still leaves room
+# for the ordinary budget cycle, which fires once every few hours.
+StartLimitIntervalSec=1h
+StartLimitBurst=6
 
 [Service]
 # Batch job, not a daemon: a normal exit means the drain finished, so there is
 # nothing to restart. Cadence comes from errlookup-scan.timer (and
 # scripts/scan-watchdog.sh restarts a drain that died with work left). The
-# previous Type=simple + Restart=always turned every clean exit into an
-# immediate respawn -- 140 runs in one day, saturating all 12 cores.
-Type=oneshot
+# original Type=simple + Restart=always turned every clean exit into an
+# immediate respawn -- 140 runs in one day, saturating all 12 cores. The
+# restart rule below is the narrow version of that: exit 75 and nothing else.
+#
+# Why restart at all: a drain executes the code it was started with, so one
+# that runs for days pins production to a stale deploy. The drain now stops
+# claiming after defaults.max-runtime-minutes and exits 75 with work queued;
+# systemd runs ExecStartPre (which pulls) and starts a fresh drain on the
+# deployed code. Type=oneshot cannot carry Restart=, hence Type=simple.
+Type=simple
 User=@USER@
 WorkingDirectory=@REPO_ROOT@
 Environment=PATH=@PATH@
+# Pick up deploys without anyone logging in. Leading '-' so a failed pull
+# (offline, or a dirty tree) leaves the drain running last-known-good code
+# instead of blocking the run entirely.
+ExecStartPre=-/usr/bin/git -C @REPO_ROOT@ pull --ff-only
 ExecStart=@REPO_ROOT@/scripts/scan-and-export.sh
+Restart=on-failure
+RestartForceExitStatus=75
+# Any other failure is a real one: the disk-floor abort exits 1 and must not
+# spin. Only 75 means "work remains, start me again".
+RestartPreventExitStatus=1
+RestartSec=15
 
-# A full drain runs for hours; oneshot would otherwise inherit the 90s default
-# and kill the batch mid-repo.
-TimeoutStartSec=infinity
-TimeoutStopSec=120
+# In-flight repos finish before the drain exits, and a repo can take an hour,
+# so stopping must not be rushed: a SIGKILL mid-analysis loses the batches
+# that were still running (completed ones are checkpointed).
+TimeoutStopSec=600
 
 # Hard ceiling so a runaway scan cannot starve sshd or the haam origin again.
 # TasksMax counts threads: 3 concurrent repos of node agents + lci index

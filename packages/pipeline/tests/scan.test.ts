@@ -51,9 +51,11 @@ async function makeLocalRepo(): Promise<{ path: string; sha: string }> {
   return { path: dir, sha: stdout.trim() };
 }
 
-function makeCfg() {
+function makeCfg(extraDefaults: string[] = []) {
   return mapConfig(
-    parseKdl(['provider "claude" { command "claude" }', "defaults {", '  primary "claude"', "}"].join("\n"))
+    parseKdl(
+      ['provider "claude" { command "claude" }', "defaults {", '  primary "claude"', ...extraDefaults, "}"].join("\n")
+    )
   );
 }
 
@@ -208,6 +210,69 @@ describe("re-entrant queue", () => {
     // Crash simulation: rows stuck in running.
     expect(reclaimRunningQueue(db)).toBe(2);
     expect(queueByStatus(db, "queued")).toHaveLength(2);
+    close();
+  });
+});
+
+describe("runtime budget", () => {
+  /** A clock that is past the budget from the second reading on. */
+  function clockPastBudgetAfterFirstRead(): () => number {
+    let reads = 0;
+    return () => (reads++ === 0 ? 1_000_000 : 1_000_000 + 10 * 60_000);
+  }
+
+  it("stops claiming at the budget and asks to be restarted, leaving the queue intact", async () => {
+    const logs: string[] = [];
+    const summary = await runScan({
+      db,
+      cfg: makeCfg(["  max-runtime-minutes 1"]),
+      corpus: ["a/one", "b/two"],
+      // A provider map that would throw if touched: nothing may be analyzed.
+      providers: {},
+      now: clockPastBudgetAfterFirstRead(),
+      onLog: (_repo, msg) => logs.push(msg),
+    });
+
+    expect(summary.ok).toBe(0);
+    expect(summary.stoppedForRestart).toBe(true);
+    // The work is still there for the next drain — the budget is a handover,
+    // not a failure, so nothing is marked failed or skipped.
+    expect(summary.leftQueued).toBe(2);
+    expect(summary.failed).toBe(0);
+    expect(queueByStatus(db, "queued")).toHaveLength(2);
+    expect(logs.some((m) => m.includes("runtime budget"))).toBe(true);
+    close();
+  });
+
+  it("does not ask for a restart when the queue drained inside the budget", async () => {
+    const local = await makeLocalRepo();
+    const summary = await runScan({
+      db,
+      cfg: makeCfg(["  max-runtime-minutes 600"]),
+      corpus: ["sindresorhus/is"],
+      providers: makeProviders(),
+      cloneUrlFor: () => local.path,
+      onLog: () => {},
+    });
+
+    expect(summary.ok).toBe(1);
+    expect(summary.stoppedForRestart).toBe(false);
+    expect(summary.leftQueued).toBe(0);
+    close();
+  });
+
+  it("runs to the end of the queue when the budget is disabled", async () => {
+    const summary = await runScan({
+      db,
+      cfg: makeCfg(["  max-runtime-minutes 0"]),
+      corpus: ["a/one"],
+      providers: {},
+      // A clock far past any deadline: with the budget off it must not matter.
+      now: () => Number.MAX_SAFE_INTEGER,
+      onLog: () => {},
+    });
+
+    expect(summary.stoppedForRestart).toBe(false);
     close();
   });
 });
