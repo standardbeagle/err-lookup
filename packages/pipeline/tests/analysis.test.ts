@@ -33,6 +33,8 @@ class RecordingProvider implements LlmProvider {
     private readonly opts: {
       delayMs?: number;
       failPrompts?: (p: string) => boolean;
+      /** Failure kind for failPrompts hits — only "timeout" is size-fixable. */
+      failKind?: "empty" | "timeout";
       /** Hold every call open until releaseAll() — lets a test observe true
        *  peak concurrency instead of racing the scheduler. */
       holdOpen?: boolean;
@@ -58,7 +60,7 @@ class RecordingProvider implements LlmProvider {
         await new Promise<void>((resolve) => this.held.push(resolve));
       }
       if (this.opts.failPrompts?.(prompt)) {
-        return { ok: false, kind: "empty", error: "simulated batch failure" };
+        return { ok: false, kind: this.opts.failKind ?? "empty", error: "simulated batch failure" };
       }
       // Answer for exactly the indices this prompt lists.
       const indices = [...prompt.matchAll(/^\[(\d+)\]/gm)].map((m) => Number(m[1]));
@@ -275,6 +277,52 @@ describe("provider rate-limit gate", () => {
   });
 });
 
+describe("runAnalysis oversized-batch recovery", () => {
+  /** Count the errors a prompt lists — the fixture fails only oversized ones. */
+  const listed = (prompt: string): number => [...prompt.matchAll(/^\[(\d+)\]/gm)].length;
+
+  it("halves a timed-out batch instead of abandoning its errors", async () => {
+    const p = new RecordingProvider("bulk", { failKind: "timeout", failPrompts: (t) => listed(t) > 10 });
+    const cfg = cfgFrom(["  analysis-batch-size 20"]);
+    const logs: string[] = [];
+    const res = await runAnalysis(FAKE_REPO, discovered(20), { bulk: p }, cfg, BOTH, undefined, (m) => logs.push(m));
+
+    // One full-size attempt (a timeout is not retried in place), then one
+    // call per half — the same spend as the two full-size attempts it replaces.
+    expect(p.prompts.map(listed)).toEqual([20, 10, 10]);
+    expect(res.failedBatches).toBe(0);
+    expect(res.enrichedByIndex.size).toBe(20);
+    expect(res.defenseByIndex.size).toBe(20);
+    // Indices stay absolute through the split — the second half must not
+    // restart at 0, or the assembler would key its answers onto errors 0-9.
+    expect(res.defenseByIndex.has(19)).toBe(true);
+    expect(logs.some((l) => l.includes("timed out — retrying as halves"))).toBe(true);
+  });
+
+  it("does not split a batch the provider refused for any other reason", async () => {
+    // A rate limit is the common case: splitting would spend more of the same
+    // limit to get the same refusal.
+    const p = new RecordingProvider("bulk", { failPrompts: () => true });
+    const cfg = cfgFrom(["  analysis-batch-size 20"]);
+    const res = await runAnalysis(FAKE_REPO, discovered(20), { bulk: p }, cfg, BOTH);
+
+    expect(p.prompts.map(listed)).toEqual([20, 20]);
+    expect(res.failedBatches).toBe(1);
+  });
+
+  it("splits once, never recursively — a dead batch cannot outspend its old retry", async () => {
+    const p = new RecordingProvider("bulk", { failKind: "timeout", failPrompts: () => true });
+    const cfg = cfgFrom(["  analysis-batch-size 20"]);
+    const res = await runAnalysis(FAKE_REPO, discovered(20), { bulk: p }, cfg, BOTH);
+
+    // 20 → 10 + 10 and no further: halves that time out again are given up,
+    // capping the spend at 40 errors' worth — what two full-size attempts cost
+    // before this existed.
+    expect(p.prompts.map(listed)).toEqual([20, 10, 10]);
+    expect(res.failedBatches).toBe(2);
+  });
+});
+
 describe("runAnalysis batch checkpointing", () => {
   const memCkpt = () => {
     const store = new Map<string, string>();
@@ -293,6 +341,23 @@ describe("runAnalysis batch checkpointing", () => {
     expect(resumed.prompts).toHaveLength(0);
     expect(b.enrichedByIndex.size).toBe(25);
     expect(b.defenseByIndex.size).toBe(25);
+  });
+
+  it("resumes a split batch at the halves' size, not the size that timed out", async () => {
+    const ckpt = memCkpt();
+    const cfg = cfgFrom(["  analysis-batch-size 20"]);
+    const listed = (prompt: string): number => [...prompt.matchAll(/^\[(\d+)\]/gm)].length;
+    const first = new RecordingProvider("bulk", { failKind: "timeout", failPrompts: (t) => listed(t) > 10 });
+    await runAnalysis(FAKE_REPO_B, discovered(20), { bulk: first }, cfg, BOTH, undefined, undefined, ckpt);
+    expect(first.prompts.map(listed)).toEqual([20, 10, 10]);
+
+    // The parent key carries the halves' merged answer, so the resume never
+    // re-pays for the oversized call that failed.
+    const resumed = new RecordingProvider("bulk", { failKind: "timeout", failPrompts: (t) => listed(t) > 10 });
+    const b = await runAnalysis(FAKE_REPO_B, discovered(20), { bulk: resumed }, cfg, BOTH, undefined, undefined, ckpt);
+    expect(resumed.prompts).toHaveLength(0);
+    expect(b.enrichedByIndex.size).toBe(20);
+    expect(b.defenseByIndex.size).toBe(20);
   });
 
   it("retries failed batches on resume instead of reusing the failure", async () => {
