@@ -24,7 +24,8 @@ function nextOutputFile(cwd: string): string {
  * surfaces "AI_APICallError: Rate limit reached for requests" through the ACP
  * error channel. An immediate retry spends more of the same limit and keeps
  * the account pinned there, so runProvider pauses before retrying these;
- * other failure kinds (parse, spawn, timeout) still retry at once.
+ * other failure kinds (parse, spawn, empty) still retry at once — except a
+ * timeout, which is not retried at all.
  */
 const RATE_LIMIT_RE = /rate.?limit|too many requests|\b429\b/i;
 
@@ -72,6 +73,7 @@ export interface RunResult {
 /**
  * Run a single LLM invocation with retry + fallback (§4.1):
  * primary → (on failure) retry once → (still failing) fallback → record failure.
+ * A timeout skips the retry: see the break below.
  *
  * `providers` is the resolved map (name → LlmProvider); the caller wires fixtures
  * in tests and real SpawningProviders in production.
@@ -108,6 +110,12 @@ export async function runProvider(
       const r = await primary.invoke(attemptPrompt, attemptOpts);
       if (r.ok) return { parsed: r.parsed, raw: r.raw, providerUsed: primary.name };
       lastFailure = r;
+      // A timeout means the call ran its whole budget and was killed. An
+      // identical second attempt spends the same input tokens to be killed
+      // again; what fixes an over-large call is the caller splitting its
+      // batch, which only happens once this returns. Other kinds (spawn,
+      // parse, empty, rate limit) are transient enough to retry in place.
+      if (r.kind === "timeout") break;
     }
 
     // Fallback (single attempt). No backoff here: the fallback is a different

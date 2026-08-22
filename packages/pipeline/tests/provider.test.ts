@@ -124,6 +124,38 @@ describe("runProvider retry + fallback", () => {
     expect(calls).toBe(2);
   });
 
+  it("does not repeat a timed-out call at the same size", async () => {
+    let calls = 0;
+    const providers: Record<string, LlmProvider> = {
+      p: {
+        name: "p",
+        async invoke() {
+          calls++;
+          return { ok: false as const, kind: "timeout" as const, error: "p exceeded 600000ms" };
+        },
+      },
+    };
+    await expect(runProvider("q", { cwd: "." }, providers, makeCfg("p"))).rejects.toBeInstanceOf(ProviderError);
+    // One attempt, not two: the second would spend the same input tokens over
+    // the same budget to be killed again. The caller splits its batch instead.
+    expect(calls).toBe(1);
+  });
+
+  it("still reaches the fallback after a timeout", async () => {
+    const fallbackFx = new FixtureProvider("f", fx("provider-stdout-clean.json"));
+    const providers: Record<string, LlmProvider> = {
+      p: {
+        name: "p",
+        async invoke() {
+          return { ok: false as const, kind: "timeout" as const, error: "p exceeded 600000ms" };
+        },
+      },
+      f: fallbackFx,
+    };
+    const res = await runProvider("q", { cwd: "." }, providers, makeCfg("p", "f"));
+    expect(res.providerUsed).toBe("f");
+  });
+
   it("falls back when primary fails twice", async () => {
     const cfg = makeCfg("p", "f");
     const providers: Record<string, LlmProvider> = {
