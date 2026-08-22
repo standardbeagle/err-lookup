@@ -233,7 +233,10 @@ export function analysisPrompt(
       // Who reaches this code is what triggerScenarios is asking for, and it
       // is the one thing the source window cannot show.
       const reached = f
-        ? `\nRAISED IN: ${f.fn}${f.exported ? " (public)" : ""}${f.callers.length ? ` — called by: ${f.callers.join(", ")}` : ""}`
+        ? `\n${f.role === "declared-as" ? "DECLARED AS" : "RAISED IN"}: ${f.symbol}${f.exported ? " (public)" : ""}` +
+          (f.reachedBy.length
+            ? ` — ${f.role === "declared-as" ? "returned by" : "called by"}: ${f.reachedBy.join(", ")}`
+            : "")
         : "";
       const src = sources?.[i];
       return src ? `${head}${reached}\nSOURCE:\n${src}\n---` : `${head}${reached}`;

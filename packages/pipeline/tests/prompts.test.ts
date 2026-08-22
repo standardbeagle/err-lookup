@@ -76,8 +76,8 @@ describe("analysisPrompt call facts", () => {
 
   it("names the enclosing function and its callers for each error", () => {
     const prompt = analysisPrompt(errors, 0, need, ["src line", "src line"], [
-      { fn: "LoadConfig", exported: true, callers: ["New", "main"] },
-      { fn: "parsePort", exported: false, callers: [] },
+      { symbol: "LoadConfig", exported: true, role: "raised-in", reachedBy: ["New", "main"] },
+      { symbol: "parsePort", exported: false, role: "raised-in", reachedBy: [] },
     ]);
 
     // triggerScenarios asks which API calls reach the error — the callers are
@@ -86,6 +86,17 @@ describe("analysisPrompt call facts", () => {
     // Unexported and uncalled: still worth saying which function raises it.
     expect(prompt).toContain("RAISED IN: parsePort");
     expect(prompt).not.toContain("parsePort (public)");
+  });
+
+  it("says who returns a declared error value, not who calls its declaration", () => {
+    // A package-level `var ErrX = errors.New(...)` has no caller — the useful
+    // fact is which functions hand it back to the caller.
+    const prompt = analysisPrompt(errors.slice(0, 1), 0, need, ["src line"], [
+      { symbol: "ErrConvertToMapString", exported: true, role: "declared-as", reachedBy: ["setFormMap"] },
+    ]);
+
+    expect(prompt).toContain("DECLARED AS: ErrConvertToMapString (public) — returned by: setFormMap");
+    expect(prompt).not.toContain("called by");
   });
 
   it("says nothing when the facts are missing, rather than an empty label", () => {

@@ -33,16 +33,53 @@ describe("collectCallFacts", () => {
     // Skip only when the binary is genuinely absent — a resolution that
     // silently returns nothing is the failure this test exists to catch.
     if (!logs.some((l) => l.includes("call facts unavailable"))) {
-      expect(site?.fn).toBe("LoadConfig");
+      expect(site?.symbol).toBe("LoadConfig");
+      expect(site?.role).toBe("raised-in");
       expect(site?.exported).toBe(true);
-      expect(site?.callers).toContain("New");
+      expect(site?.reachedBy).toContain("New");
+    }
+    disposeRepo(dir);
+  });
+
+  it("resolves a package-level error value through its references", () => {
+    const dir = tmpRepo("callfacts-declared-");
+    writeFileSync(
+      join(dir, "errs.go"),
+      [
+        "package errs",
+        "",
+        "var (",
+        "\t// ErrNoPath is returned when the path is empty.",
+        '\tErrNoPath = errors.New("config path is empty")',
+        ")",
+        "",
+        "func LoadConfig(path string) error {",
+        '\tif path == "" {',
+        "\t\treturn ErrNoPath",
+        "\t}",
+        "\treturn nil",
+        "}",
+        "",
+      ].join("\n")
+    );
+    const logs: string[] = [];
+
+    // Go's grouped `var (...)` members carry no lci symbol, and they are where
+    // libraries keep their error values — the name comes from the line itself.
+    const facts = collectCallFacts(dir, [{ file: "errs.go", line: 5 }], (m) => logs.push(m));
+    const site = facts.get("errs.go:5");
+
+    if (!logs.some((l) => l.includes("call facts unavailable"))) {
+      expect(site?.symbol).toBe("ErrNoPath");
+      expect(site?.role).toBe("declared-as");
+      expect(site?.reachedBy).toContain("LoadConfig");
     }
     disposeRepo(dir);
   });
 
   it("returns no facts, and does not throw, when a site has no enclosing symbol", () => {
     const dir = tmpRepo("callfacts-empty-");
-    writeFileSync(join(dir, "notes.go"), "package notes\n\nvar x = 1\n");
+    writeFileSync(join(dir, "notes.go"), "package notes\n\n// nothing declared here\n");
     const logs: string[] = [];
 
     const facts = collectCallFacts(dir, [{ file: "notes.go", line: 3 }], (m) => logs.push(m));
