@@ -25,15 +25,61 @@ interface JsonRpcMessage {
  * and tool permission requests are auto-allowed (the agent must read the repo and
  * write the output file). The agent's text chunks are collected as `raw`.
  */
+/**
+ * Tools the agent may use, and nothing else. opencode puts its whole toolset's
+ * schemas in the system prompt of every request, and that is most of what a
+ * call costs before our prompt is read at all: measured against
+ * kimi-for-coding/k3, a five-word prompt costs 13.1k context tokens with the
+ * default toolset and 8.9k with just these two — 4.2k saved on every call of
+ * every phase, for tools no phase uses.
+ *
+ * The two that stay are load-bearing: `write` delivers the JSON to the output
+ * file (see provider/run.ts), and `read` is the fallback the discovery and
+ * analysis prompts offer when an embedded source region is not enough.
+ */
+const PIPELINE_TOOLS = {
+  bash: false,
+  edit: false,
+  write: true,
+  read: true,
+  grep: false,
+  glob: false,
+  list: false,
+  patch: false,
+  todowrite: false,
+  todoread: false,
+  webfetch: false,
+  task: false,
+} as const;
+
+/**
+ * Tool policy actually sent, with an override hook for measurement:
+ * ERRLOOKUP_ACP_TOOLS='{"read":false}' merges over the defaults. Step count is
+ * what a policy really controls — a call that reads three files pays for the
+ * whole context four times — so being able to A/B a policy without editing
+ * code is worth the four lines.
+ */
+function toolPolicy(): Record<string, boolean> {
+  const base: Record<string, boolean> = { ...PIPELINE_TOOLS };
+  const raw = process.env.ERRLOOKUP_ACP_TOOLS;
+  if (!raw) return base;
+  try {
+    return { ...base, ...(JSON.parse(raw) as Record<string, boolean>) };
+  } catch {
+    return base;
+  }
+}
+
 export class AcpProvider implements LlmProvider {
   constructor(readonly name: string, private readonly cfg: ProviderConfig) {}
 
   async invoke(prompt: string, opts: InvokeOptions): Promise<ProviderResult> {
     const timeoutMs = opts.timeoutMs ?? this.cfg.timeoutMs;
     const env: NodeJS.ProcessEnv = { ...process.env };
-    if (this.cfg.model) {
-      env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ model: this.cfg.model });
-    }
+    env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+      ...(this.cfg.model ? { model: this.cfg.model } : {}),
+      agent: { build: { tools: toolPolicy() } },
+    });
 
     let child: ChildProcess;
     try {
