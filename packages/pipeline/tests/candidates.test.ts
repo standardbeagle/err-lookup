@@ -44,6 +44,37 @@ describe("builtin candidate extractor", () => {
     disposeRepo(dir);
   });
 
+  it("finds C and C++ error sites, including the project-local logger", () => {
+    const dir = tmpRepo("cand-c-");
+    writeFileSync(
+      join(dir, "server.c"),
+      `static void f(ngx_cycle_t *cycle) {\n` +
+        `    ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,\n` +
+        `                  "bind() to %V failed", &ls[i].addr_text);\n` +
+        `    assert(cycle != NULL);\n}\n`
+    );
+    writeFileSync(
+      join(dir, "io.cc"),
+      `void g(FILE *f) {\n  if (!f) throw std::runtime_error("cannot open config file");\n  perror("read failed");\n}\n`
+    );
+    writeFileSync(join(dir, "util.h"), `static void h(void) { fprintf(stderr, "out of memory"); }\n`);
+
+    const c = extractCandidates(dir);
+    const at = (file: string) => c.filter((s) => s.file === file);
+
+    // The logger call nginx and most C libraries report through — the family
+    // used to cover only err()/fprintf(), which nginx never calls.
+    expect(at("server.c").map((s) => s.kind)).toEqual(["error_log"]);
+    expect(at("server.c")[0]!.line).toBe(2);
+    // An internal assertion is not a user-facing error and must not be one.
+    expect(at("server.c").some((s) => s.snippet.includes("assert("))).toBe(false);
+    // C++ constructs the exception in place: no `new` to key on.
+    expect(at("io.cc").map((s) => s.kind).sort()).toEqual(["error_print", "throw"]);
+    expect(at("io.cc").find((s) => s.kind === "throw")!.literal).toBe("cannot open config file");
+    expect(at("util.h").map((s) => s.kind)).toEqual(["error_print"]);
+    disposeRepo(dir);
+  });
+
   it("counts source files under the same exclusion rules as extraction", () => {
     const dir = fixtureRepo();
     // index.js, api.py, main.go, lib.rs — index.test.js and node_modules excluded

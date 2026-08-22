@@ -150,9 +150,23 @@ const PATTERNS: Record<string, Pattern[]> = {
   cs: [{ kind: "throw", re: /\bthrow\s+new\s+[A-Z][A-Za-z0-9_.]*Exception\s*\(/ }],
   rb: [{ kind: "throw", re: /\braise\s+[A-Z][A-Za-z0-9_:]*[,(\s]/ }],
   php: [{ kind: "throw", re: /\bthrow\s+new\s+[A-Z\\][A-Za-z0-9_\\]*\s*\(/ }],
+  // C and C++ have no single raise keyword, so the family is a set of report
+  // idioms. nginx returned ZERO candidates on err/fprintf alone and fell back
+  // to the whole-repo agentic crawl — the most expensive discovery mode —
+  // because it reports through ngx_log_error, like most C libraries report
+  // through a project-local logger. assert() is deliberately absent: an
+  // internal assertion is not an error the library's users can hit.
   c: [
     { kind: "error_print", re: /\b(?:errx?|warnx?)\s*\(/ },
     { kind: "error_print", re: /\bfprintf\s*\(\s*stderr\b/ },
+    { kind: "error_print", re: /\bperror\s*\(\s*"/ },
+    // C++ throws construct in place — no `new`, unlike the jvm/cs families.
+    { kind: "throw", re: /\bthrow\s+(?:std::)?[A-Za-z_][A-Za-z0-9_:]*\s*\(/ },
+    // Project-local error loggers: ngx_log_error, apr_log_error, LOG_ERROR.
+    { kind: "error_log", re: /\b\w*log_error\s*\(/ },
+    { kind: "error_log", re: /\b\w*LOG_ERROR\s*\(/ },
+    { kind: "error_log", re: /\belog\s*\(\s*(?:ERROR|FATAL|PANIC)\b/ }, // postgres
+    { kind: "error_log", re: /\bg_(?:error|critical|warning)\s*\(/ }, // glib
   ],
 };
 
@@ -165,7 +179,7 @@ const EXT_TO_FAMILY: Record<string, string> = {
   ".cs": "cs",
   ".rb": "rb",
   ".php": "php",
-  ".c": "c", ".cc": "c", ".cpp": "c", ".h": "c", ".hpp": "c",
+  ".c": "c", ".cc": "c", ".cpp": "c", ".cxx": "c", ".h": "c", ".hpp": "c", ".hh": "c", ".hxx": "c",
 };
 
 const STRING_LITERAL = /["'`]((?:[^"'`\\]|\\.){4,200})["'`]/;
