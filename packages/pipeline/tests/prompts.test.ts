@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { candidateDiscoveryPrompt, type CandidatePrompt } from "../src/phase/prompts.js";
+import { analysisPrompt, candidateDiscoveryPrompt, type CandidatePrompt } from "../src/phase/prompts.js";
 
 function site(file: string, line: number, start: number, lines: string[], snippet = "throw"): CandidatePrompt {
   return { file, line, kind: "throw", snippet, literal: null, context: { start, lines } };
@@ -64,5 +64,33 @@ describe("candidateDiscoveryPrompt source regions", () => {
     expect(prompt).toContain('"file":"src/c.js"');
     // The instructions must tell the model what to do about a missing region.
     expect(prompt).toContain("has no region");
+  });
+});
+
+describe("analysisPrompt call facts", () => {
+  const errors = [
+    { message: "config missing", type: "exception", file: "src/a.go", line: 12 },
+    { message: "bad port", type: "exception", file: "src/b.go", line: 30 },
+  ];
+  const need = { enrichment: true, defense: true };
+
+  it("names the enclosing function and its callers for each error", () => {
+    const prompt = analysisPrompt(errors, 0, need, ["src line", "src line"], [
+      { fn: "LoadConfig", exported: true, callers: ["New", "main"] },
+      { fn: "parsePort", exported: false, callers: [] },
+    ]);
+
+    // triggerScenarios asks which API calls reach the error — the callers are
+    // the answer, and no source window can carry them.
+    expect(prompt).toContain("RAISED IN: LoadConfig (public) — called by: New, main");
+    // Unexported and uncalled: still worth saying which function raises it.
+    expect(prompt).toContain("RAISED IN: parsePort");
+    expect(prompt).not.toContain("parsePort (public)");
+  });
+
+  it("says nothing when the facts are missing, rather than an empty label", () => {
+    const prompt = analysisPrompt(errors, 0, need, ["src line", "src line"], [null, null]);
+    expect(prompt).not.toContain("RAISED IN");
+    expect(prompt).toContain("SOURCE:");
   });
 });

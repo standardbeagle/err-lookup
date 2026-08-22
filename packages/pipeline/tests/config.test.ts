@@ -87,6 +87,8 @@ describe("config mapping", () => {
       batchConcurrency: 1,
       providerMaxConcurrent: 0,
       analysisBatchSize: 20,
+      sourceWindow: 12,
+      callFacts: false,
       skipPeak: false,
       delayBetweenPhasesMs: 5_000,
       rescanShare: 0.25,

@@ -156,6 +156,28 @@ describe("runAnalysis: fused enrichment + defense", () => {
     disposeRepo(dir);
   });
 
+  it("sizes the embedded source region from defaults.source-window", async () => {
+    const { mkdirSync, writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpRepo, disposeRepo } = await import("./tmp-repo.js");
+    const dir = tmpRepo("ana-window-");
+    mkdirSync(join(dir, "src"), { recursive: true });
+    // The throw sits on line 11, with numbered neighbours either side.
+    const lines = Array.from({ length: 21 }, (_, i) => (i === 10 ? "throw new Error('boom 0');" : `const l${i + 1} = ${i + 1};`));
+    writeFileSync(join(dir, "src", "a.js"), lines.join("\n"));
+
+    const p = new RecordingProvider("bulk");
+    const cfg = cfgFrom(["  analysis-batch-size 10", "  source-window 2"]);
+    await runAnalysis(dir, [{ message: "boom 0", type: "exception", file: "src/a.js", line: 11 }], { bulk: p }, cfg, BOTH);
+
+    expect(p.prompts[0]).toContain("const l9 = 9;");
+    expect(p.prompts[0]).toContain("const l13 = 13;");
+    // Outside the window: a wider default would have carried these along.
+    expect(p.prompts[0]).not.toContain("const l8 = 8;");
+    expect(p.prompts[0]).not.toContain("const l14 = 14;");
+    disposeRepo(dir);
+  });
+
   it("asks for only the phase that is still missing", async () => {
     const p = new RecordingProvider("bulk");
     const cfg = cfgFrom(["  analysis-batch-size 10"]);

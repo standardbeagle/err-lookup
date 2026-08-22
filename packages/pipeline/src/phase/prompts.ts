@@ -5,6 +5,7 @@
  */
 
 import type { ContextWindow } from "./candidates.js";
+import type { CallFacts } from "./callgraph.js";
 
 export interface DiscoveredErrorJson {
   message: string;
@@ -221,13 +222,21 @@ export function analysisPrompt(
   startIndex: number,
   need: AnalysisNeed,
   /** Per-error throwing region, extracted procedurally; aligned with `batch`. */
-  sources?: (string | null)[]
+  sources?: (string | null)[],
+  /** Per-error enclosing function and callers, from lci; aligned with `batch`. */
+  facts?: (CallFacts | null)[]
 ): string {
   const list = batch
     .map((e, i) => {
       const head = `[${startIndex + i}] message=${JSON.stringify(e.message)} file=${e.file}:${e.line ?? "?"}${e.code ? ` code=${e.code}` : ""}`;
+      const f = facts?.[i];
+      // Who reaches this code is what triggerScenarios is asking for, and it
+      // is the one thing the source window cannot show.
+      const reached = f
+        ? `\nRAISED IN: ${f.fn}${f.exported ? " (public)" : ""}${f.callers.length ? ` — called by: ${f.callers.join(", ")}` : ""}`
+        : "";
       const src = sources?.[i];
-      return src ? `${head}\nSOURCE:\n${src}\n---` : head;
+      return src ? `${head}${reached}\nSOURCE:\n${src}\n---` : `${head}${reached}`;
     })
     .join("\n");
 

@@ -7,6 +7,7 @@ import { ProviderError } from "../provider/types.js";
 import { withTimeout, TimeoutError } from "../util/watchdog.js";
 import { mapPool, chunk } from "../util/pool.js";
 import { extractSourceRegion } from "../util/source.js";
+import { collectCallFacts, type CallFacts } from "./callgraph.js";
 import {
   analysisPrompt,
   type AnalysisNeed,
@@ -22,6 +23,7 @@ interface AnalysisUnit {
   batch: DiscoveredErrorJson[];
   startIndex: number;
   sources: (string | null)[];
+  facts: (CallFacts | null)[];
 }
 
 /** What a unit returns and what the checkpoint stores. */
@@ -94,12 +96,30 @@ export async function runAnalysis(
   const sourcesByBatch = batches.map((batch) =>
     batch.map((e) =>
       typeof e.line === "number" && e.line > 0
-        ? extractSourceRegion(repoPath, e.file, e.line, 12)?.sourceCode ?? null
+        ? extractSourceRegion(repoPath, e.file, e.line, cfg.defaults.sourceWindow)?.sourceCode ?? null
         : null
     )
   );
+  // One lci pass for the whole repo, before any batch runs: browsing a file
+  // twice would cost two index round trips for the same answer.
+  const callFacts = cfg.defaults.callFacts
+    ? collectCallFacts(
+        repoPath,
+        discovered.filter((e) => typeof e.line === "number" && e.line > 0).map((e) => ({ file: e.file, line: e.line! })),
+        onLog
+      )
+    : new Map<string, CallFacts>();
+  const factsByBatch = batches.map((batch) =>
+    batch.map((e) => (typeof e.line === "number" ? callFacts.get(`${e.file}:${e.line}`) ?? null : null))
+  );
   const units = passes.flatMap((pass) =>
-    batches.map((batch, i) => ({ pass, batch, startIndex: i * batchSize, sources: sourcesByBatch[i]! }))
+    batches.map((batch, i) => ({
+      pass,
+      batch,
+      startIndex: i * batchSize,
+      sources: sourcesByBatch[i]!,
+      facts: factsByBatch[i]!,
+    }))
   );
 
   let lastProvider = "n/a";
@@ -139,6 +159,7 @@ export async function runAnalysis(
     pass: unit.pass,
     batch: unit.batch.slice(from, to),
     sources: unit.sources.slice(from, to),
+    facts: unit.facts.slice(from, to),
     startIndex: unit.startIndex + from,
   });
 
@@ -157,7 +178,7 @@ export async function runAnalysis(
       const budget = watchdogBudgetMs(cfg, routingPhase);
       const result = await withTimeout(
         runProvider(
-          analysisPrompt(unit.batch, unit.startIndex, unit.pass, unit.sources),
+          analysisPrompt(unit.batch, unit.startIndex, unit.pass, unit.sources, unit.facts),
           { cwd: repoPath },
           providers,
           cfg,
