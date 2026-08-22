@@ -21,19 +21,37 @@ export interface CandidateSite {
   /** Surrounding source lines, extracted procedurally. Carried into the
    *  discovery prompt so the model classifies in place instead of spending an
    *  agent tool round trip re-reading the file per candidate. */
-  context: string | null;
+  context: ContextWindow | null;
+}
+
+/** A candidate's context window, kept addressable by line so a discovery batch
+ *  can merge the overlapping windows of neighbouring candidates instead of
+ *  shipping the same source lines once per candidate. */
+export interface ContextWindow {
+  /** 1-based line number of lines[0]. */
+  start: number;
+  /** Source lines as they appear in the file, each clipped to 200 chars. */
+  lines: string[];
 }
 
 const CONTEXT_LINES = 8; // each side of the match
 const CONTEXT_MAX_CHARS = 1200;
 const CONTEXT_MAX_LINE = 200;
 
-function clipContext(lines: string[]): string | null {
+function clipContext(lines: string[], start: number): ContextWindow | null {
   if (lines.length === 0) return null;
-  const joined = lines.map((l) => (l.length > CONTEXT_MAX_LINE ? l.slice(0, CONTEXT_MAX_LINE) : l)).join("\n");
-  const trimmed = joined.trim();
-  if (trimmed.length === 0) return null;
-  return trimmed.length > CONTEXT_MAX_CHARS ? trimmed.slice(0, CONTEXT_MAX_CHARS) : trimmed;
+  // The char budget drops whole trailing lines rather than cutting mid-line:
+  // `start` only locates the window if every line below it is intact.
+  const kept: string[] = [];
+  let budget = CONTEXT_MAX_CHARS;
+  for (const line of lines) {
+    const clipped = line.length > CONTEXT_MAX_LINE ? line.slice(0, CONTEXT_MAX_LINE) : line;
+    if (kept.length > 0 && clipped.length + 1 > budget) break;
+    kept.push(clipped);
+    budget -= clipped.length + 1;
+  }
+  if (kept.every((l) => l.trim().length === 0)) return null;
+  return { start, lines: kept };
 }
 
 export interface ExtractOptions {
@@ -268,7 +286,7 @@ export function candidatesFromLciJson(
       kind,
       snippet: lineText.trim().slice(0, 300),
       literal: lit ? lit[1]!.slice(0, 200) : null,
-      context: clipContext(r.context?.lines ?? []),
+      context: clipContext(r.context?.lines ?? [], start ?? r.line),
     });
   }
   return out;
@@ -387,7 +405,10 @@ export function extractCandidates(repoPath: string, opts: ExtractOptions = {}): 
           kind: p.kind,
           snippet: line.trim().slice(0, 300),
           literal: lit ? lit[1]!.slice(0, 200) : null,
-          context: clipContext(lines.slice(Math.max(0, i - CONTEXT_LINES), i + CONTEXT_LINES + 1)),
+          context: clipContext(
+            lines.slice(Math.max(0, i - CONTEXT_LINES), i + CONTEXT_LINES + 1),
+            Math.max(0, i - CONTEXT_LINES) + 1
+          ),
         });
         fromFile++;
         break; // one candidate per line

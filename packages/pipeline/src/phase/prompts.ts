@@ -4,6 +4,8 @@
  * Output shapes are explicit so extractJson + zod can validate cleanly.
  */
 
+import type { ContextWindow } from "./candidates.js";
+
 export interface DiscoveredErrorJson {
   message: string;
   type: string;
@@ -73,22 +75,76 @@ OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
 {"includeRoots":["dir1"],"excludeDirs":["dir2/sub"],"notes":"one short sentence"}`;
 }
 
+/** One candidate site as the discovery prompt renders it. */
+export interface CandidatePrompt {
+  file: string;
+  line: number;
+  kind: string;
+  snippet: string;
+  literal: string | null;
+  context: ContextWindow | null;
+}
+
+/**
+ * Merge the candidates' context windows per file. Neighbouring error sites sit
+ * within a window of each other constantly — a file with three throws 5 lines
+ * apart used to ship its middle lines three times, once per candidate, inside
+ * the same prompt. Merging overlapping and abutting windows sends each source
+ * line once: measured 13-32% of the context payload across C, Python, Java,
+ * Go and JS repos, worst in dense C.
+ *
+ * The regions carry no line numbers on purpose: prefixing every line costs
+ * more than the duplication it would document (junit5 and gin both went
+ * negative), and each candidate already states its own file and line.
+ */
+function mergeContextRegions(candidates: CandidatePrompt[]): { file: string; start: number; lines: string[] }[] {
+  const byFile = new Map<string, ContextWindow[]>();
+  for (const c of candidates) {
+    if (!c.context) continue;
+    const windows = byFile.get(c.file) ?? [];
+    windows.push(c.context);
+    byFile.set(c.file, windows);
+  }
+  const regions: { file: string; start: number; lines: string[] }[] = [];
+  for (const [file, windows] of byFile) {
+    windows.sort((a, b) => a.start - b.start);
+    let open: { file: string; start: number; lines: string[] } | null = null;
+    for (const w of windows) {
+      // Abutting counts as overlapping: two windows that meet exactly describe
+      // one continuous region, and a seam would only cost a second header.
+      if (open && w.start <= open.start + open.lines.length) {
+        const overlap = open.start + open.lines.length - w.start;
+        open.lines.push(...w.lines.slice(overlap));
+        continue;
+      }
+      open = { file, start: w.start, lines: [...w.lines] };
+      regions.push(open);
+    }
+  }
+  return regions;
+}
+
 /**
  * Phase 1a — Candidate classification: the deterministic extractor already
  * located error-raising sites; the model verifies each against the surrounding
  * source and emits the discovery shape. One dense payload per batch — no
  * repo exploration required, which keeps lighter models accurate.
  */
-export function candidateDiscoveryPrompt(
-  candidates: { file: string; line: number; kind: string; snippet: string; literal: string | null; context: string | null }[]
-): string {
-  return `You are an expert at finding error patterns in codebases. A static scanner extracted these candidate error-raising sites from the repository (you are in its root). Each candidate carries a \`context\` excerpt of the surrounding source. Judge each candidate FROM ITS CONTEXT and decide whether it is a USER-FACING error. Only open the file when the context is insufficient — e.g. the message string clearly continues beyond the excerpt or context is null.
+export function candidateDiscoveryPrompt(candidates: CandidatePrompt[]): string {
+  const regions = mergeContextRegions(candidates)
+    .map((r) => `--- ${r.file}:${r.start}-${r.start + r.lines.length - 1}\n${r.lines.join("\n")}`)
+    .join("\n");
+  const sites = candidates.map(({ file, line, kind, snippet, literal }) => ({ file, line, kind, snippet, literal }));
+  return `You are an expert at finding error patterns in codebases. A static scanner extracted these candidate error-raising sites from the repository (you are in its root). The SOURCE REGIONS below contain the surrounding source for every candidate, one region per stretch of a file, headed by \`--- path:firstLine-lastLine\`. Find each candidate inside the region for its file — its \`snippet\` is the matched line — and judge it FROM THAT SOURCE: decide whether it is a USER-FACING error. Only open the file when the region is insufficient — e.g. the message string clearly continues past the end of the region, or the candidate's file has no region.
+
+SOURCE REGIONS:
+${regions}
 
 CANDIDATES:
-${JSON.stringify(candidates)}
+${JSON.stringify(sites)}
 
 RULES:
-- Include the EXACT error message string from source, preserving template placeholders (e.g. \`\${name}\`, {}, %s). For multi-line messages that are cut off in the context, read the file.
+- Include the EXACT error message string from source, preserving template placeholders (e.g. \`\${name}\`, {}, %s). For multi-line messages that run past the end of the region, read the file.
 - Use the candidate's file and line (correct the line only if the actual throw is adjacent).
 - Capture the error code when one is defined; note the error class and HTTP status where applicable.
 - EXCLUDE: internal assertions never shown to users, debug logging, dead code, generated files.

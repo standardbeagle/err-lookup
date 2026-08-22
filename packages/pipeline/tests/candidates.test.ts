@@ -36,9 +36,11 @@ describe("builtin candidate extractor", () => {
     expect(js.line).toBe(2);
     expect(js.kind).toBe("throw");
     expect(js.literal).toBe("Expected a function");
-    // builtin walk slices its own context window around the match
-    expect(js.context).toContain("function f(x)");
-    expect(js.context).toContain("Expected a function");
+    // builtin walk slices its own context window around the match, and keeps
+    // it addressable by line so a discovery batch can merge overlapping ones
+    expect(js.context!.start).toBe(1);
+    expect(js.context!.lines.join("\n")).toContain("function f(x)");
+    expect(js.context!.lines.join("\n")).toContain("Expected a function");
     const go = c.find((s) => s.file === "main.go")!;
     expect(go.literal).toContain("connect failed");
     disposeRepo(dir);
@@ -223,8 +225,8 @@ describe("lci JSON mapping", () => {
     expect(c).toHaveLength(1);
     expect(c[0]).toMatchObject({ file: "src/a.ts", line: 113, kind: "throw", literal: "GET failed" });
     // context.lines ride along verbatim — discovery classifies without re-reads
-    expect(c[0]!.context).toContain("await fetch(url)");
-    expect(c[0]!.context).toContain("GET failed");
+    expect(c[0]!.context!.lines.join("\n")).toContain("await fetch(url)");
+    expect(c[0]!.context!.lines.join("\n")).toContain("GET failed");
   });
 });
 
