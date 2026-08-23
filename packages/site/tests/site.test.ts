@@ -12,6 +12,7 @@ const publicData = resolve(siteRoot, "public", "data");
 
 import type { ErrorEntry } from "@errlookup/schema";
 import { renderErrorPage } from "./render-error-page.js";
+import { missingErrorPage } from "../src/data/load.js";
 
 function fullErrorsByRepo(): Map<string, ErrorEntry[]> {
   const repos = JSON.parse(readFileSync(resolve(publicData, "repos.json"), "utf8")) as { repo: string }[];
@@ -487,5 +488,24 @@ describe("header and layout contract", () => {
     // page sideways and breaks every other element's layout.
     const css = siteCss();
     expect(css).toMatch(/max-width:\s*600px\)\{[^@]*?main table\{display:block;overflow-x:auto\}/);
+  });
+});
+
+describe("an error URL with no record", () => {
+  const origin = "https://errors.standardbeagle.com";
+
+  it("redirects to the repo index when the repo is still published", () => {
+    // These are pages we published and search engines indexed; a later
+    // re-analysis stopped rediscovering them. 404ing them is what taught
+    // crawlers to stop coming back.
+    expect(missingErrorPage(true, "axios", "axios", origin)).toEqual({
+      kind: "redirect",
+      location: "https://errors.standardbeagle.com/axios/axios/",
+    });
+  });
+
+  it("404s when the repo itself is not in the dataset", () => {
+    // Nowhere honest to send it — a redirect here would be a soft 404.
+    expect(missingErrorPage(false, "nobody", "nothing", origin)).toEqual({ kind: "not-found" });
   });
 });

@@ -114,3 +114,28 @@ export function relatedFrom(all: ErrorEntry[], slug: string, cap = 5): ErrorEntr
 export function relatedErrors(repo: string, slug: string, cap = 5): ErrorEntry[] {
   return relatedFrom(getRepoErrors(repo), slug, cap);
 }
+
+/** What to serve for an error URL that is not in the dataset. */
+export type MissingErrorPage = { kind: "not-found" } | { kind: "redirect"; location: string };
+
+/**
+ * Decide what an error URL with no record deserves. Almost every such request
+ * is for a page that WAS published and indexed, and that a later re-analysis
+ * stopped rediscovering — discovery is an LLM pass, so its output moves. 404ing
+ * those taught crawlers the site retires URLs: 404s served to crawlers went
+ * from 156/day on 2026-08-15 to 5,445/day on 2026-08-22, over the week
+ * Googlebot's crawl of the site fell from 4,571/day to 38/day.
+ *
+ * A repo we still publish gets a permanent redirect to its index, which lists
+ * whatever replaced the error. A repo we do not have is a genuine 404 — there
+ * is nowhere honest to send it.
+ */
+export function missingErrorPage(
+  knownRepo: boolean,
+  owner: string,
+  repo: string,
+  origin: string
+): MissingErrorPage {
+  if (!knownRepo) return { kind: "not-found" };
+  return { kind: "redirect", location: `${origin}/${owner}/${repo}/` };
+}

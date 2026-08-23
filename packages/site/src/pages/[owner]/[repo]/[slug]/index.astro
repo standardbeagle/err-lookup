@@ -1,6 +1,6 @@
 ---
 import ErrorDetail from "../../../../components/ErrorDetail.astro";
-import { relatedFrom } from "../../../../data/load.js";
+import { missingErrorPage, relatedFrom } from "../../../../data/load.js";
 import { fetchRepoErrors, fetchInfoIndex, findBackgroundArticle } from "../../../../data/runtime.js";
 
 // On demand (§6 revised): one prerendered page per error stopped scaling —
@@ -12,8 +12,11 @@ const { owner, repo, slug } = Astro.params;
 const repoFullName = `${owner}/${repo}`;
 const all = await fetchRepoErrors(Astro.locals, Astro.url.origin, repoFullName);
 const e = all?.find((x) => x.slug === slug);
-if (!all || !e) {
-  return new Response("Not found", { status: 404, headers: { "content-type": "text/plain" } });
+if (!e) {
+  const missing = missingErrorPage(all != null && all.length > 0, owner!, repo!, Astro.url.origin);
+  return missing.kind === "redirect"
+    ? Response.redirect(missing.location, 301)
+    : new Response("Not found", { status: 404, headers: { "content-type": "text/plain" } });
 }
 const related = relatedFrom(all, e.slug);
 const backgroundArticle = findBackgroundArticle(await fetchInfoIndex(Astro.locals, Astro.url.origin), e);
