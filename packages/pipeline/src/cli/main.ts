@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { resolve, join } from "node:path";
-import { readFileSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { resolve, join, dirname } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir, homedir } from "node:os";
 import { openDb } from "../db/client.js";
 import { loadConfig } from "../config/index.js";
 import { buildProviders } from "../providers.js";
@@ -365,6 +365,21 @@ async function main(): Promise<void> {
           `\nscan done: ${summary.ok} ok, ${summary.unchanged} unchanged, ${summary.failed} failed` +
             (summary.leftQueued > 0 ? `, ${summary.leftQueued} left queued` : "")
         );
+        if (summary.providerHoldUntil) {
+          // A file, not just a log line: the watchdog and the unit are shell,
+          // and this is the one fact they need to not relaunch into a wall.
+          const holdFile = join(
+            process.env.ERRLOOKUP_LOG_DIR ?? join(homedir(), ".local", "state", "errlookup"),
+            "provider-hold-until"
+          );
+          try {
+            mkdirSync(dirname(holdFile), { recursive: true });
+            writeFileSync(holdFile, `${summary.providerHoldUntil}\n`);
+            console.log(`provider quota spent — holding relaunches until ${summary.providerHoldUntil}`);
+          } catch (e) {
+            console.error(`could not record the provider hold: ${(e as Error).message}`);
+          }
+        }
         if (summary.stoppedForRestart) {
           // 75 (EX_TEMPFAIL) means "work remains, start me again": the wrapper
           // and the systemd unit both restart on exactly this code, which is

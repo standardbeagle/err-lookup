@@ -7,7 +7,9 @@
 # it exits silently while a drain holds scan.lock, and otherwise relaunches
 # scan-and-export.sh — at most once per ERRLOOKUP_WATCHDOG_MIN_GAP_S (default
 # 3600) so a provider outage becomes one breaker trip per hour, not a thrash
-# loop that burns the queue through failed attempts. The relaunch goes through
+# loop that burns the queue through failed attempts. A provider that reported
+# its quota spent until a stated time suppresses relaunches entirely until
+# then (provider-hold-until). The relaunch goes through
 # errlookup-scan.service (ops/systemd/) so it runs under the same caps as the
 # timer-started drain; the timer itself (Persistent=true) already covers a
 # drain that died while a slot was missed.
@@ -29,6 +31,21 @@ if ! flock -n 9; then
   exit 0
 fi
 flock -u 9 # release immediately: scan-and-export takes the lock itself
+
+# A spent provider window is not something a relaunch fixes. The drain records
+# the reset time it was given ("Usage limit reached for 5 hour. Your limit will
+# reset at ..."); until then, starting another drain only clones repos and
+# fails them. On 2026-08-23 that cost a relaunch an hour, every hour, for the
+# whole five-hour window.
+HOLD_FILE="$LOG_DIR/provider-hold-until"
+if [ -f "$HOLD_FILE" ]; then
+  hold=$(tr -d '[:space:]' <"$HOLD_FILE")
+  hold_epoch=$(date -d "$hold" +%s 2>/dev/null || echo 0)
+  if [ "${hold_epoch:-0}" -gt "$(date +%s)" ]; then
+    exit 0
+  fi
+  rm -f "$HOLD_FILE"
+fi
 
 [ -f "$DB" ] || exit 0
 # `running` rows with no lock holder are orphans of a dead drain; the relaunch

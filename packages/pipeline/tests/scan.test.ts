@@ -214,6 +214,81 @@ describe("re-entrant queue", () => {
   });
 });
 
+describe("provider window quota", () => {
+  /** A repo big enough that discovery actually calls the provider. */
+  async function makeRepoWithSource(): Promise<string> {
+    const dir = mkdtempSync(join(tmpdir(), "el-quota-"));
+    for (let i = 0; i < 6; i++) {
+      writeFileSync(join(dir, `mod${i}.js`), `export function f${i}(x) {\n  if (!x) throw new Error('mod${i} needs x');\n}\n`);
+    }
+    await exec("git", ["init", "-q", "-b", "main", dir]);
+    await exec("git", ["-C", dir, "add", "."]);
+    await exec("git", ["-C", dir, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"]);
+    return dir;
+  }
+
+  class QuotaExhaustedProvider {
+    readonly name = "claude";
+    calls = 0;
+    async invoke() {
+      this.calls++;
+      return {
+        ok: false as const,
+        kind: "spawn" as const,
+        error:
+          "scope: [spawn] glm ACP failure: Internal error: Usage limit reached for 5 hour. " +
+          "Your limit will reset at 2026-08-23 22:00:28; stderr: Error handling request {",
+      };
+    }
+  }
+
+  it("stops at the first spent-quota failure and reports when it is worth retrying", { timeout: 30_000 }, async () => {
+    const local = await makeRepoWithSource();
+    const p = new QuotaExhaustedProvider();
+    const logs: string[] = [];
+    const summary = await runScan({
+      db,
+      cfg: makeCfg(),
+      corpus: ["a/one", "b/two", "c/three", "d/four"],
+      providers: { claude: p },
+      cloneUrlFor: () => local,
+      onLog: (_repo, msg) => logs.push(msg),
+    });
+
+    // Every claim before the reset fails identically, so the drain must not
+    // work through the queue proving it: one repo, not five to the breaker.
+    expect(summary.providerHoldUntil).toBe("2026-08-23T22:00:28.000Z");
+    expect(summary.ok).toBe(0);
+    expect(summary.leftQueued).toBeGreaterThanOrEqual(3);
+    expect(logs.some((m) => m.includes("provider window quota is spent until"))).toBe(true);
+    // One repo touched, not the whole corpus: the rest stay claimable for the
+    // drain that runs after the reset.
+    expect(summary.leftQueued).toBeGreaterThanOrEqual(3);
+    close();
+  });
+
+  it("leaves the hold unset for an ordinary failure", { timeout: 30_000 }, async () => {
+    const p = {
+      name: "claude",
+      async invoke() {
+        return { ok: false as const, kind: "parse" as const, error: "bad json" };
+      },
+    };
+    const local = await makeRepoWithSource();
+    const summary = await runScan({
+      db,
+      cfg: makeCfg(),
+      corpus: ["a/one"],
+      providers: { claude: p },
+      cloneUrlFor: () => local,
+      onLog: () => {},
+    });
+
+    expect(summary.providerHoldUntil).toBeNull();
+    close();
+  });
+});
+
 describe("runtime budget", () => {
   /** A clock that is past the budget from the second reading on. */
   function clockPastBudgetAfterFirstRead(): () => number {

@@ -270,3 +270,44 @@ describe("verify-only re-run", () => {
     close();
   }, 60_000);
 });
+
+describe("a discovery that found nothing because everything failed", () => {
+  it("fails the repo instead of publishing it as having no errors", async () => {
+    const { analyzeRepo } = await import("../src/pipeline.js");
+    const { tmpRepo, disposeRepo } = await import("./tmp-repo.js");
+    const { writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const exec = promisify(execFile);
+
+    const src = tmpRepo("el-allfail-");
+    for (let i = 0; i < 6; i++) {
+      writeFileSync(join(src, `m${i}.js`), `export function f${i}(x) {\n  if (!x) throw new Error('m${i} needs x');\n}\n`);
+    }
+    await exec("git", ["init", "-q", "-b", "main", src]);
+    await exec("git", ["-C", src, "add", "."]);
+    await exec("git", ["-C", src, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "v1"]);
+
+    const repo = "acme/outage";
+    seedPublishedRepo(repo);
+    const dead = {
+      name: "p",
+      async invoke() {
+        return { ok: false as const, kind: "spawn" as const, error: "provider is down" };
+      },
+    };
+    const cfg = mapConfig(parseKdl(['provider "p" { command "p" }', "defaults {", '  primary "p"', "}"].join("\n")));
+
+    const r = await analyzeRepo(repo, { db, providers: { p: dead }, cfg, cloneUrlOverride: src });
+
+    // Zero errors from a discovery whose every batch failed is a processing
+    // failure, not a repo without errors — publishing it would retire the
+    // repo's whole page set on a provider outage.
+    expect(r.failed).toContain("every candidate batch failed");
+    expect(errorsForRepo(db, repo).map((x) => x.slug)).toEqual(["v1-err"]);
+    expect(getRepo(db, repo)?.analyzedSha).toBe(V1_SHA);
+    disposeRepo(src);
+    close();
+  }, 60_000);
+});

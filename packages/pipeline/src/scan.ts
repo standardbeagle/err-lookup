@@ -3,6 +3,7 @@ import type { ErrlookupConfig } from "./config/index.js";
 import type { LlmProvider } from "./provider/types.js";
 import type { PhaseName } from "@errlookup/schema";
 import { analyzeRepo } from "./pipeline.js";
+import { clearProviderUsageHold, providerUsageHold } from "./provider/run.js";
 import { getRepo } from "./db/store.js";
 import {
   seedQueue,
@@ -70,6 +71,12 @@ export interface ScanSummary {
    * running whatever code is on disk by then — takes over.
    */
   stoppedForRestart: boolean;
+  /**
+   * The provider's window quota is spent until this time, as it reported it.
+   * Nothing the drain attempts before then can succeed, so the supervisor is
+   * expected to hold off rather than relaunch into the same wall.
+   */
+  providerHoldUntil: string | null;
   seeded: { added: number; requeued: number };
 }
 
@@ -111,9 +118,14 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
     leftQueued: 0,
     infraRequeued: 0,
     stoppedForRestart: false,
+    providerHoldUntil: null,
     seeded,
   };
   if (opts.seedOnly) return summary;
+
+  // Each drain starts with a clean slate: a hold recorded by a previous run in
+  // this process (tests, or a long-lived host process) must not stop this one.
+  clearProviderUsageHold();
 
   // Under the drain lock any `running` row belongs to a dead scan.
   const reclaimed = reclaimRunningQueue(db);
@@ -143,6 +155,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
   // level-2 infra failure settles as failed. Every failure still counts toward
   // the breaker — a sick host should stop the drain quickly.
   const settleFailure = (repo: string, msg: string, ranAt: number, heldLargeSlot: boolean): void => {
+
     if (isInfraFailure(msg) && ranAt < 2) {
       // A run that already held the large slot skips straight to exclusive.
       const next = ranAt >= 1 || heldLargeSlot ? 2 : 1;
@@ -160,6 +173,20 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
   const worker = async (which: "concurrent" | "exclusive"): Promise<void> => {
     for (;;) {
       if (tripped || budgetSpent) return;
+      // A spent window quota is not this repo's fault and not a transient dip:
+      // every call until the reset fails the same way, which is how one
+      // exhausted z.ai window became an hourly clone-and-fail loop on
+      // 2026-08-23. It is read here rather than from a failed repo because a
+      // discovery whose batches all fail reports zero errors, not a failure.
+      const hold = providerUsageHold();
+      if (hold) {
+        summary.providerHoldUntil = hold;
+        if (!tripped) {
+          tripped = true;
+          log("*", `provider window quota is spent until ${hold} — stopping, the rest stays queued`);
+        }
+        return;
+      }
       if (now() >= deadline) {
         budgetSpent = true;
         log("*", `runtime budget of ${cfg.defaults.maxRuntimeMinutes}min reached — finishing in-flight repos, then exiting for a fresh drain`);

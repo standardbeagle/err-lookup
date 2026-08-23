@@ -225,6 +225,25 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         if (r.skippedCandidates > 0) {
           log(`phase discovery: ${r.skippedCandidates} candidates abandoned after batch-splitting retries`);
         }
+        // Every candidate abandoned and nothing found is a processing failure
+        // wearing the costume of a clean result. Publishing it says "this repo
+        // has no errors", which is how a provider outage — or a spent quota —
+        // used to take a repo's whole page set down.
+        if (discovered.length === 0 && r.skippedCandidates > 0) {
+          const msg = `every candidate batch failed (${r.skippedCandidates} candidates abandoned)`;
+          recordPhase(db, {
+            repo,
+            phase: "discovery",
+            status: "failed",
+            startedAt: started,
+            completedAt: Date.now(),
+            analyzedSha: sha,
+            errorLog: msg,
+          });
+          recordAnalysisFailure(db, repo, `discovery: ${msg}`);
+          log(`phase discovery: FAILED — ${msg}`);
+          return { errorCount: 0, rejects: [], skipped, failed: `discovery: ${msg}` };
+        }
         log(`phase discovery: ${discovered.length} errors via ${r.providerUsed} [${r.mode}] (${r.durationMs}ms)`);
       } catch (e) {
         const msg = e instanceof ProviderError ? `[${e.kind}] ${e.message}` : (e as Error).message;

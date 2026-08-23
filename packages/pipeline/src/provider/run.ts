@@ -35,6 +35,40 @@ export function isRateLimitError(error: string): boolean {
   return RATE_LIMIT_RE.test(error);
 }
 
+/**
+ * A window quota that is spent, as distinct from a rate limit that a backoff
+ * clears: z.ai answers "Usage limit reached for 5 hour. Your limit will reset
+ * at 2026-08-23 22:00:28". Nothing the drain does before that time can
+ * succeed, so the caller is expected to stop rather than retry — and to say
+ * when it is worth starting again.
+ */
+const USAGE_LIMIT_RE = /usage limit reached[^.]*\.[^.]*reset at ([0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}:[0-9]{2})/i;
+
+/**
+ * Account-level, because the quota is: every provider call in the process hits
+ * the same wall until the stated reset. Recorded here, where failures are
+ * seen, because a spent window does not always surface as a failed repo — a
+ * discovery whose batches all fail returns zero errors and the repo looks
+ * merely empty.
+ */
+let usageHoldUntil: string | null = null;
+
+export function providerUsageHold(): string | null {
+  return usageHoldUntil;
+}
+
+export function clearProviderUsageHold(): void {
+  usageHoldUntil = null;
+}
+
+export function usageLimitResetAt(error: string): Date | null {
+  const stamp = USAGE_LIMIT_RE.exec(error)?.[1];
+  if (!stamp) return null;
+  // The provider states the reset in UTC without a zone marker.
+  const at = new Date(`${stamp.replace(" ", "T")}Z`);
+  return Number.isNaN(at.getTime()) ? null : at;
+}
+
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function withOutputInstruction(prompt: string, outputFile: string): string {
@@ -110,6 +144,10 @@ export async function runProvider(
       const r = await primary.invoke(attemptPrompt, attemptOpts);
       if (r.ok) return { parsed: r.parsed, raw: r.raw, providerUsed: primary.name };
       lastFailure = r;
+      const reset = usageLimitResetAt(r.error);
+      if (reset && (!usageHoldUntil || reset.toISOString() > usageHoldUntil)) {
+        usageHoldUntil = reset.toISOString();
+      }
       // A timeout means the call ran its whole budget and was killed. An
       // identical second attempt spends the same input tokens to be killed
       // again; what fixes an over-large call is the caller splitting its
