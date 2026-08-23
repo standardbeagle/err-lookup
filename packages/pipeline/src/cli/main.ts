@@ -7,6 +7,7 @@ import { openDb } from "../db/client.js";
 import { loadConfig } from "../config/index.js";
 import { buildProviders } from "../providers.js";
 import { analyzeRepo } from "../pipeline.js";
+import { usageLimitResetAt } from "../provider/run.js";
 import { runScan } from "../scan.js";
 import { publishDataset, rowToErrorEntry } from "../exporter/index.js";
 import { resetRepo, reposByStatus, purgeOrphanedJobs, errorBySlug, updateErrorFields, recordPhase } from "../db/store.js";
@@ -271,6 +272,46 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === "ping") {
+    // Cheapest possible call against the configured provider: does it answer?
+    // Used to find out when a spent window has actually reopened, which the
+    // provider's own reset stamp does not reliably say (see usageLimitResetAt).
+    const { values } = parseArgs({
+      options: { provider: { type: "string" }, "timeout-ms": { type: "string", default: "120000" } },
+      allowPositionals: true,
+      args: rest,
+    });
+    const cfg = loadConfig();
+    const providers = buildProviders(cfg);
+    const name = values.provider ?? cfg.defaults.primary;
+    const provider = providers[name];
+    if (!provider) {
+      console.error(`no provider "${name}" in the config`);
+      process.exit(2);
+    }
+    const cwd = mkdtempSync(join(tmpdir(), "errlookup-ping-"));
+    const started = Date.now();
+    try {
+      const r = await provider.invoke('Reply with exactly this JSON and nothing else: {"ok":true}', {
+        cwd,
+        timeoutMs: Number.parseInt(String(values["timeout-ms"]), 10),
+      });
+      const took = Math.round((Date.now() - started) / 1000);
+      if (r.ok) {
+        console.log(`ping ${name}: ok (${took}s)`);
+        return;
+      }
+      console.error(`ping ${name}: ${r.kind} after ${took}s — ${r.error.slice(0, 300)}`);
+      // A spent window answers with its reset; the caller uses it to keep
+      // holding rather than probing every hour for nothing.
+      const reset = usageLimitResetAt(r.error);
+      if (reset) console.error(`ping ${name}: quota still spent until ${reset.toISOString()}`);
+      process.exit(1);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }
+
   if (cmd === "reverify") {
     // Re-run verify against a repo's PUBLISHED records: fill the gaps a failed
     // verify left without paying for discovery, enrichment and defense again.
@@ -400,6 +441,7 @@ async function main(): Promise<void> {
   console.error("  errlookup review [--dry-run] <page-url | owner/repo/slug>...");
   console.error("  errlookup scan <file.txt> [--phases 1,2,3,5] [--force] [--seed-only]");
   console.error("  errlookup reverify <owner/repo>...   # verify pass over published records");
+  console.error("  errlookup ping [--provider <name>]    # does the provider answer right now?");
   console.error("  errlookup collect-info [--max-pages 5] [--min-errors 5] [--min-repos 2]");
   console.error("  errlookup reset [--failed] [--dry-run] [owner/repo ...]");
   console.error("  errlookup export [--out-dir <path>]");

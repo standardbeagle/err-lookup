@@ -42,8 +42,11 @@ if [ -f "$HOLD_FILE" ]; then
   hold=$(tr -d '[:space:]' <"$HOLD_FILE")
   hold_epoch=$(date -d "$hold" +%s 2>/dev/null || echo 0)
   if [ "${hold_epoch:-0}" -gt "$(date +%s)" ]; then
+    # scripts/provider-probe.sh lifts this early if the window reopens sooner
+    # than the provider's stamp claimed, which it usually does.
     exit 0
   fi
+  echo "$(date -u +%FT%TZ) provider hold expired ($hold) — resuming relaunches" >>"$LOG"
   rm -f "$HOLD_FILE"
 fi
 
