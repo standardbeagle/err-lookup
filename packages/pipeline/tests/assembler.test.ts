@@ -21,6 +21,44 @@ function discovered(code: string | null, message: string, file: string) {
   return { message, type: "exception", file, line: null, code, errorClass: null, httpStatus: null };
 }
 
+describe("assemble: a code the model did not answer as a string", () => {
+  it("keeps a numeric code as its digits instead of failing the whole repo", () => {
+    // matomo died on `(errorCode ?? errorMessage).slice is not a function`:
+    // the model answered code=111, which is a real errno, not a mistake.
+    const numeric = { ...discovered("x", "connection refused", "src/net.ts"), code: 111 as unknown as string };
+    const out = assemble({
+      repo: "acme/lib",
+      sha: "a".repeat(40),
+      repoPath: "/nonexistent",
+      discovered: [numeric],
+      enriched: new Map(),
+    });
+
+    expect(out.records).toHaveLength(1);
+    expect(out.records[0]!.errorCode).toBe("111");
+    expect(out.records[0]!.slug).toBe("111");
+  });
+
+  it("treats a non-code shape as no code at all, and still keeps the record", () => {
+    const objectCode = {
+      ...discovered("x", "bad request payload", "src/http.ts"),
+      code: { value: "E_BAD" } as unknown as string,
+    };
+    const out = assemble({
+      repo: "acme/lib",
+      sha: "a".repeat(40),
+      repoPath: "/nonexistent",
+      discovered: [objectCode],
+      enriched: new Map(),
+    });
+
+    expect(out.records).toHaveLength(1);
+    expect(out.records[0]!.errorCode).toBeNull();
+    // Slug falls back to the message, which is the point of having one.
+    expect(out.records[0]!.slug).toBe("bad-request-payload");
+  });
+});
+
 describe("assemble slug uniqueness", () => {
   it("disambiguates records that derive the same slug (same code, different files)", () => {
     const out = assemble({

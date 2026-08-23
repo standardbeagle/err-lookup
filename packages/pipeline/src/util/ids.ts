@@ -19,6 +19,17 @@ export function computeErrorId(args: {
 }
 
 /**
+ * A discovered `code` as a string, or null when it is not a code at all.
+ * Numbers are real codes (HTTP status, errno) and keep their value; objects,
+ * arrays and booleans are noise from a model that filled the field to fill it.
+ */
+export function normalizeErrorCode(raw: unknown): string | null {
+  if (typeof raw === "string") return raw.trim().length > 0 ? raw : null;
+  if (typeof raw === "number" && Number.isFinite(raw)) return String(raw);
+  return null;
+}
+
+/**
  * URL-safe slug, unique within a repo. From errorCode if present, else first 50
  * chars of the message. Lowercased, non-alphanumerics → hyphens, trimmed.
  */

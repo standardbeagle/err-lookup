@@ -4,7 +4,7 @@ import {
   CURRENT_SCHEMA_VERSION,
 } from "@errlookup/schema";
 import type { DiscoveredErrorJson, EnrichedErrorJson, DefenseStrategyJson } from "./prompts.js";
-import { computeErrorId, deriveSlug, normalizeErrorType } from "../util/ids.js";
+import { computeErrorId, deriveSlug, normalizeErrorCode, normalizeErrorType } from "../util/ids.js";
 import { extractSourceRegion, githubPermalink } from "../util/source.js";
 import { deriveMessagePattern } from "../util/pattern.js";
 
@@ -61,7 +61,12 @@ export function assemble(input: AssembleInput): AssembleOutput {
   const usedSlugs = new Set<string>(input.reservedSlugs ?? []);
 
   discovered.forEach((d, i) => {
-    const filePath = d.file ?? "unknown";
+    // The model answers `code` with whatever the source shows, and error codes
+    // are numbers as often as strings (HTTP statuses, errno). An unchecked
+    // number reached deriveSlug as `123.slice(...)` and failed the whole repo
+    // — matomo, 2026-08-22 — so normalize once, here, at the boundary.
+    const code = normalizeErrorCode(d.code);
+    const filePath = typeof d.file === "string" && d.file.length > 0 ? d.file : "unknown";
     const line = typeof d.line === "number" && d.line > 0 ? d.line : null;
     const region = line != null ? extractSourceRegion(repoPath, filePath, line) : null;
 
@@ -70,7 +75,7 @@ export function assemble(input: AssembleInput): AssembleOutput {
 
     const id = computeErrorId({
       repo,
-      errorCode: d.code ?? null,
+      errorCode: code,
       errorMessage: d.message,
       filePath,
     });
@@ -83,7 +88,7 @@ export function assemble(input: AssembleInput): AssembleOutput {
     // Slug must be unique per repo (unique index). deriveSlug collides when the
     // same errorCode is thrown from multiple files, so disambiguate with a
     // stable id fragment — deterministic across runs.
-    let slug = deriveSlug(d.code ?? null, d.message);
+    let slug = deriveSlug(code, d.message);
     if (usedSlugs.has(slug)) slug = `${slug}-${id.slice(0, 6)}`;
     usedSlugs.add(slug);
 
@@ -91,7 +96,7 @@ export function assemble(input: AssembleInput): AssembleOutput {
       id,
       repo,
       slug,
-      errorCode: d.code ?? null,
+      errorCode: code,
       errorMessage: d.message,
       messagePattern: deriveMessagePattern(d.message).pattern,
       errorType: normalizeErrorType(d.type),
