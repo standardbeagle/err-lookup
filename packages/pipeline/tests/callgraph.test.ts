@@ -91,3 +91,23 @@ describe("collectCallFacts", () => {
     disposeRepo(dir);
   });
 });
+
+describe("collectCallFacts when lci is not answering", () => {
+  it("gives up after three consecutive failures instead of timing out per file", () => {
+    // A repo path lci cannot index: every call fails the way a still-indexing
+    // server does. matomo asked 215 times at 20s each before this existed.
+    const sites = Array.from({ length: 25 }, (_, i) => ({ file: `pkg/f${i}.go`, line: 3 }));
+    const logs: string[] = [];
+
+    const started = Date.now();
+    const facts = collectCallFacts("/nonexistent-repo-for-callfacts", sites, (m) => logs.push(m));
+    const elapsed = Date.now() - started;
+
+    expect(facts.size).toBe(0);
+    // Three attempts, not twenty-five: the give-up must be visible and counted.
+    expect(logs.some((l) => l.includes("failed 3 times in a row"))).toBe(true);
+    expect(logs.some((l) => l.includes("25 site(s) carry source only"))).toBe(true);
+    // Three failing spawns cannot take the 25-file path's time even on a slow box.
+    expect(elapsed).toBeLessThan(60_000);
+  });
+});

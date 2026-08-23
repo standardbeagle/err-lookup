@@ -42,6 +42,14 @@ const MAX_REACHED_BY = 6;
 const MAX_REFS = 12;
 
 /**
+ * Consecutive lci failures after which the repo gives up on facts entirely.
+ * matomo asked for 215 files while the index server was still indexing; each
+ * ask burned its own 20s timeout, so a nice-to-have cost over an hour of a
+ * phase that had already decided it was getting nothing.
+ */
+const MAX_FAILURES = 3;
+
+/**
  * Name being assigned at the start of a line: `ErrX = errors.New(...)`,
  * `var ErrX = ...`, `const ERR_X = ...`. Only consulted at module scope, where
  * an assignment is a declaration — inside a function this would misread a
@@ -89,12 +97,16 @@ export function collectCallFacts(
   const symbolsIn = (file: string): LciSymbol[] => {
     let symbols = symbolsByFile.get(file);
     if (symbols) return symbols;
+    if (failures >= MAX_FAILURES) return [];
     try {
       const parsed = lciJson(repoPath, ["browse", file, "--json"]) as { symbols?: LciSymbol[] };
       symbols = parsed?.symbols ?? [];
+      // A run of failures means the index is missing or still building, not
+      // that this one file is odd; a success proves otherwise, so reset.
+      failures = 0;
     } catch (e) {
-      if (failures === 0) onLog?.(`call facts unavailable (${(e as Error).message.split("\n")[0]})`);
       failures++;
+      if (failures === 1) onLog?.(`call facts unavailable (${(e as Error).message.split("\n")[0]})`);
       symbols = [];
     }
     symbolsByFile.set(file, symbols);
@@ -195,6 +207,11 @@ export function collectCallFacts(
     });
   }
 
-  if (failures > 1) onLog?.(`call facts unavailable for ${failures} file(s)`);
+  if (failures >= MAX_FAILURES) {
+    onLog?.(
+      `call facts: lci failed ${MAX_FAILURES} times in a row — skipped the rest of this repo ` +
+        `(${sites.length - facts.size} site(s) carry source only)`
+    );
+  }
   return facts;
 }
