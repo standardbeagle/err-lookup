@@ -257,7 +257,11 @@ describe("provider window quota", () => {
 
     // Every claim before the reset fails identically, so the drain must not
     // work through the queue proving it: one repo, not five to the breaker.
-    expect(summary.providerHoldUntil).toBe("2026-08-23T22:00:28.000Z");
+    // The stated stamp is clamped to the stated window (see usageLimitResetAt),
+    // so assert the shape: a hold in the future, no further out than 5 hours.
+    const hold = Date.parse(summary.providerHoldUntil!);
+    expect(hold).toBeGreaterThan(Date.now());
+    expect(hold).toBeLessThanOrEqual(Date.now() + 5 * 60 * 60 * 1000 + 1000);
     expect(summary.ok).toBe(0);
     expect(summary.leftQueued).toBeGreaterThanOrEqual(3);
     expect(logs.some((m) => m.includes("provider window quota is spent until"))).toBe(true);

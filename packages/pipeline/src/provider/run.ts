@@ -42,7 +42,8 @@ export function isRateLimitError(error: string): boolean {
  * succeed, so the caller is expected to stop rather than retry — and to say
  * when it is worth starting again.
  */
-const USAGE_LIMIT_RE = /usage limit reached[^.]*\.[^.]*reset at ([0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}:[0-9]{2})/i;
+const USAGE_LIMIT_RE =
+  /usage limit reached for (\d+)\s*hour[^.]*\.[^.]*reset at ([0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}:[0-9]{2})/i;
 
 /**
  * Account-level, because the quota is: every provider call in the process hits
@@ -61,12 +62,19 @@ export function clearProviderUsageHold(): void {
   usageHoldUntil = null;
 }
 
-export function usageLimitResetAt(error: string): Date | null {
-  const stamp = USAGE_LIMIT_RE.exec(error)?.[1];
-  if (!stamp) return null;
-  // The provider states the reset in UTC without a zone marker.
-  const at = new Date(`${stamp.replace(" ", "T")}Z`);
-  return Number.isNaN(at.getTime()) ? null : at;
+export function usageLimitResetAt(error: string, now = Date.now()): Date | null {
+  const m = USAGE_LIMIT_RE.exec(error);
+  if (!m) return null;
+  const windowMs = Number.parseInt(m[1]!, 10) * 60 * 60 * 1000;
+  const stated = new Date(`${m[2]!.replace(" ", "T")}Z`);
+  if (Number.isNaN(stated.getTime())) return null;
+  // The stamp carries no zone, and z.ai's is not UTC: on 2026-08-23 it said
+  // "reset at 22:00:28" and calls resumed at 14:15 UTC — Beijing time, eight
+  // hours ahead. Rather than hard-code a provider's zone, use the window
+  // length the same message states: a reset further away than the window is
+  // long is a misread zone. A correctly-stated UTC reset falls inside it.
+  const ceiling = now + windowMs;
+  return stated.getTime() > ceiling ? new Date(ceiling) : stated;
 }
 
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));

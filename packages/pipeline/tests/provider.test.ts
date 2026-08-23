@@ -4,7 +4,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractJson } from "../src/provider/json.js";
 import { FixtureProvider } from "../src/provider/fixture.js";
-import { runProvider, RATE_LIMIT_BACKOFF_MS } from "../src/provider/run.js";
+import { runProvider, RATE_LIMIT_BACKOFF_MS, usageLimitResetAt } from "../src/provider/run.js";
 import { ProviderError, type LlmProvider } from "../src/provider/types.js";
 import { mapConfig, type ErrlookupConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
@@ -173,6 +173,30 @@ describe("runProvider retry + fallback", () => {
       f: new FixtureProvider("f", fx("provider-stdout-truncated.txt")),
     };
     await expect(runProvider("q", { cwd: "." }, providers, cfg)).rejects.toBeInstanceOf(ProviderError);
+  });
+});
+
+describe("usageLimitResetAt", () => {
+  const msg =
+    "glm ACP failure: Internal error: Usage limit reached for 5 hour. " +
+    "Your limit will reset at 2026-08-23 22:00:28; stderr: Error handling request {";
+
+  it("clamps a reset that is further away than the window is long", () => {
+    // z.ai states Beijing time with no zone marker: on 2026-08-23 it named
+    // 22:00:28 and calls resumed at 14:15 UTC. Holding until 22:00 UTC would
+    // have idled the drain for eight hours it did not need to.
+    const now = Date.parse("2026-08-23T09:00:00Z");
+    expect(usageLimitResetAt(msg, now)?.toISOString()).toBe("2026-08-23T14:00:00.000Z");
+  });
+
+  it("takes the stated time when it falls inside the window", () => {
+    const now = Date.parse("2026-08-23T20:00:00Z");
+    expect(usageLimitResetAt(msg, now)?.toISOString()).toBe("2026-08-23T22:00:28.000Z");
+  });
+
+  it("is null for anything that is not a spent window", () => {
+    expect(usageLimitResetAt("Rate limit reached for requests")).toBeNull();
+    expect(usageLimitResetAt("glm exceeded 600000ms")).toBeNull();
   });
 });
 
