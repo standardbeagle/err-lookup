@@ -103,7 +103,7 @@ export async function runAnalysis(
   // One lci pass for the whole repo, before any batch runs: browsing a file
   // twice would cost two index round trips for the same answer.
   const callFacts = cfg.defaults.callFacts
-    ? collectCallFacts(
+    ? await collectCallFacts(
         repoPath,
         discovered.filter((e) => typeof e.line === "number" && e.line > 0).map((e) => ({ file: e.file, line: e.line! })),
         onLog

@@ -5,7 +5,7 @@ import { tmpRepo, disposeRepo } from "./tmp-repo.js";
 import { collectCallFacts } from "../src/phase/callgraph.js";
 
 describe("collectCallFacts", () => {
-  it("names the function an error is raised in, and who calls it", () => {
+  it("names the function an error is raised in, and who calls it", async () => {
     const dir = tmpRepo("callfacts-");
     writeFileSync(
       join(dir, "config.go"),
@@ -27,7 +27,7 @@ describe("collectCallFacts", () => {
     );
 
     const logs: string[] = [];
-    const facts = collectCallFacts(dir, [{ file: "config.go", line: 5 }], (m) => logs.push(m));
+    const facts = await collectCallFacts(dir, [{ file: "config.go", line: 5 }], (m) => logs.push(m));
     const site = facts.get("config.go:5");
 
     // Skip only when the binary is genuinely absent — a resolution that
@@ -41,7 +41,7 @@ describe("collectCallFacts", () => {
     disposeRepo(dir);
   });
 
-  it("resolves a package-level error value through its references", () => {
+  it("resolves a package-level error value through its references", async () => {
     const dir = tmpRepo("callfacts-declared-");
     writeFileSync(
       join(dir, "errs.go"),
@@ -66,7 +66,7 @@ describe("collectCallFacts", () => {
 
     // Go's grouped `var (...)` members carry no lci symbol, and they are where
     // libraries keep their error values — the name comes from the line itself.
-    const facts = collectCallFacts(dir, [{ file: "errs.go", line: 5 }], (m) => logs.push(m));
+    const facts = await collectCallFacts(dir, [{ file: "errs.go", line: 5 }], (m) => logs.push(m));
     const site = facts.get("errs.go:5");
 
     if (!logs.some((l) => l.includes("call facts unavailable"))) {
@@ -77,12 +77,12 @@ describe("collectCallFacts", () => {
     disposeRepo(dir);
   });
 
-  it("returns no facts, and does not throw, when a site has no enclosing symbol", () => {
+  it("returns no facts, and does not throw, when a site has no enclosing symbol", async () => {
     const dir = tmpRepo("callfacts-empty-");
     writeFileSync(join(dir, "notes.go"), "package notes\n\n// nothing declared here\n");
     const logs: string[] = [];
 
-    const facts = collectCallFacts(dir, [{ file: "notes.go", line: 3 }], (m) => logs.push(m));
+    const facts = await collectCallFacts(dir, [{ file: "notes.go", line: 3 }], (m) => logs.push(m));
 
     expect(facts.size).toBe(0);
     // A missing binary is reported, never swallowed — silently losing the
@@ -92,22 +92,20 @@ describe("collectCallFacts", () => {
   });
 });
 
-describe("collectCallFacts when lci is not answering", () => {
-  it("gives up after three consecutive failures instead of timing out per file", () => {
-    // A repo path lci cannot index: every call fails the way a still-indexing
-    // server does. matomo asked 215 times at 20s each before this existed.
+describe("collectCallFacts when the index is not usable", () => {
+  it("stops at the readiness gate rather than asking per file", async () => {
+    // Facts are optional; a repo whose index never comes up must cost the gate
+    // and nothing else. matomo asked 215 times before this existed.
+    const dir = tmpRepo("callfacts-noindex-");
     const sites = Array.from({ length: 25 }, (_, i) => ({ file: `pkg/f${i}.go`, line: 3 }));
     const logs: string[] = [];
 
-    const started = Date.now();
-    const facts = collectCallFacts("/nonexistent-repo-for-callfacts", sites, (m) => logs.push(m));
-    const elapsed = Date.now() - started;
+    const facts = await collectCallFacts(dir, sites, (m) => logs.push(m));
 
+    // Either the index came up for an empty repo (nothing to resolve) or the
+    // gate refused — never a per-file storm, and never a throw.
     expect(facts.size).toBe(0);
-    // Three attempts, not twenty-five: the give-up must be visible and counted.
-    expect(logs.some((l) => l.includes("failed 3 times in a row"))).toBe(true);
-    expect(logs.some((l) => l.includes("25 site(s) carry source only"))).toBe(true);
-    // Three failing spawns cannot take the 25-file path's time even on a slow box.
-    expect(elapsed).toBeLessThan(60_000);
+    expect(logs.every((l) => !l.includes("call facts unavailable for"))).toBe(true);
+    disposeRepo(dir);
   });
 });

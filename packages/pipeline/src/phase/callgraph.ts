@@ -11,6 +11,33 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
+import { sleep } from "../util/watchdog.js";
+
+/**
+ * Wait for the repo's index server to report ready. `lci status --json` starts
+ * the server if it is not running and answers with `ready`, so this is a
+ * readiness gate rather than a guess at how long indexing takes.
+ */
+async function indexReady(repoPath: string, onLog?: (msg: string) => void): Promise<boolean> {
+  const deadline = Date.now() + INDEX_READY_TIMEOUT_MS;
+  let lastError = "";
+  for (;;) {
+    try {
+      const status = lciJson(repoPath, ["status", "--json"]) as { ready?: boolean };
+      if (status?.ready === true) return true;
+      lastError = "index still building";
+    } catch (e) {
+      lastError = (e as Error).message.split("\n")[0] ?? "unknown";
+    }
+    if (Date.now() >= deadline) {
+      onLog?.(
+        `call facts skipped: lci index not ready after ${Math.round(INDEX_READY_TIMEOUT_MS / 1000)}s (${lastError})`
+      );
+      return false;
+    }
+    await sleep(INDEX_POLL_MS);
+  }
+}
 
 export interface CallFacts {
   /** The enclosing function, or the error value declared at this line. */
@@ -44,10 +71,22 @@ const MAX_REFS = 12;
 /**
  * Consecutive lci failures after which the repo gives up on facts entirely.
  * matomo asked for 215 files while the index server was still indexing; each
- * ask burned its own 20s timeout, so a nice-to-have cost over an hour of a
- * phase that had already decided it was getting nothing.
+ * ask burned its own timeout, so a nice-to-have cost over an hour of a phase
+ * that had already decided it was getting nothing.
  */
 const MAX_FAILURES = 3;
+
+/**
+ * Per-call ceiling. Not a tuning knob — a value that says "lci is broken":
+ * browsing one file's symbol table takes milliseconds against a warm index,
+ * and the old 20s was low enough that a large repo's cold index tripped it as
+ * a matter of course.
+ */
+const CALL_TIMEOUT_MS = 120_000;
+
+/** How long to wait for a repo's index before giving up on facts entirely. */
+const INDEX_READY_TIMEOUT_MS = 300_000;
+const INDEX_POLL_MS = 2_000;
 
 /**
  * Name being assigned at the start of a line: `ErrX = errors.New(...)`,
@@ -59,10 +98,10 @@ const MAX_FAILURES = 3;
  */
 const DECLARED_NAME = /^\s*(?:(?:export|public|static|final|var|const|let|val)\s+)*([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::=|=)[^=]/;
 
-function lciJson(repoPath: string, args: string[]): unknown {
+function lciJson(repoPath: string, args: string[], timeoutMs = CALL_TIMEOUT_MS): unknown {
   const out = execFileSync("lci", ["-r", repoPath, ...args], {
     encoding: "utf8",
-    timeout: 20_000,
+    timeout: timeoutMs,
     maxBuffer: 32 * 1024 * 1024,
   });
   // The index server prints readiness lines to stdout on a cold start.
@@ -80,13 +119,18 @@ function lciJson(repoPath: string, args: string[]): unknown {
  * being unavailable is reported through `onLog` rather than swallowed — a
  * silent degradation here would look like a model that stopped naming callers.
  */
-export function collectCallFacts(
+export async function collectCallFacts(
   repoPath: string,
   sites: { file: string; line: number }[],
   onLog?: (msg: string) => void
-): Map<string, CallFacts> {
+): Promise<Map<string, CallFacts>> {
   const facts = new Map<string, CallFacts>();
   if (sites.length === 0) return facts;
+  // Ask the index whether it is ready before asking it anything else: analysis
+  // starts right after discovery, which is exactly when a large repo is still
+  // being indexed, and every browse against a building index fails the same
+  // way. matomo burned an hour discovering that 215 times.
+  if (!(await indexReady(repoPath, onLog))) return facts;
 
   const root = resolve(repoPath);
   const symbolsByFile = new Map<string, LciSymbol[]>();
