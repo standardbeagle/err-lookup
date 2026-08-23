@@ -102,7 +102,7 @@ describe("version-aware analysis integration", () => {
     close();
   });
 
-  it("integrating a complete new version replaces records and pointer together", () => {
+  it("publishes the new version and carries a record this run missed", () => {
     seedPublishedRepo("golang/go");
 
     integrateAnalyzedVersion(db, "golang/go", V2_SHA, [
@@ -113,11 +113,48 @@ describe("version-aware analysis integration", () => {
     const row = getRepo(db, "golang/go")!;
     expect(row.status).toBe("analyzed");
     expect(row.analyzedSha).toBe(V2_SHA);
-    expect(row.errorCount).toBe(2);
     expect(row.lastError).toBeNull();
+
+    // v1-err was published and is therefore indexed; one analysis that did not
+    // rediscover it is not grounds to turn its URL into a 404.
     const records = errorsForRepo(db, "golang/go");
-    expect(records).toHaveLength(2);
-    expect(records.every((r) => r.analyzedSha === V2_SHA)).toBe(true);
+    expect(records.map((r) => r.slug).sort()).toEqual(["v1-err", "v2-err-1", "v2-err-2"]);
+    expect(records.find((r) => r.slug === "v1-err")!.missedRuns).toBe(1);
+    expect(records.filter((r) => r.analyzedSha === V2_SHA)).toHaveLength(2);
+    expect(row.errorCount).toBe(3);
+    close();
+  });
+
+  it("drops a record only after three consecutive analyses miss it", () => {
+    seedPublishedRepo("golang/go");
+
+    for (const sha of ["c".repeat(40), "d".repeat(40)]) {
+      integrateAnalyzedVersion(db, "golang/go", sha, [errorRow("golang/go", sha, "live")]);
+      expect(errorsForRepo(db, "golang/go").map((r) => r.slug).sort()).toEqual(["live", "v1-err"]);
+    }
+    expect(errorsForRepo(db, "golang/go").find((r) => r.slug === "v1-err")!.missedRuns).toBe(2);
+
+    integrateAnalyzedVersion(db, "golang/go", "e".repeat(40), [errorRow("golang/go", "e".repeat(40), "live")]);
+
+    expect(errorsForRepo(db, "golang/go").map((r) => r.slug)).toEqual(["live"]);
+    expect(getRepo(db, "golang/go")?.errorCount).toBe(1);
+    close();
+  });
+
+  it("clears the miss counter when a later run finds the record again", () => {
+    seedPublishedRepo("golang/go");
+    integrateAnalyzedVersion(db, "golang/go", V2_SHA, [errorRow("golang/go", V2_SHA, "live")]);
+    expect(errorsForRepo(db, "golang/go").find((r) => r.slug === "v1-err")!.missedRuns).toBe(1);
+
+    const sha3 = "c".repeat(40);
+    integrateAnalyzedVersion(db, "golang/go", sha3, [
+      errorRow("golang/go", sha3, "live"),
+      errorRow("golang/go", sha3, "v1-err"),
+    ]);
+
+    // Rediscovery is proof the record is live: without the reset, two more
+    // flaky runs could retire a page that a run in between had confirmed.
+    expect(errorsForRepo(db, "golang/go").find((r) => r.slug === "v1-err")!.missedRuns).toBe(0);
     close();
   });
 
@@ -134,8 +171,9 @@ describe("version-aware analysis integration", () => {
 
     const row = getRepo(db, "elastic/elasticsearch")!;
     expect(row.status).toBe("analyzed");
-    expect(row.errorCount).toBe(1400);
-    expect(errorsForRepo(db, "elastic/elasticsearch")).toHaveLength(1400);
+    // 1,400 new plus the seeded record this run did not rediscover.
+    expect(row.errorCount).toBe(1401);
+    expect(errorsForRepo(db, "elastic/elasticsearch")).toHaveLength(1401);
 
     // replaceErrors shares the chunked path — the direct call must survive too.
     replaceErrors(db, "elastic/elasticsearch", rows.slice(0, 1100));
@@ -151,8 +189,19 @@ describe("version-aware analysis integration", () => {
     const row = getRepo(db, "clean/repo")!;
     expect(row.status).toBe("analyzed");
     expect(row.analyzedSha).toBe(V2_SHA);
-    expect(row.errorCount).toBe(0);
-    expect(errorsForRepo(db, "clean/repo")).toHaveLength(0);
+    // A run that found nothing is the commonest flake of all — a failed
+    // discovery batch looks exactly like a repo with no errors — so the
+    // published page set survives it and only retires after three.
+    expect(row.errorCount).toBe(1);
+    expect(errorsForRepo(db, "clean/repo").map((r) => r.slug)).toEqual(["v1-err"]);
+    close();
+  });
+
+  it("a repo with nothing published integrates an empty result as empty", () => {
+    integrateAnalyzedVersion(db, "brand/new", V2_SHA, []);
+
+    expect(getRepo(db, "brand/new")?.errorCount).toBe(0);
+    expect(errorsForRepo(db, "brand/new")).toHaveLength(0);
     close();
   });
 });

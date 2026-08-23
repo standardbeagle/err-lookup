@@ -1,0 +1,1 @@
+ALTER TABLE `errors` ADD `missed_runs` integer DEFAULT 0 NOT NULL;

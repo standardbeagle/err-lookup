@@ -1,4 +1,4 @@
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, inArray } from "drizzle-orm";
 import { tx, type Db } from "./client.js";
 import { chunk } from "../util/pool.js";
 import { repositories, errors, jobHistory, type ErrorRow, type RepositoryRow } from "./schema.js";
@@ -116,14 +116,28 @@ export function latestPhaseRun(
  */
 const INSERT_CHUNK_ROWS = 500;
 
-function insertErrorRows(db: Db, rows: Omit<ErrorRow, "updatedAt">[]): void {
-  for (const slice of chunk(rows as (typeof errors.$inferInsert)[], INSERT_CHUNK_ROWS)) {
+/** A record as a phase produces it: bookkeeping columns are the store's job. */
+export type NewErrorRow = Omit<ErrorRow, "updatedAt" | "missedRuns">;
+
+/**
+ * Consecutive re-analyses that must all miss a record before it is deleted.
+ * Three is one bad batch plus two: enough that a flaky discovery cannot retire
+ * a live page, few enough that an error genuinely removed upstream stops being
+ * published within days rather than forever.
+ */
+const MAX_MISSED_RUNS = 3;
+
+function insertErrorRows(db: Db, rows: NewErrorRow[]): void {
+  // Rediscovery clears the miss counter: the run that found it again is proof
+  // the record is live, whatever the runs in between saw.
+  const fresh = rows.map((r) => ({ ...r, missedRuns: 0 }));
+  for (const slice of chunk(fresh as (typeof errors.$inferInsert)[], INSERT_CHUNK_ROWS)) {
     db.insert(errors).values(slice).run();
   }
 }
 
 /** Replace all errors for a repo inside a single transaction (§3.2). */
-export function replaceErrors(db: Db, repo: string, rows: Omit<ErrorRow, "updatedAt">[]): void {
+export function replaceErrors(db: Db, repo: string, rows: NewErrorRow[]): void {
   tx(db, () => {
     db.delete(errors).where(eq(errors.repo, repo)).run();
     insertErrorRows(db, rows);
@@ -162,17 +176,41 @@ export function integrateAnalyzedVersion(
   db: Db,
   repo: string,
   sha: string,
-  rows: Omit<ErrorRow, "updatedAt">[]
+  rows: NewErrorRow[]
 ): void {
   tx(db, () => {
-    db.delete(errors).where(eq(errors.repo, repo)).run();
+    const incoming = new Set(rows.map((r) => r.id));
+    const surviving = db
+      .select({ id: errors.id, missedRuns: errors.missedRuns })
+      .from(errors)
+      .where(eq(errors.repo, repo))
+      .all()
+      .filter((row) => !incoming.has(row.id));
+
+    // A record this run did not rediscover is not evidence that the error is
+    // gone: discovery is an LLM pass over a moving repo and its batches fail
+    // (zeroclaw lost 2 of 79 on 2026-08-22). Deleting on the first miss
+    // retired thousands of indexed URLs into 404s, which is what search
+    // engines punish. Keep the record, count the miss, and only drop it once
+    // MAX_MISSED_RUNS consecutive analyses have all failed to find it.
+    const doomed = surviving.filter((row) => row.missedRuns + 1 >= MAX_MISSED_RUNS).map((row) => row.id);
+    const spared = surviving.filter((row) => row.missedRuns + 1 < MAX_MISSED_RUNS);
+
+    db.delete(errors).where(and(eq(errors.repo, repo), inArray(errors.id, [...incoming, ...doomed]))).run();
     insertErrorRows(db, rows);
+    for (const row of spared) {
+      db.update(errors)
+        .set({ missedRuns: row.missedRuns + 1, updatedAt: Date.now() })
+        .where(eq(errors.id, row.id))
+        .run();
+    }
+
     upsertRepo(db, {
       repo,
       status: "analyzed",
       analyzedSha: sha,
       analyzedAt: new Date().toISOString(),
-      errorCount: rows.length,
+      errorCount: rows.length + spared.length,
       lastError: null,
     });
   });

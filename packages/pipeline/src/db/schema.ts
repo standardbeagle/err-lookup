@@ -71,6 +71,13 @@ export const errors = sqliteTable(
     analyzedSha: text("analyzed_sha").notNull(),
     analyzedAt: text("analyzed_at").notNull(),
     schemaVersion: integer("schema_version").notNull().default(2),
+    /**
+     * Consecutive re-analyses that did not rediscover this record. Discovery is
+     * an LLM pass over a moving repo, and batches fail: a record absent from
+     * one run is usually still real, and deleting it retires a URL that search
+     * engines have indexed. Reset to 0 on every rediscovery.
+     */
+    missedRuns: integer("missed_runs").notNull().default(0),
 
     updatedAt: integer("updated_at").notNull().$defaultFn(() => Date.now()),
   },

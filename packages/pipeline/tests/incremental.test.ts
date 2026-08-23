@@ -131,7 +131,17 @@ describe("incremental rescan", () => {
 
       const v2Rows = db.select().from(errors).where(eq(errors.repo, REPO)).all();
       const m2 = byMsg(v2Rows);
-      expect([...m2.keys()].sort()).toEqual(["Expected a function", "Expected object, received it", "alpha exploded badly", "beta failed badly"]);
+      // "alpha failed badly" was rewritten to "alpha exploded badly" upstream, so
+      // this run did not rediscover it. Its page stays up and starts a miss
+      // count rather than 404ing the moment one analysis disagreed.
+      expect([...m2.keys()].sort()).toEqual([
+        "Expected a function",
+        "Expected object, received it",
+        "alpha exploded badly",
+        "alpha failed badly",
+        "beta failed badly",
+      ]);
+      expect(m2.get("alpha failed badly")!.missedRuns).toBe(1);
       // carried over verbatim (still pinned to v1 — the file did not change)
       expect(m2.get("Expected object, received it")).toEqual({ ...m1.get("Expected object, received it")!, updatedAt: expect.any(Number) });
       // re-anchored: same identity and docs, new line, source and permalink at v2
@@ -147,7 +157,9 @@ describe("incremental rescan", () => {
       expect(m2.get("beta failed badly")!.analyzedSha).toBe(v2);
       const repoRow = db.select().from(repositories).where(eq(repositories.repo, REPO)).get()!;
       expect(repoRow.analyzedSha).toBe(v2);
-      expect(repoRow.errorCount).toBe(4);
+      // Four rediscovered or carried-over records plus the one awaiting its
+      // third miss — every one of them still has a live page.
+      expect(repoRow.errorCount).toBe(5);
       expect(logs.some((l) => l.startsWith("incremental from " + v1.slice(0, 8)))).toBe(true);
 
       // v3: edit right next to b.js's throw (touched, same identity → reused,
@@ -161,11 +173,27 @@ describe("incremental rescan", () => {
       const p3 = new EchoProvider();
       const r3 = await analyzeRepo(REPO, { db, providers: { echo: p3 }, cfg: cfg(), cloneUrlOverride: src });
       expect(r3.failed).toBeUndefined();
-      expect(r3.incremental).toEqual({ carriedOver: 2, remapped: 0, dropped: 2, reused: 1, fresh: 0 });
+      // Three carried over now, not two: "alpha failed badly" is still published
+      // while its miss count runs, and an untouched published record is carried
+      // like any other.
+      expect(r3.incremental).toEqual({ carriedOver: 3, remapped: 0, dropped: 2, reused: 1, fresh: 0 });
       expect(p3.prompts.filter((p) => p.includes("Analyze each of these"))).toHaveLength(0);
       const v3Rows = db.select().from(errors).where(eq(errors.repo, REPO)).all();
       const m3 = byMsg(v3Rows);
-      expect([...m3.keys()].sort()).toEqual(["Expected a function", "alpha exploded badly", "beta failed badly"]);
+      // is.js was deleted, so its record is gone from the plan's input and
+      // begins missing; "alpha failed badly" is on its second miss.
+      expect([...m3.keys()].sort()).toEqual([
+        "Expected a function",
+        "Expected object, received it",
+        "alpha exploded badly",
+        "alpha failed badly",
+        "beta failed badly",
+      ]);
+      // The plan re-publishes every untouched record, so a carried-over one is
+      // a rediscovery and its counter clears; only a record the plan dropped —
+      // is.js was deleted — starts counting toward retirement.
+      expect(m3.get("alpha failed badly")!.missedRuns).toBe(0);
+      expect(m3.get("Expected object, received it")!.missedRuns).toBe(1);
       const beta = m3.get("beta failed badly")!;
       expect(beta.id).toBe(m2.get("beta failed badly")!.id);
       expect(beta.documentation).toBe("doc for beta failed badly");
