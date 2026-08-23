@@ -271,6 +271,49 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (cmd === "reverify") {
+    // Re-run verify against a repo's PUBLISHED records: fill the gaps a failed
+    // verify left without paying for discovery, enrichment and defense again.
+    // `analyze --phases 5` cannot do this — an unlisted phase defaults to on,
+    // so that command runs the whole pipeline.
+    const { values } = parseArgs({
+      options: { "clone-url": { type: "string" } },
+      allowPositionals: true,
+      args: rest,
+    });
+    if (positional.length === 0) {
+      console.error("usage: errlookup reverify <owner/repo>...");
+      process.exit(2);
+    }
+    const cfg = loadConfig();
+    const providers = buildProviders(cfg);
+    const { db, raw } = openDb(dbPath());
+    let failed = 0;
+    try {
+      for (const repo of positional) {
+        try {
+          const result = await analyzeRepo(repo, {
+            db,
+            providers,
+            cfg,
+            phases: { scope: false, discovery: false, enrichment: false, defense: false, verify: true },
+            force: true,
+            cloneUrlOverride: values["clone-url"],
+            onLog: (m) => console.log(`[${repo}] ${m}`),
+          });
+          console.log(`[${repo}] reverified: ${result.errorCount} records`);
+        } catch (e) {
+          failed++;
+          console.error(`[${repo}] FAILED: ${(e as Error).message}`);
+        }
+      }
+    } finally {
+      raw.close();
+    }
+    if (failed > 0) process.exit(1);
+    return;
+  }
+
   if (cmd === "scan") {
     const { values } = parseArgs({
       options: {
@@ -341,6 +384,7 @@ async function main(): Promise<void> {
   console.error("  errlookup analyze <owner/repo> [--phases 1,2,3,4,5] [--force]");
   console.error("  errlookup review [--dry-run] <page-url | owner/repo/slug>...");
   console.error("  errlookup scan <file.txt> [--phases 1,2,3,5] [--force] [--seed-only]");
+  console.error("  errlookup reverify <owner/repo>...   # verify pass over published records");
   console.error("  errlookup collect-info [--max-pages 5] [--min-errors 5] [--min-repos 2]");
   console.error("  errlookup reset [--failed] [--dry-run] [owner/repo ...]");
   console.error("  errlookup export [--out-dir <path>]");

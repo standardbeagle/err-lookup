@@ -11,6 +11,8 @@ import {
   recordAnalysisFailure,
 } from "../src/db/store.js";
 import { readDataset } from "../src/exporter/index.js";
+import { mapConfig } from "../src/config/index.js";
+import { parseKdl } from "../src/config/kdl.js";
 
 const dbPath = resolve(".tmp-test", `versioning-${process.pid}.db`);
 let db: Db;
@@ -204,4 +206,66 @@ describe("version-aware analysis integration", () => {
     expect(errorsForRepo(db, "brand/new")).toHaveLength(0);
     close();
   });
+});
+
+describe("verify-only re-run", () => {
+  it("patches the published records instead of republishing an empty version", async () => {
+    const { analyzeRepo } = await import("../src/pipeline.js");
+    const { tmpRepo, disposeRepo } = await import("./tmp-repo.js");
+    const { writeFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const exec = promisify(execFile);
+
+    const src = tmpRepo("el-verify-only-");
+    writeFileSync(join(src, "a.js"), "throw new Error('boom');\n");
+    await exec("git", ["init", "-q", "-b", "main", src]);
+    await exec("git", ["-C", src, "add", "."]);
+    await exec("git", ["-C", src, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "v1"]);
+    const { stdout } = await exec("git", ["-C", src, "rev-parse", "HEAD"]);
+    const sha = stdout.trim();
+
+    const repo = "acme/gappy";
+    upsertRepo(db, { repo, status: "analyzed", analyzedSha: sha, analyzedAt: "2026-08-17T00:00:00.000Z", errorCount: 2 });
+    // Missing documentation only: a record still invalid after patching is
+    // dropped by verify's revalidation, which is a different hole (now caught
+    // by the miss counter rather than deleting the page).
+    // Ids must be the real 16-hex shape: validateErrorEntry rejects anything
+    // else, and a rejected record is dropped by verify's revalidation.
+    const gappy = { ...errorRow(repo, sha, "gappy"), id: "a".repeat(16), documentation: null };
+    replaceErrors(db, repo, [{ ...errorRow(repo, sha, "documented"), id: "b".repeat(16) }, gappy]);
+
+    // The recipe docs/verify-debt-2026-08-16.txt gave for the K3 outage. With
+    // discovery off there is nothing to assemble, so before this the run
+    // republished the repo with zero records and every page went with it.
+    const patches = [{ id: gappy.id, field: "documentation", value: "filled in" }];
+    const provider = {
+      name: "p",
+      async invoke() {
+        return { ok: true as const, parsed: { patches }, raw: JSON.stringify({ patches }) };
+      },
+    };
+    const cfg = mapConfig(parseKdl(['provider "p" { command "p" }', "defaults {", '  primary "p"', "}"].join("\n")));
+
+    const logs: string[] = [];
+    const r = await analyzeRepo(repo, {
+      db,
+      providers: { p: provider },
+      cfg,
+      phases: { scope: false, discovery: false, enrichment: false, defense: false, verify: true },
+      force: true,
+      cloneUrlOverride: src,
+      onLog: (m) => logs.push(m),
+    });
+    expect(logs.join("\n")).toContain("verify-only: 2 published records");
+
+    expect(r.failed).toBeUndefined();
+    const rows = errorsForRepo(db, repo);
+    expect(rows.map((x) => x.slug).sort()).toEqual(["documented", "gappy"]);
+    expect(rows.find((x) => x.slug === "gappy")!.documentation).toBe("filled in");
+    expect(getRepo(db, repo)?.errorCount).toBe(2);
+    disposeRepo(src);
+    close();
+  }, 60_000);
 });

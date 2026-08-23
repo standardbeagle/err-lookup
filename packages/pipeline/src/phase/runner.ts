@@ -1,4 +1,5 @@
 import type { Db } from "../db/client.js";
+import { rowToErrorEntry } from "../exporter/index.js";
 import {
   recordPhase,
   latestPhaseRun,
@@ -254,7 +255,16 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
       incremental: { carriedOver: plan.carryOver.length, remapped: plan.remapped.length, dropped: plan.dropped.length, reused: 0, fresh: 0 },
     };
   }
-  if (discovered.length === 0) {
+  // Verify-only run (`reverify`): discovery is switched off, so the published
+  // records ARE the input — the point is to patch their gaps without paying
+  // for discovery, enrichment and defense again.
+  const verifyOnly = !wanted("discovery") && wanted("verify");
+  const publishedRecords = verifyOnly ? errorsForRepo(db, repo).map(rowToErrorEntry) : [];
+  if (verifyOnly && publishedRecords.length > 0) {
+    log(`verify-only: ${publishedRecords.length} published records loaded for patching`);
+  }
+
+  if (discovered.length === 0 && publishedRecords.length === 0) {
     integrateAnalyzedVersion(db, repo, sha, []);
     log("phase discovery: no errors found; repo marked analyzed");
     return { errorCount: 0, rejects: [], skipped };
@@ -405,16 +415,19 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
     }
     kept = keptRows(plan, repo, sha, repoPath);
   }
-  const assembled = assemble({
-    repo,
-    sha,
-    repoPath,
-    discovered,
-    enriched: enrichedMap,
-    defense: defenseMap,
-    reservedIds: new Set(kept.map((r) => r.id)),
-    reservedSlugs: new Set(kept.map((r) => r.slug)),
-  });
+  const assembled = verifyOnly
+    ? { records: publishedRecords, rejects: [] }
+    : assemble({
+        repo,
+        sha,
+        repoPath,
+        discovered,
+        enriched: enrichedMap,
+        defense: defenseMap,
+        reservedIds: new Set(kept.map((r) => r.id)),
+        reservedSlugs: new Set(kept.map((r) => r.slug)),
+      });
+
 
   // ----- Phase 5: Verify (patch loop, max 2 rounds) -----
   if (wanted("verify") && assembled.records.length > 0) {
