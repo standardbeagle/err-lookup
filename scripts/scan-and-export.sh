@@ -39,6 +39,50 @@ if [ "${free_gb:-0}" -lt "$MIN_FREE_GB" ]; then
   exit 1
 fi
 
+# Failure summary to ntfy (§11.3 alerting). A drain that ends having failed
+# every repo it touched looks identical, from the outside, to one that had
+# nothing to do: the run log is the only place the reason lives, and nobody
+# reads it until something is visibly broken. On 2026-08-23 a spent z.ai
+# window failed five repos an hour for five hours in silence.
+#
+# Sent once per run, and only when there is something to report. Reasons are
+# clustered by their first clause, because a provider outage produces the same
+# sentence a hundred times and the count is the interesting part.
+summarize_failures() { # $1 = run log
+  local log="$1"
+  local failed reasons hold summary
+  failed=$(grep -c "FAILED" "$log" 2>/dev/null || echo 0)
+  hold=$(grep -o "provider window quota is spent until [0-9TZ:.-]*" "$log" 2>/dev/null | tail -1)
+  [ "${failed:-0}" -gt 0 ] || [ -n "$hold" ] || return 0
+
+  # "[repo] phase X: FAILED — <reason>" → the reason, counted. The stderr tail
+  # is dropped (it is the same JSON fragment every time), timestamps and SHAs
+  # are normalised so one outage clusters into one line, and the rest is cut
+  # at 90 chars because the distinguishing part is always at the front.
+  reasons=$(grep -oE "FAILED (—|:) .*" "$log" 2>/dev/null \
+    | sed -E 's/^FAILED (—|:) //; s/; stderr.*//; s/[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9:]+/<time>/g; s/[0-9a-f]{8,}/<sha>/g; s/^(.{0,90}).*/\1/' \
+    | sort | uniq -c | sort -rn | head -5 \
+    | sed 's/^ *//')
+
+  summary="$(hostname): $(grep -c "^\[.*\] → " "$log" 2>/dev/null || echo 0) repos done, ${failed} failures"
+  [ -n "$hold" ] && summary="$summary
+$hold"
+  [ -n "$reasons" ] && summary="$summary
+
+top reasons:
+$reasons"
+
+  echo "$(date -u +%FT%TZ) failure summary: ${failed} failures" >>"$LOG_DIR/scan.log"
+  if [ -n "${ERRLOOKUP_ALERT_URL:-}" ]; then
+    curl -sf -m 20 -H "Title: errlookup drain" -H "Priority: default" \
+      -d "$summary" "$ERRLOOKUP_ALERT_URL" >/dev/null \
+      || echo "$(date -u +%FT%TZ) failure summary delivery failed (webhook unreachable)" >>"$LOG_DIR/scan.log"
+  fi
+}
+
+ALERT_ENV="${ERRLOOKUP_ALERT_ENV:-$HOME/.config/errlookup/alert.env}"
+[ -z "${ERRLOOKUP_ALERT_URL:-}" ] && [ -f "$ALERT_ENV" ] && . "$ALERT_ENV"
+
 RUN_LOG="$LOG_DIR/scan-$(date -u +%Y%m%d-%H%M%S).log"
 restart_wanted=0
 {
@@ -59,6 +103,8 @@ restart_wanted=0
     echo "=== scan run end $(date -u +%FT%TZ)"
   fi
 } >>"$RUN_LOG" 2>&1
+
+summarize_failures "$RUN_LOG"
 
 if [ "$restart_wanted" -eq 1 ]; then
   # Exit with the same code so the supervisor restarts us: the scan unit maps
