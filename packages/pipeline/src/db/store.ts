@@ -120,12 +120,18 @@ const INSERT_CHUNK_ROWS = 500;
 export type NewErrorRow = Omit<ErrorRow, "updatedAt" | "missedRuns">;
 
 /**
- * Consecutive re-analyses that must all miss a record before it is deleted.
- * Three is one bad batch plus two: enough that a flaky discovery cannot retire
- * a live page, few enough that an error genuinely removed upstream stops being
- * published within days rather than forever.
+ * A published page is never withdrawn because an analysis stopped finding its
+ * error. Discovery is an LLM pass over a moving repo, so "not found this time"
+ * carries no information about whether the error is real; the only thing it
+ * reliably produces is a 404 on a URL search engines already indexed. Records
+ * are therefore kept indefinitely and `missedRuns` counts how many analyses
+ * have gone by without seeing one — the signal a later fill-in pass uses to
+ * find records stranded on an older version of their repo.
+ *
+ * Removal is for records that should never have been published: a processing
+ * error, not a quiet disappearance. That path is `reset`, which is explicit
+ * and operator-driven.
  */
-const MAX_MISSED_RUNS = 3;
 
 function insertErrorRows(db: Db, rows: NewErrorRow[]): void {
   // Rediscovery clears the miss counter: the run that found it again is proof
@@ -187,18 +193,13 @@ export function integrateAnalyzedVersion(
       .all()
       .filter((row) => !incoming.has(row.id));
 
-    // A record this run did not rediscover is not evidence that the error is
-    // gone: discovery is an LLM pass over a moving repo and its batches fail
-    // (zeroclaw lost 2 of 79 on 2026-08-22). Deleting on the first miss
-    // retired thousands of indexed URLs into 404s, which is what search
-    // engines punish. Keep the record, count the miss, and only drop it once
-    // MAX_MISSED_RUNS consecutive analyses have all failed to find it.
-    const doomed = surviving.filter((row) => row.missedRuns + 1 >= MAX_MISSED_RUNS).map((row) => row.id);
-    const spared = surviving.filter((row) => row.missedRuns + 1 < MAX_MISSED_RUNS);
-
-    db.delete(errors).where(and(eq(errors.repo, repo), inArray(errors.id, [...incoming, ...doomed]))).run();
+    // Only the records this run is republishing are deleted, and only so the
+    // fresh copies can take their place. Everything else stays exactly where
+    // it is: its page keeps answering, and its miss count records how far
+    // behind the repo's current version it has fallen.
+    db.delete(errors).where(and(eq(errors.repo, repo), inArray(errors.id, [...incoming]))).run();
     insertErrorRows(db, rows);
-    for (const row of spared) {
+    for (const row of surviving) {
       db.update(errors)
         .set({ missedRuns: row.missedRuns + 1, updatedAt: Date.now() })
         .where(eq(errors.id, row.id))
@@ -210,7 +211,7 @@ export function integrateAnalyzedVersion(
       status: "analyzed",
       analyzedSha: sha,
       analyzedAt: new Date().toISOString(),
-      errorCount: rows.length + spared.length,
+      errorCount: rows.length + surviving.length,
       lastError: null,
     });
   });

@@ -72,10 +72,11 @@ export const errors = sqliteTable(
     analyzedAt: text("analyzed_at").notNull(),
     schemaVersion: integer("schema_version").notNull().default(2),
     /**
-     * Consecutive re-analyses that did not rediscover this record. Discovery is
-     * an LLM pass over a moving repo, and batches fail: a record absent from
-     * one run is usually still real, and deleting it retires a URL that search
-     * engines have indexed. Reset to 0 on every rediscovery.
+     * Consecutive re-analyses that did not rediscover this record; reset to 0
+     * whenever one does. It never causes a deletion — a published page is not
+     * withdrawn because an LLM pass stopped seeing it — it marks records
+     * stranded on an older version of their repo, which is what a fill-in pass
+     * needs to find them.
      */
     missedRuns: integer("missed_runs").notNull().default(0),
 

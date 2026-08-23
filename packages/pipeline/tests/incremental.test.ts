@@ -131,9 +131,9 @@ describe("incremental rescan", () => {
 
       const v2Rows = db.select().from(errors).where(eq(errors.repo, REPO)).all();
       const m2 = byMsg(v2Rows);
-      // "alpha failed badly" was rewritten to "alpha exploded badly" upstream, so
-      // this run did not rediscover it. Its page stays up and starts a miss
-      // count rather than 404ing the moment one analysis disagreed.
+      // "alpha failed badly" was rewritten to "alpha exploded badly" upstream,
+      // so this run did not rediscover it. Its page stays up — published pages
+      // are not withdrawn — and carries a miss count for the fill-in pass.
       expect([...m2.keys()].sort()).toEqual([
         "Expected a function",
         "Expected object, received it",

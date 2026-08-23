@@ -127,19 +127,20 @@ describe("version-aware analysis integration", () => {
     close();
   });
 
-  it("drops a record only after three consecutive analyses miss it", () => {
+  it("never withdraws a published record, however many analyses miss it", () => {
     seedPublishedRepo("golang/go");
 
-    for (const sha of ["c".repeat(40), "d".repeat(40)]) {
+    // Five analyses in a row fail to rediscover v1-err. Its page stays up
+    // through all of them: an LLM pass that stopped seeing an error says
+    // nothing about whether the error is real, and the URL is indexed.
+    for (const sha of ["c", "d", "e", "f", "0"].map((c) => c.repeat(40))) {
       integrateAnalyzedVersion(db, "golang/go", sha, [errorRow("golang/go", sha, "live")]);
       expect(errorsForRepo(db, "golang/go").map((r) => r.slug).sort()).toEqual(["live", "v1-err"]);
     }
-    expect(errorsForRepo(db, "golang/go").find((r) => r.slug === "v1-err")!.missedRuns).toBe(2);
 
-    integrateAnalyzedVersion(db, "golang/go", "e".repeat(40), [errorRow("golang/go", "e".repeat(40), "live")]);
-
-    expect(errorsForRepo(db, "golang/go").map((r) => r.slug)).toEqual(["live"]);
-    expect(getRepo(db, "golang/go")?.errorCount).toBe(1);
+    // The count is a staleness marker for the fill-in pass, not a countdown.
+    expect(errorsForRepo(db, "golang/go").find((r) => r.slug === "v1-err")!.missedRuns).toBe(5);
+    expect(getRepo(db, "golang/go")?.errorCount).toBe(2);
     close();
   });
 
@@ -192,8 +193,8 @@ describe("version-aware analysis integration", () => {
     expect(row.status).toBe("analyzed");
     expect(row.analyzedSha).toBe(V2_SHA);
     // A run that found nothing is the commonest flake of all — a failed
-    // discovery batch looks exactly like a repo with no errors — so the
-    // published page set survives it and only retires after three.
+    // discovery batch looks exactly like a repo with no errors — and the
+    // published page set survives it intact.
     expect(row.errorCount).toBe(1);
     expect(errorsForRepo(db, "clean/repo").map((r) => r.slug)).toEqual(["v1-err"]);
     close();
