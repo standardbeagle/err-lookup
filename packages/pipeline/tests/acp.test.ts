@@ -17,9 +17,11 @@ function acpCfg(): ProviderConfig {
     command: process.execPath,
     args: [FAKE_AGENT],
     timeoutMs: 15_000,
+    idleTimeoutMs: 0,
     promptMode: "stdin",
     type: "acp",
     model: "fake/fake-model",
+    modelOptions: null,
   };
 }
 
@@ -46,6 +48,41 @@ describe("AcpProvider", () => {
       if (!r.ok) expect(r.kind).toBe("empty");
     } finally {
       delete process.env.FAKE_ACP_SKIP_FILE;
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 20000);
+
+  it("kills a stalled call on protocol silence, not wall clock", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "acp-idle-"));
+    process.env.FAKE_ACP_STALL = "1";
+    try {
+      const p = new AcpProvider("opencode", { ...acpCfg(), idleTimeoutMs: 400 });
+      const started = Date.now();
+      const r = await p.invoke("stall", { cwd });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.kind).toBe("timeout");
+        expect(r.error).toContain("no ACP activity for 400ms");
+      }
+      // Long before the 15s hard ceiling: the idle timer fired, not the wall clock.
+      expect(Date.now() - started).toBeLessThan(10_000);
+    } finally {
+      delete process.env.FAKE_ACP_STALL;
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 20000);
+
+  it("streamed events hold the idle timer off past the idle window", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "acp-drip-"));
+    // 6 chunks every 150ms ≈ 900ms of work, idle window 500ms: only the
+    // per-event reset lets this finish.
+    process.env.FAKE_ACP_DRIP = "150,6";
+    try {
+      const p = new AcpProvider("opencode", { ...acpCfg(), idleTimeoutMs: 500 });
+      const r = await p.invoke("drip", { cwd });
+      expect(r.ok).toBe(true);
+    } finally {
+      delete process.env.FAKE_ACP_DRIP;
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 20000);
@@ -126,5 +163,31 @@ describe("config: acp provider mapping", () => {
     expect(p.type).toBe("acp");
     expect(p.model).toBe("kimi-for-coding/kimi-for-coding");
     expect(p.args).toEqual(["acp", "--pure"]);
+  });
+
+  it("parses idle-timeout-ms and model-options JSON", () => {
+    const cfg = mapConfig(
+      parseKdl(
+        [
+          'provider "opencode" {',
+          '  command "opencode"',
+          '  type "acp"',
+          '  model "zai-coding-plan/glm-5.2"',
+          "  idle-timeout-ms 90000",
+          '  model-options "{\\"thinking\\":{\\"type\\":\\"disabled\\"}}"',
+          "}",
+          'defaults { primary "opencode" }',
+        ].join("\n")
+      )
+    );
+    const p = cfg.providers.opencode!;
+    expect(p.idleTimeoutMs).toBe(90_000);
+    expect(p.modelOptions).toEqual({ thinking: { type: "disabled" } });
+  });
+
+  it("rejects malformed model-options instead of running without the pin", () => {
+    expect(() =>
+      mapConfig(parseKdl('provider "x" { model-options "not json" }'))
+    ).toThrow(/model-options/);
   });
 });

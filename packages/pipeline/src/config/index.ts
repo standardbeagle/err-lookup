@@ -10,8 +10,23 @@ export interface ProviderConfig {
   promptMode: "stdin" | "arg";
   /** Invocation protocol: plain subprocess (default) or ACP (JSON-RPC over stdio, e.g. `opencode acp`). */
   type: "spawn" | "acp";
+  /**
+   * ACP only: kill a call when no protocol event arrives for this long. The
+   * agent streams events (chunks, tool calls, thoughts) the whole time it is
+   * working, so silence — not wall clock — is the stall signal; `timeoutMs`
+   * stays as the hard ceiling behind it. 0 disables idle detection.
+   */
+  idleTimeoutMs: number;
   /** Model override for ACP providers (opencode `provider/model` id), pinned via OPENCODE_CONFIG_CONTENT. */
   model: string | null;
+  /**
+   * ACP only: opencode per-model `options` for the pinned model (e.g.
+   * {"reasoningEffort":"low"} or a thinking toggle), merged into
+   * OPENCODE_CONFIG_CONTENT under provider.<id>.models.<model>.options.
+   * KDL: `model-options` with one JSON-string value — passthrough, so a new
+   * provider knob needs no code change.
+   */
+  modelOptions: Record<string, unknown> | null;
 }
 
 export interface ErrlookupConfig {
@@ -70,7 +85,9 @@ export const DEFAULT_CONFIG: ErrlookupConfig = {
       timeoutMs: 600_000,
       promptMode: "stdin",
       type: "spawn",
+      idleTimeoutMs: 180_000,
       model: null,
+      modelOptions: null,
     },
   },
   defaults: {
@@ -93,6 +110,20 @@ export const DEFAULT_CONFIG: ErrlookupConfig = {
 function asConcurrency(v: unknown, fallback: number): number {
   const n = typeof v === "number" && Number.isFinite(v) ? Math.floor(v) : fallback;
   return n >= 1 ? n : fallback;
+}
+
+/** `model-options` carries raw JSON; malformed JSON must fail the load, not
+ *  silently run the whole corpus with the pin missing. */
+function parseModelOptions(providerName: string, v: unknown): Record<string, unknown> | null {
+  if (v == null) return null;
+  if (typeof v !== "string") throw new Error(`provider "${providerName}": model-options must be a JSON string`);
+  try {
+    const parsed = JSON.parse(v) as unknown;
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+    return parsed as Record<string, unknown>;
+  } catch (e) {
+    throw new Error(`provider "${providerName}": model-options is not valid JSON object: ${(e as Error).message}`);
+  }
 }
 
 function childByName(node: KdlNode, name: string): KdlNode | undefined {
@@ -124,9 +155,12 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
             ? "arg"
             : "stdin",
         type: asString(childByName(node, "type")?.values[0], "spawn") === "acp" ? "acp" : "spawn",
+        // 0 is meaningful (idle detection off), so no positive-clamp.
+        idleTimeoutMs: Math.max(0, asNumber(childByName(node, "idle-timeout-ms")?.values[0], 180_000)),
         model: childByName(node, "model")?.values[0] != null
           ? asString(childByName(node, "model")?.values[0], "")
           : null,
+        modelOptions: parseModelOptions(providerName, childByName(node, "model-options")?.values[0]),
       };
     } else if (node.name === "phase-providers") {
       cfg.phaseProviders = {};

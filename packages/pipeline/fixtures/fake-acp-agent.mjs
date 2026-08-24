@@ -8,6 +8,9 @@
  * Behavior toggles via env:
  *   FAKE_ACP_PAYLOAD  JSON to emit (default {"fake":true})
  *   FAKE_ACP_SKIP_FILE=1  never write the output file (failure-path testing)
+ *   FAKE_ACP_STALL=1  go silent after session/prompt (idle-watchdog testing)
+ *   FAKE_ACP_DRIP="<ms>,<count>"  before finishing, stream one message chunk
+ *     every <ms> for <count> chunks (proves events hold the idle timer off)
  */
 import { writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -33,6 +36,7 @@ rl.on("line", (line) => {
     send({ jsonrpc: "2.0", id: msg.id, result: { sessionId: "ses_fake" } });
   } else if (msg.method === "session/prompt") {
     promptId = msg.id;
+    if (process.env.FAKE_ACP_STALL === "1") return; // hang forever, no events
     // Ask permission first, like opencode does before tool use.
     awaitingPermission = true;
     send({
@@ -63,11 +67,29 @@ rl.on("line", (line) => {
       send({ jsonrpc: "2.0", id: promptId, error: { code: -1, message: "permission denied" } });
       return;
     }
-    send({
-      jsonrpc: "2.0",
-      method: "session/update",
-      params: { sessionId: "ses_fake", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `wrote output. ${payload}` } } },
-    });
-    send({ jsonrpc: "2.0", id: promptId, result: { stopReason: "end_turn" } });
+    const chunk = (text) =>
+      send({
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: { sessionId: "ses_fake", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } } },
+      });
+    const finish = () => {
+      chunk(`wrote output. ${payload}`);
+      send({ jsonrpc: "2.0", id: promptId, result: { stopReason: "end_turn" } });
+    };
+    const drip = (process.env.FAKE_ACP_DRIP ?? "").match(/^(\d+),(\d+)$/);
+    if (drip) {
+      const [ms, count] = [Number(drip[1]), Number(drip[2])];
+      let sent = 0;
+      const t = setInterval(() => {
+        chunk(`drip ${sent}`);
+        if (++sent >= count) {
+          clearInterval(t);
+          finish();
+        }
+      }, ms);
+    } else {
+      finish();
+    }
   }
 });

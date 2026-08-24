@@ -77,7 +77,9 @@ describe("config mapping", () => {
       timeoutMs: 600_000,
       promptMode: "stdin",
       type: "spawn",
+      idleTimeoutMs: 180_000,
       model: null,
+      modelOptions: null,
     });
     expect(cfg.providers.claude.args).toContain("--max-turns");
     expect(cfg.defaults).toEqual({

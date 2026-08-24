@@ -7,13 +7,23 @@ provider "glm" {
     type "acp"
     model "zai-coding-plan/glm-5.2"
     timeout-ms 600000
+    idle-timeout-ms 180000
+    // Bulk classification needs no deliberation: thinking off (Anthropic-shape
+    // option — the z.ai coding-plan endpoint is Anthropic-compatible).
+    model-options "{\"thinking\":{\"type\":\"disabled\"}}"
 }
 provider "k3" {
     command "opencode"
     args "acp" "--pure"
     type "acp"
     model "kimi-for-coding/k3"
-    timeout-ms 600000
+    // Stalls are caught by idle-timeout-ms (no ACP events), so the wall clock
+    // is only a backstop. 600s here killed actively-streaming verify calls on
+    // tensorflow-scale batches; 30min lets a busy call finish while a stalled
+    // one still dies within 3 minutes.
+    timeout-ms 1800000
+    idle-timeout-ms 180000
+    model-options "{\"thinking\":{\"type\":\"disabled\"}}"
 }
 // Review-phase winner of docs/model-comparison-2026-08-16-review-phase.md:
 // only candidate with a calibrated verdict distribution (says "good", patches
@@ -25,6 +35,8 @@ provider "glm53" {
     type "acp"
     model "zai-coding-plan/glm-5.3"
     timeout-ms 600000
+    idle-timeout-ms 180000
+    model-options "{\"thinking\":{\"type\":\"disabled\"}}"
 }
 defaults {
     primary "glm"

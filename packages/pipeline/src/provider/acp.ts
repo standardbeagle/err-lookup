@@ -76,8 +76,18 @@ export class AcpProvider implements LlmProvider {
   async invoke(prompt: string, opts: InvokeOptions): Promise<ProviderResult> {
     const timeoutMs = opts.timeoutMs ?? this.cfg.timeoutMs;
     const env: NodeJS.ProcessEnv = { ...process.env };
+    // model is "providerId/modelId"; modelOptions pin per-model settings
+    // (reasoning effort, thinking toggles) the same way the user's static
+    // opencode.json pins them — OPENCODE_CONFIG_CONTENT merges over it.
+    // First "/" splits provider from model; the model id itself may contain "/".
+    const slash = this.cfg.model?.indexOf("/") ?? -1;
+    const providerId = slash > 0 ? this.cfg.model!.slice(0, slash) : "";
+    const modelId = slash > 0 ? this.cfg.model!.slice(slash + 1) : "";
     env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
       ...(this.cfg.model ? { model: this.cfg.model } : {}),
+      ...(providerId && modelId && this.cfg.modelOptions
+        ? { provider: { [providerId]: { models: { [modelId]: { options: this.cfg.modelOptions } } } } }
+        : {}),
       agent: { build: { tools: toolPolicy() } },
     });
 
@@ -121,6 +131,27 @@ export class AcpProvider implements LlmProvider {
         send({ jsonrpc: "2.0", id, method, params });
       });
 
+    // Idle watchdog: a working agent streams session/update events (text
+    // chunks, thoughts, tool calls) continuously, so protocol silence is the
+    // stall signal. The wall-clock timer below stays as the hard ceiling, but
+    // sized for a stall it killed genuinely active calls — tensorflow-scale
+    // verify batches died at 600s mid-stream, their records going unpatched.
+    const idleMs = this.cfg.idleTimeoutMs;
+    let killReason: string | null = null;
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    const abort = (reason: string) => {
+      killReason = reason;
+      const err = new Error(reason);
+      for (const p of pending.values()) p.reject(err);
+      pending.clear();
+      kill();
+    };
+    const armIdle = () => {
+      if (idleMs <= 0) return;
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => abort(`no ACP activity for ${idleMs}ms`), idleMs);
+    };
+
     let agentText = "";
     let buffer = "";
     child.stdout?.on("data", (d) => {
@@ -136,6 +167,7 @@ export class AcpProvider implements LlmProvider {
         } catch {
           continue; // non-protocol noise on stdout
         }
+        armIdle(); // any protocol message proves the agent is alive
         if (msg.id != null && msg.method === undefined) {
           // response to one of our requests
           const p = pending.get(msg.id);
@@ -169,14 +201,8 @@ export class AcpProvider implements LlmProvider {
       child.once("error", () => resolve());
     });
 
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      const err = new Error(`ACP call exceeded ${timeoutMs}ms`);
-      for (const p of pending.values()) p.reject(err);
-      pending.clear();
-      kill();
-    }, timeoutMs);
+    const timer = setTimeout(() => abort(`exceeded ${timeoutMs}ms hard ceiling`), timeoutMs);
+    armIdle();
 
     try {
       await request("initialize", { protocolVersion: 1, clientCapabilities: {} });
@@ -188,15 +214,17 @@ export class AcpProvider implements LlmProvider {
       });
     } catch (e) {
       clearTimeout(timer);
+      if (idleTimer) clearTimeout(idleTimer);
       kill();
       await exited;
-      if (timedOut) {
-        return { ok: false, kind: "timeout", error: `${this.name} exceeded ${timeoutMs}ms (killed ACP process group)` };
+      if (killReason) {
+        return { ok: false, kind: "timeout", error: `${this.name} ${killReason} (killed ACP process group)` };
       }
       return { ok: false, kind: "spawn", error: `${this.name} ACP failure: ${(e as Error).message}; stderr: ${stderrTail}` };
     }
 
     clearTimeout(timer);
+    if (idleTimer) clearTimeout(idleTimer);
     kill();
     await exited;
 
