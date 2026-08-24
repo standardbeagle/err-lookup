@@ -186,7 +186,24 @@ describe("usageLimitResetAt", () => {
     // 22:00:28 and calls resumed at 14:15 UTC. Holding until 22:00 UTC would
     // have idled the drain for eight hours it did not need to.
     const now = Date.parse("2026-08-23T09:00:00Z");
-    expect(usageLimitResetAt(msg, now)?.toISOString()).toBe("2026-08-23T14:00:00.000Z");
+    expect(usageLimitResetAt(msg, now)?.toISOString()).toBe("2026-08-23T14:00:28.000Z");
+  });
+
+  it("keeps the stated minute when clamping, because zones move whole hours", () => {
+    // Quota spent at 09:07 → the five-hour ceiling is 14:07, but the message
+    // said the window turns at :00:28, and that part of it is zone-proof.
+    const now = Date.parse("2026-08-23T09:07:00Z");
+    expect(usageLimitResetAt(msg, now)?.toISOString()).toBe("2026-08-23T14:00:28.000Z");
+  });
+
+  it("never returns a hold in the past when snapping the minute back", () => {
+    // Ceiling 14:00:10 snaps back to 14:00:28 — fine — but a ceiling of
+    // 14:00:00 with a stated :59 would snap behind the ceiling, so it rolls on.
+    const late = msg.replace("22:00:28", "22:59:00");
+    const now = Date.parse("2026-08-23T09:00:30Z");
+    const at = usageLimitResetAt(late, now)!;
+    expect(at.getTime()).toBeGreaterThan(now);
+    expect(at.getUTCMinutes()).toBe(59);
   });
 
   it("takes the stated time when it falls inside the window", () => {

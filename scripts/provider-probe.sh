@@ -9,11 +9,17 @@
 # stated window length and can still be hours out either way. One cheap call
 # settles it.
 #
-# Cron runs this at :23 past the hour — off the hour on purpose, since every
-# other client on the plan retries exactly on it, and a probe that lands in
-# that stampede answers "still limited" when the window is actually open.
+# When to probe comes out of the message itself. The hour z.ai states is in a
+# zone it never names, but every zone offset in play is a whole number of
+# hours, so the MINUTE is the same in all of them: "reset at ... 22:00:28"
+# means the window reopens on the hour, whatever hour that turns out to be.
+# The probe therefore runs at that minute plus one, every hour, until the
+# provider answers — one minute after the window opens, and a minute clear of
+# whatever else on the plan is retrying exactly on it.
 #
-# Costs one trivial provider call per hour, and only while a hold is in force.
+# Cron calls this every minute; it exits in milliseconds unless a hold is in
+# force AND the current minute is the one the message pointed at, so it costs
+# one trivial provider call per hour, only while the drain is stopped.
 set -u -o pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,6 +30,17 @@ export ERRLOOKUP_CONFIG="${ERRLOOKUP_CONFIG:-$REPO_ROOT/configs/blitz-glm-k3.kdl
 
 mkdir -p "$LOG_DIR"
 [ -f "$HOLD_FILE" ] || exit 0
+
+hold=$(tr -d '[:space:]' <"$HOLD_FILE")
+# ISO 8601: 2026-08-23T22:00:28.000Z → 00
+reset_minute=$(printf '%s' "$hold" | sed -nE 's/.*T[0-9]{2}:([0-9]{2}):.*/\1/p')
+if [ -z "$reset_minute" ]; then
+  echo "$(date -u +%FT%TZ) provider hold has no readable minute ($hold) — probing anyway" >>"$LOG"
+else
+  target=$(( (10#$reset_minute + 1) % 60 ))
+  now_minute=$(( 10#$(date +%M) ))
+  [ "$now_minute" -eq "$target" ] || exit 0
+fi
 
 # A drain already running means the hold is stale in the only way that matters.
 exec 9>>"$LOG_DIR/scan.lock"

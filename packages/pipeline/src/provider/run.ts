@@ -74,7 +74,17 @@ export function usageLimitResetAt(error: string, now = Date.now()): Date | null 
   // length the same message states: a reset further away than the window is
   // long is a misread zone. A correctly-stated UTC reset falls inside it.
   const ceiling = now + windowMs;
-  return stated.getTime() > ceiling ? new Date(ceiling) : stated;
+  if (stated.getTime() <= ceiling) return stated;
+
+  // The hour is unusable but the MINUTE is not: every zone offset in play is a
+  // whole number of hours, so :00:28 means :00:28 everywhere. Keep it — the
+  // clamp then lands on the real reset instead of near it (14:00:28 rather
+  // than 14:07 for a quota spent at 09:07), and the probe that waits on this
+  // hold knows which minute of the hour to try.
+  const snapped = new Date(ceiling);
+  snapped.setUTCMinutes(stated.getUTCMinutes(), stated.getUTCSeconds(), 0);
+  if (snapped.getTime() < now) snapped.setUTCHours(snapped.getUTCHours() + 1);
+  return snapped;
 }
 
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
