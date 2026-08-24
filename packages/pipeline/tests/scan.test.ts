@@ -236,8 +236,10 @@ describe("provider window quota", () => {
         ok: false as const,
         kind: "spawn" as const,
         error:
+          // The stamp must sit in the future at test time — a hardcoded date rotted
+          // and failed this suite the day the calendar passed it.
           "scope: [spawn] glm ACP failure: Internal error: Usage limit reached for 5 hour. " +
-          "Your limit will reset at 2026-08-23 22:00:28; stderr: Error handling request {",
+          `Your limit will reset at ${new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString().slice(0, 19).replace("T", " ")}; stderr: Error handling request {`,
       };
     }
   }
