@@ -47,9 +47,21 @@ export interface VerifyPatchJson {
     | "solutions"
     | "exampleFix"
     | "sourceCode"
-    | "filePath";
+    | "filePath"
+    | "handlingStrategy"
+    | "preventionTips";
   value: unknown;
 }
+
+/**
+ * Prepended to every provider prompt. The pipeline's models default to
+ * thinking mode, and on bulk extraction calls unguided deliberation costs more
+ * tokens than the answer. The config pins reasoning options off where the
+ * provider API supports it (model-options in the KDL); this line covers the
+ * rest and keeps even a pinned model from narrating plans into its output.
+ */
+export const DIRECT_MODE =
+  "Work with minimal thinking: no extended reasoning, no plans, no self-review. Produce the required output directly, in one pass.\n\n";
 
 /**
  * Phase 0 — Scope (§4.2.0): decide per-repo which directories hold the
@@ -58,7 +70,7 @@ export interface VerifyPatchJson {
  * dotnet/samples, doc sites, vendored trees) that no static list can chase.
  */
 export function scopePrompt(repo: string, tree: string): string {
-  return `You are configuring the scan scope for a pipeline that documents the ERRORS A LIBRARY CAN RAISE for its users. Below is the directory tree of the repository "${repo}", depth-limited, with per-directory source-file counts.
+  return DIRECT_MODE + `You are configuring the scan scope for a pipeline that documents the ERRORS A LIBRARY CAN RAISE for its users. Below is the directory tree of the repository "${repo}", depth-limited, with per-directory source-file counts.
 
 DIRECTORY TREE:
 ${tree}
@@ -136,7 +148,7 @@ export function candidateDiscoveryPrompt(candidates: CandidatePrompt[]): string 
     .map((r) => `--- ${r.file}:${r.start}-${r.start + r.lines.length - 1}\n${r.lines.join("\n")}`)
     .join("\n");
   const sites = candidates.map(({ file, line, kind, snippet, literal }) => ({ file, line, kind, snippet, literal }));
-  return `You are an expert at finding error patterns in codebases. A static scanner extracted these candidate error-raising sites from the repository (you are in its root). The SOURCE REGIONS below contain the surrounding source for every candidate, one region per stretch of a file, headed by \`--- path:firstLine-lastLine\`. Find each candidate inside the region for its file — its \`snippet\` is the matched line — and judge it FROM THAT SOURCE: decide whether it is a USER-FACING error. Only open the file when the region is insufficient — e.g. the message string clearly continues past the end of the region, or the candidate's file has no region.
+  return DIRECT_MODE + `You are an expert at finding error patterns in codebases. A static scanner extracted these candidate error-raising sites from the repository (you are in its root). The SOURCE REGIONS below contain the surrounding source for every candidate, one region per stretch of a file, headed by \`--- path:firstLine-lastLine\`. Find each candidate inside the region for its file — its \`snippet\` is the matched line — and judge it FROM THAT SOURCE: decide whether it is a USER-FACING error. Only open the file when the region is insufficient — e.g. the message string clearly continues past the end of the region, or the candidate's file has no region.
 
 SOURCE REGIONS:
 ${regions}
@@ -157,7 +169,7 @@ OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
 }
 
 /** Phase 1 — Discovery (§4.2.1): scan repo for user-facing errors. */
-export const DISCOVERY_PROMPT = `You are an expert at finding error patterns in codebases. Systematically discover ALL user-facing errors in this repository.
+export const DISCOVERY_PROMPT = DIRECT_MODE + `You are an expert at finding error patterns in codebases. Systematically discover ALL user-facing errors in this repository.
 
 SEARCH STRATEGY:
 1. Error throwing: throw new Error(), throw new CustomError(), raise Exception, errors.New(), fmt.Errorf(), panic!()
@@ -256,7 +268,7 @@ export function analysisPrompt(
     shapes.push(DEFENSE_SHAPE);
   }
 
-  return `Analyze each of these ${batch.length} errors. You are working in the repository root. Each error includes its throwing SOURCE region — ground every answer in it. Open the file at the given file:line only when an error lacks a SOURCE block or the region is not enough (e.g. the relevant API surface sits elsewhere).
+  return DIRECT_MODE + `Analyze each of these ${batch.length} errors. You are working in the repository root. Each error includes its throwing SOURCE region — ground every answer in it. Open the file at the given file:line only when an error lacks a SOURCE block or the region is not enough (e.g. the relevant API surface sits elsewhere).
 
 ERRORS:
 ${list}
@@ -282,7 +294,7 @@ export interface ReviewResultJson {
  * region — the reviewer must not invent what it cannot see.
  */
 export function reviewPrompt(record: unknown): string {
-  return `You are reviewing ONE published error-documentation page that receives significant search traffic. Real developers land on it mid-debugging — it must be accurate, specific, and immediately useful.
+  return DIRECT_MODE + `You are reviewing ONE published error-documentation page that receives significant search traffic. Real developers land on it mid-debugging — it must be accurate, specific, and immediately useful.
 
 RECORD (the full published data, including the throwing SOURCE region):
 ${JSON.stringify(record, null, 1)}
@@ -306,25 +318,21 @@ OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
 }
 
 /** Phase 5 — Verify (§4.2.5): review assembled records for gaps, emit patches. */
-export function verifyPrompt(compact: { id: string; message: string; file: string; line: number | null; hasDoc: boolean; hasSolutions: boolean; hasSource: boolean; hasDefense: boolean }[]): string {
+export function verifyPrompt(compact: { id: string; message: string; file: string; line: number | null; needs: string[] }[]): string {
   const list = compact
-    .map(
-      (c) =>
-        `id=${c.id} message=${JSON.stringify(c.message)} file=${c.file}:${c.line ?? "?"} hasDoc=${c.hasDoc} hasSolutions=${c.hasSolutions} hasSource=${c.hasSource} hasDefense=${c.hasDefense}`
-    )
+    .map((c) => `id=${c.id} file=${c.file}:${c.line ?? "?"} message=${JSON.stringify(c.message)} needs=${c.needs.join(",")}`)
     .join("\n");
-  return `Review these assembled error records for gaps. For each record with a gap, emit a patch that fills it. Only patch fields that are missing/empty/wrong.
+  return DIRECT_MODE + `Fill the missing fields of these error records. Each line names its record and exactly the fields it needs — every other field is already complete: do not re-check it, do not patch it.
 
 RECORDS:
 ${list}
 
-Patchable fields and the value shapes:
-- documentation (string), triggerScenarios (string), commonSituations (string)
-- solutions (array of strings), exampleFix (string)
-- sourceCode (string: the real throwing region, ≤40 lines, read from the file)
-- filePath (string: corrected path if the recorded one is wrong)
+Value shapes:
+- documentation, triggerScenarios, commonSituations, exampleFix, handlingStrategy: string
+- solutions, preventionTips: array of strings
+- sourceCode: string — the real throwing region, ≤40 lines, read from the file. This is the ONLY need that justifies opening a file; write every other field from the message, path, and your own knowledge without reading anything.
 
-Do NOT patch records that are already complete. Do NOT invent ids.
+One patch per needed field. Do NOT invent ids.
 
 OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
 {"patches":[{"id":"<16 hex>","field":"documentation","value":"..."}]}`;

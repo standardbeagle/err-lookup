@@ -461,9 +461,14 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
     } else {
       const started = Date.now();
       let records = assembled.records;
+      // Round 1 sees every record; round 2 only the ones round 1 patched, to
+      // confirm the patches closed their gaps. A record the model declined to
+      // patch would be re-asked the identical question — pure token spend.
+      let candidates = records;
       for (let round = 0; round < 2; round++) {
-        const v = await runVerify(repoPath, records, providers, cfg, (m) => log(`phase verify: ${m}`));
+        const v = await runVerify(repoPath, candidates, providers, cfg, (m) => log(`phase verify: ${m}`));
         if (v.patches.length === 0) break;
+        const patchedIds = new Set(v.patches.map((p) => p.id));
         const { records: patched, applied } = applyPatches(records, v.patches);
         // re-validate every patched record; keep only valid
         const revalidated = patched
@@ -471,6 +476,7 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           .filter((r): r is { ok: true; value: ErrorEntry } => r.ok)
           .map((r) => r.value);
         records = revalidated;
+        candidates = records.filter((r) => patchedIds.has(r.id));
         log(`phase verify: round ${round + 1} applied ${applied} patches → ${records.length} valid records`);
       }
       assembled.records = records;

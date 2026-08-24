@@ -146,6 +146,52 @@ describe("runVerify chunking (size-independent)", () => {
     }
   });
 
+  it("a batch too big for the provider splits in half and the halves succeed", async () => {
+    process.env.ERRLOOKUP_VERIFY_BATCH = "100";
+    try {
+      // Fails any prompt carrying more than 50 records — the shape of an
+      // over-long verify call dying on its timeout. A timeout is not retried
+      // in place (run.ts breaks), so recovery has to come from the split.
+      const p = new (class implements LlmProvider {
+        readonly name = "p";
+        calls = 0;
+        async invoke(prompt: string, _o: InvokeOptions): Promise<ProviderResult> {
+          this.calls++;
+          const ids = [...prompt.matchAll(/id=([0-9a-f]{16})/g)].map((m) => m[1]!);
+          if (ids.length > 50) return { ok: false, kind: "timeout", error: "p exceeded budget" };
+          const patches = ids.slice(0, 1).map((id) => ({ id, field: "documentation", value: "patched" }));
+          return { ok: true, parsed: { patches }, raw: JSON.stringify({ patches }) };
+        }
+      })();
+      const records = Array.from({ length: 100 }, (_, i) => gappy(i));
+      const r = await runVerify("/nonexistent", records, { p }, cfg);
+      expect(r.patches).toHaveLength(2); // one per surviving half
+      expect(r.failedBatches).toBe(0);
+      expect(r.failedRecords).toBe(0);
+    } finally {
+      delete process.env.ERRLOOKUP_VERIFY_BATCH;
+    }
+  });
+
+  it("a batch that fails at every size abandons only sub-10 stubs, counting their records", async () => {
+    process.env.ERRLOOKUP_VERIFY_BATCH = "100";
+    try {
+      const p = new (class implements LlmProvider {
+        readonly name = "p";
+        async invoke(): Promise<ProviderResult> {
+          return { ok: false, kind: "timeout", error: "always down" };
+        }
+      })();
+      const records = Array.from({ length: 20 }, (_, i) => gappy(i));
+      const r = await runVerify("/nonexistent", records, { p }, cfg);
+      expect(r.patches).toHaveLength(0);
+      expect(r.failedRecords).toBe(20); // every record accounted for, once
+      expect(r.failedBatches).toBe(4); // 20 → 10+10 → 5+5+5+5 stubs
+    } finally {
+      delete process.env.ERRLOOKUP_VERIFY_BATCH;
+    }
+  });
+
   it("a failed chunk loses only its own patches", async () => {
     process.env.ERRLOOKUP_VERIFY_BATCH = "100";
     try {

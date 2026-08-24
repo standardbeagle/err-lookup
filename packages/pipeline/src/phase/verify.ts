@@ -10,8 +10,10 @@ export interface VerifyResult {
   patches: VerifyPatchJson[];
   durationMs: number;
   providerUsed: string;
-  /** Verify chunks that exhausted retries — their records go unpatched. */
+  /** Stub batches (post-split, <10 records) that still failed — abandoned. */
   failedBatches: number;
+  /** Records inside those stubs — they go unpatched. */
+  failedRecords: number;
 }
 
 /** Records per verify call (ERRLOOKUP_VERIFY_BATCH, default 200). One call
@@ -47,18 +49,42 @@ export async function runVerify(
   // sit above 10% density in most repos, so nearly every chunk qualified and
   // verify re-sent the whole repo. Filtering first cuts the live corpus's
   // verify input from ~116k records to the ~33k that have a gap.
-  const gapped = compact.filter((r) => !(r.hasDoc && r.hasSolutions && r.hasSource && r.hasDefense));
+  // Name each record's gaps outright instead of shipping four booleans per
+  // record for the model to re-derive them — the gap set is deterministic here.
+  // handlingStrategy covers the defense gap: the old patchable-field list never
+  // offered a defense field, so defense-only records were re-sent every round
+  // with no way to ever satisfy them.
+  const gapped = compact
+    .map((r) => ({
+      id: r.id,
+      message: r.message,
+      file: r.file,
+      line: r.line,
+      needs: [
+        ...(r.hasDoc ? [] : ["documentation"]),
+        ...(r.hasSolutions ? [] : ["solutions"]),
+        ...(r.hasSource ? [] : ["sourceCode"]),
+        ...(r.hasDefense ? [] : ["handlingStrategy"]),
+      ],
+    }))
+    .filter((r) => r.needs.length > 0);
   const withGaps = chunk(gapped, verifyBatchSize());
   if (withGaps.length === 0) {
     onLog?.("verify: no gaps — provider calls skipped");
-    return { patches: [], durationMs: Date.now() - started, providerUsed: "none", failedBatches: 0 };
+    return { patches: [], durationMs: Date.now() - started, providerUsed: "none", failedBatches: 0, failedRecords: 0 };
   }
   // Budget keyed to the verify-phase provider (it used to read the default
   // primary's timeout while routing the call to the verify provider).
   const budget = watchdogBudgetMs(cfg, "verify");
   let providerUsed = "n/a";
   let failedBatches = 0;
-  const perBatch = await mapPool(withGaps, cfg.defaults.batchConcurrency, async (batch) => {
+  let failedRecords = 0;
+
+  // A failed batch splits in half and each half tries again — same policy as
+  // discovery's classify: what kills a batch is usually its size (an over-long
+  // call runs out of watchdog), so smaller calls fit where retry-in-place
+  // cannot. Only a stub that still fails abandons its own records.
+  const verifyBatch = async (batch: typeof gapped): Promise<VerifyPatchJson[]> => {
     try {
       const result = await withTimeout(
         runProvider(verifyPrompt(batch), { cwd: repoPath }, providers, cfg, "verify"),
@@ -68,18 +94,26 @@ export async function runVerify(
       const parsed = result.parsed as { patches?: VerifyPatchJson[] };
       return parsed.patches ?? [];
     } catch (err) {
+      if (batch.length >= 10) {
+        const mid = Math.ceil(batch.length / 2);
+        const [a, b] = [await verifyBatch(batch.slice(0, mid)), await verifyBatch(batch.slice(mid))];
+        return [...a, ...b];
+      }
       failedBatches++;
+      failedRecords += batch.length;
       const msg = err instanceof Error ? err.message : String(err);
       onLog?.(`verify: batch failed: ${msg.slice(0, 300)}`);
       return [];
     }
-  });
+  };
+
+  const perBatch = await mapPool(withGaps, cfg.defaults.batchConcurrency, verifyBatch);
   const patches = perBatch.flat();
   onLog?.(
     `verify: ${patches.length} patches over ${withGaps.length} batches via ${providerUsed}` +
-      (failedBatches > 0 ? ` (${failedBatches} batches failed — their records go unpatched)` : "")
+      (failedBatches > 0 ? ` (${failedBatches} stub batches abandoned — ${failedRecords} records go unpatched)` : "")
   );
-  return { patches, durationMs: Date.now() - started, providerUsed, failedBatches };
+  return { patches, durationMs: Date.now() - started, providerUsed, failedBatches, failedRecords };
 }
 
 /**
