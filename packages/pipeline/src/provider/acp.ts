@@ -85,10 +85,15 @@ function toolPolicy(): Record<string, boolean> {
  * OPENCODE_CONFIG_CONTENT — pointing XDG_CONFIG_HOME at an empty directory
  * makes the content the whole configuration. lci is re-added explicitly as
  * the one MCP the extraction flow wants.
- * ERRLOOKUP_ACP_ISOLATION=off restores the legacy merge for A/B comparison.
+ * OPT-IN (ERRLOOKUP_ACP_ISOLATION=on) until the write-tool regression is
+ * solved: under isolation opencode ACP sessions lose the write tool — agents
+ * produce correct JSON and cannot write it (live drain 2026-08-26 21:00Z:
+ * 9/10 repos failed, six on "did not write"; probed extensively, the
+ * enabling piece of the user config dir is still unidentified). Legacy merge
+ * is the default so extraction keeps shipping.
  */
 export function acpIsolationEnabled(): boolean {
-  return process.env.ERRLOOKUP_ACP_ISOLATION !== "off";
+  return process.env.ERRLOOKUP_ACP_ISOLATION === "on";
 }
 
 let isolatedHome: string | null = null;

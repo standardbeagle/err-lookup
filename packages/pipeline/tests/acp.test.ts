@@ -90,6 +90,7 @@ describe("AcpProvider", () => {
   it("isolates the agent from user config: empty XDG home, lci the only MCP, deny-all tools", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "acp-iso-"));
     process.env.FAKE_ACP_ECHO_ENV = "1";
+    process.env.ERRLOOKUP_ACP_ISOLATION = "on";
     try {
       const p = new AcpProvider("opencode", acpCfg());
       const r = await p.invoke("echo env", { cwd });
@@ -111,14 +112,14 @@ describe("AcpProvider", () => {
       expect(tools.bash).toBe(false);
     } finally {
       delete process.env.FAKE_ACP_ECHO_ENV;
+      delete process.env.ERRLOOKUP_ACP_ISOLATION;
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 20000);
 
-  it("ERRLOOKUP_ACP_ISOLATION=off restores the legacy merge for A/B runs", async () => {
+  it("legacy merge is the default (isolation is opt-in until the write regression is solved)", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "acp-legacy-"));
     process.env.FAKE_ACP_ECHO_ENV = "1";
-    process.env.ERRLOOKUP_ACP_ISOLATION = "off";
     try {
       const p = new AcpProvider("opencode", acpCfg());
       const r = await p.invoke("echo env", { cwd });
@@ -132,7 +133,6 @@ describe("AcpProvider", () => {
       expect(seen.opencodeConfig.mcp).toBeUndefined();
     } finally {
       delete process.env.FAKE_ACP_ECHO_ENV;
-      delete process.env.ERRLOOKUP_ACP_ISOLATION;
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 20000);
