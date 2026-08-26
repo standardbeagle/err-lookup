@@ -87,6 +87,54 @@ export function usageLimitResetAt(error: string, now = Date.now()): Date | null 
   return snapped;
 }
 
+/**
+ * A whole billing cycle spent, as distinct from a window quota: Kimi answers
+ * "You've reached your usage limit for this billing cycle. Your quota will be
+ * refreshed in the next cycle." No reset time is stated and none is near, so
+ * the provider is down for the foreseeable run — the caller should stop
+ * offering it work and route to the fallback instead of holding the drain.
+ */
+const BILLING_CYCLE_RE = /usage limit for this billing cycle/i;
+
+export function isBillingCycleExhausted(error: string): boolean {
+  return BILLING_CYCLE_RE.test(error);
+}
+
+/**
+ * Any quota-shaped failure: rate limit, spent window, or spent billing cycle.
+ * Batch-splitting callers (discovery, verify) must not split on these — the
+ * batch's size is not the problem, and halving it doubles the calls thrown at
+ * a wall. Seen live 2026-08-25: 5 dead verify batches split into 130 stubs.
+ */
+export function isQuotaShapedError(error: string): boolean {
+  return RATE_LIMIT_RE.test(error) || USAGE_LIMIT_RE.test(error) || BILLING_CYCLE_RE.test(error);
+}
+
+/**
+ * Providers whose quota is spent for the cycle, with the time to probe them
+ * again. Unlike usageHoldUntil this does NOT stop the drain — it only makes
+ * runProvider stop offering the dead provider work when a fallback exists,
+ * instead of burning two attempts per call against a wall. One probe per
+ * recheck interval notices the cycle refreshing.
+ */
+const providerDownUntil = new Map<string, number>();
+
+export const PROVIDER_DOWN_RECHECK_MS = 60 * 60 * 1000;
+
+function providerMarkedDown(name: string, now = Date.now()): boolean {
+  const until = providerDownUntil.get(name);
+  if (until === undefined) return false;
+  if (now >= until) {
+    providerDownUntil.delete(name); // recheck window reached: probe it again
+    return false;
+  }
+  return true;
+}
+
+export function clearProviderDownMarks(): void {
+  providerDownUntil.clear();
+}
+
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function withOutputInstruction(prompt: string, outputFile: string): string {
@@ -139,11 +187,15 @@ export async function runProvider(
   sleep: (ms: number) => Promise<void> = realSleep
 ): Promise<RunResult> {
   const primaryName = (phase && cfg.phaseProviders?.[phase]) || cfg.defaults.primary;
-  const fallbackName = cfg.defaults.fallback;
+  // Per-phase fallback first (verify routes k3 → glm53 so records stay
+  // verified when k3's cycle is spent), then the global default.
+  const fallbackName = (phase && cfg.phaseFallbacks?.[phase]) || cfg.defaults.fallback;
   const primary = providers[primaryName];
   if (!primary) {
     throw new ProviderError("spawn", `primary provider "${primaryName}" not configured`, primaryName);
   }
+  const fallback =
+    fallbackName && fallbackName !== primaryName ? providers[fallbackName] : undefined;
 
   // File-based output handoff: the agent writes its JSON into the invocation
   // cwd (inside the agent's write sandbox); each attempt starts from a clean slate.
@@ -154,35 +206,41 @@ export async function runProvider(
 
   try {
     // Primary: try once, retry once. The backoff sleeps outside any provider
-    // invoke, so no throttle-gate slot is held while waiting.
+    // invoke, so no throttle-gate slot is held while waiting. A primary whose
+    // billing cycle is spent is skipped outright while a fallback exists —
+    // every attempt at it fails identically until the cycle refreshes.
     let lastFailure: Extract<ProviderResult, { ok: false }> | null = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      if (lastFailure && isRateLimitError(lastFailure.error)) await sleep(RATE_LIMIT_BACKOFF_MS);
-      clean();
-      const r = await primary.invoke(attemptPrompt, attemptOpts);
-      if (r.ok) return { parsed: r.parsed, raw: r.raw, providerUsed: primary.name };
-      lastFailure = r;
-      const reset = usageLimitResetAt(r.error);
-      if (reset && (!usageHoldUntil || reset.toISOString() > usageHoldUntil)) {
-        usageHoldUntil = reset.toISOString();
+    if (!(fallback && providerMarkedDown(primaryName))) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (lastFailure && isRateLimitError(lastFailure.error)) await sleep(RATE_LIMIT_BACKOFF_MS);
+        clean();
+        const r = await primary.invoke(attemptPrompt, attemptOpts);
+        if (r.ok) return { parsed: r.parsed, raw: r.raw, providerUsed: primary.name };
+        lastFailure = r;
+        if (isBillingCycleExhausted(r.error)) {
+          providerDownUntil.set(primaryName, Date.now() + PROVIDER_DOWN_RECHECK_MS);
+          break; // the cycle will not refresh between attempts
+        }
+        const reset = usageLimitResetAt(r.error);
+        if (reset && (!usageHoldUntil || reset.toISOString() > usageHoldUntil)) {
+          usageHoldUntil = reset.toISOString();
+        }
+        // A timeout means the call ran its whole budget and was killed. An
+        // identical second attempt spends the same input tokens to be killed
+        // again; what fixes an over-large call is the caller splitting its
+        // batch, which only happens once this returns. Other kinds (spawn,
+        // parse, empty, rate limit) are transient enough to retry in place.
+        if (r.kind === "timeout") break;
       }
-      // A timeout means the call ran its whole budget and was killed. An
-      // identical second attempt spends the same input tokens to be killed
-      // again; what fixes an over-large call is the caller splitting its
-      // batch, which only happens once this returns. Other kinds (spawn,
-      // parse, empty, rate limit) are transient enough to retry in place.
-      if (r.kind === "timeout") break;
     }
 
     // Fallback (single attempt). No backoff here: the fallback is a different
     // provider, so the primary's rate limit does not gate it.
-    if (fallbackName && fallbackName !== primaryName) {
-      const fallback = providers[fallbackName];
-      if (fallback) {
-        clean();
-        const r = await fallback.invoke(attemptPrompt, attemptOpts);
-        if (r.ok) return { parsed: r.parsed, raw: r.raw, providerUsed: fallback.name };
-      }
+    if (fallback) {
+      clean();
+      const r = await fallback.invoke(attemptPrompt, attemptOpts);
+      if (r.ok) return { parsed: r.parsed, raw: r.raw, providerUsed: fallback.name };
+      if (!lastFailure) lastFailure = r;
     }
 
     const failed = lastFailure ?? { ok: false as const, kind: "empty" as const, error: "no attempt made" };

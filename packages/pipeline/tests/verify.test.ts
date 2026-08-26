@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { runVerify } from "../src/phase/verify.js";
+import { clearProviderDownMarks } from "../src/provider/run.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
 import type { ErrorEntry } from "@errlookup/schema";
@@ -188,6 +189,36 @@ describe("runVerify chunking (size-independent)", () => {
       expect(r.failedRecords).toBe(20); // every record accounted for, once
       expect(r.failedBatches).toBe(4); // 20 → 10+10 → 5+5+5+5 stubs
     } finally {
+      delete process.env.ERRLOOKUP_VERIFY_BATCH;
+    }
+  });
+
+  it("a quota-shaped failure abandons the batch whole — no split churn", async () => {
+    process.env.ERRLOOKUP_VERIFY_BATCH = "100";
+    try {
+      const p = new (class implements LlmProvider {
+        readonly name = "p";
+        calls = 0;
+        async invoke(): Promise<ProviderResult> {
+          this.calls++;
+          return {
+            ok: false,
+            kind: "spawn",
+            error:
+              "p ACP failure: You've reached your usage limit for this billing cycle. " +
+              "Your quota will be refreshed in the next cycle.",
+          };
+        }
+      })();
+      const records = Array.from({ length: 100 }, (_, i) => gappy(i));
+      const r = await runVerify("/nonexistent", records, { p }, cfg);
+      expect(r.failedBatches).toBe(1); // the whole batch, not a tree of stubs
+      expect(r.failedRecords).toBe(100);
+      // runProvider breaks after the first cycle-spent answer: one call total,
+      // where splitting burned hundreds against the same wall.
+      expect(p.calls).toBe(1);
+    } finally {
+      clearProviderDownMarks();
       delete process.env.ERRLOOKUP_VERIFY_BATCH;
     }
   });

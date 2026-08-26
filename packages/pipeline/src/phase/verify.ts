@@ -1,6 +1,6 @@
 import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider } from "../provider/types.js";
-import { runProvider, watchdogBudgetMs } from "../provider/run.js";
+import { runProvider, watchdogBudgetMs, isQuotaShapedError } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
 import { mapPool, chunk } from "../util/pool.js";
 import { verifyPrompt, type VerifyPatchJson } from "./prompts.js";
@@ -94,14 +94,17 @@ export async function runVerify(
       const parsed = result.parsed as { patches?: VerifyPatchJson[] };
       return parsed.patches ?? [];
     } catch (err) {
-      if (batch.length >= 10) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // A quota-shaped failure is not a size problem: halving the batch just
+      // doubles the calls thrown at a spent account (5 dead batches became
+      // 130 stubs on 2026-08-25). Abandon whole.
+      if (batch.length >= 10 && !isQuotaShapedError(msg)) {
         const mid = Math.ceil(batch.length / 2);
         const [a, b] = [await verifyBatch(batch.slice(0, mid)), await verifyBatch(batch.slice(mid))];
         return [...a, ...b];
       }
       failedBatches++;
       failedRecords += batch.length;
-      const msg = err instanceof Error ? err.message : String(err);
       onLog?.(`verify: batch failed: ${msg.slice(0, 300)}`);
       return [];
     }

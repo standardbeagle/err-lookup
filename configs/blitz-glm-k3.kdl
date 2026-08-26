@@ -72,3 +72,10 @@ phase-providers {
     verify "k3"
     review "glm53"
 }
+// When k3's billing cycle is spent (seen 2026-08-25), verify degrades to
+// glm-5.3 — slower, but records still ship verified instead of unpatched.
+// runProvider skips the dead k3 after its first cycle-spent answer and
+// re-probes it hourly.
+phase-fallbacks {
+    verify "glm53"
+}

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider } from "../provider/types.js";
 import type { BatchCheckpoint } from "../db/checkpoints.js";
-import { runProvider, watchdogBudgetMs } from "../provider/run.js";
+import { runProvider, watchdogBudgetMs, isQuotaShapedError } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
 import { mapPool, chunk } from "../util/pool.js";
 import { DISCOVERY_PROMPT, candidateDiscoveryPrompt, type DiscoveredErrorJson } from "./prompts.js";
@@ -135,7 +135,10 @@ export async function runDiscovery(
       raw = result.raw;
       return { errors: parseErrors(result.parsed), skipped: 0 };
     } catch (e) {
-      if (batch.length >= 10) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // Quota-shaped failures are not size problems — splitting doubles the
+      // calls thrown at a spent account. Abandon whole (same guard as verify).
+      if (batch.length >= 10 && !isQuotaShapedError(msg)) {
         const mid = Math.ceil(batch.length / 2);
         const [a, b] = [await classify(batch.slice(0, mid)), await classify(batch.slice(mid))];
         return { errors: [...a.errors, ...b.errors], skipped: a.skipped + b.skipped };

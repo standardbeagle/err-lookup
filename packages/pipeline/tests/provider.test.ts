@@ -4,7 +4,13 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractJson } from "../src/provider/json.js";
 import { FixtureProvider } from "../src/provider/fixture.js";
-import { runProvider, RATE_LIMIT_BACKOFF_MS, usageLimitResetAt } from "../src/provider/run.js";
+import {
+  runProvider,
+  RATE_LIMIT_BACKOFF_MS,
+  usageLimitResetAt,
+  isQuotaShapedError,
+  clearProviderDownMarks,
+} from "../src/provider/run.js";
 import { ProviderError, type LlmProvider } from "../src/provider/types.js";
 import { mapConfig, type ErrlookupConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
@@ -173,6 +179,78 @@ describe("runProvider retry + fallback", () => {
       f: new FixtureProvider("f", fx("provider-stdout-truncated.txt")),
     };
     await expect(runProvider("q", { cwd: "." }, providers, cfg)).rejects.toBeInstanceOf(ProviderError);
+  });
+});
+
+const KIMI_CYCLE_ERROR =
+  "k3 ACP failure: Internal error: You've reached your usage limit for this billing cycle. " +
+  "Your quota will be refreshed in the next cycle.";
+
+describe("billing-cycle exhaustion", () => {
+  function makePhaseCfg(): ErrlookupConfig {
+    return mapConfig(
+      parseKdl(
+        [
+          'provider "glm" { command "glm" }',
+          'provider "k3" { command "k3" }',
+          'provider "glm53" { command "glm53" }',
+          'defaults { primary "glm" }',
+          'phase-providers { verify "k3" }',
+          'phase-fallbacks { verify "glm53" }',
+        ].join("\n")
+      )
+    );
+  }
+  class CyclesSpent implements LlmProvider {
+    calls = 0;
+    constructor(readonly name: string) {}
+    async invoke(): Promise<{ ok: false; kind: "spawn"; error: string }> {
+      this.calls++;
+      return { ok: false, kind: "spawn", error: KIMI_CYCLE_ERROR };
+    }
+  }
+
+  it("classifies quota-shaped errors — all three provider phrasings", () => {
+    expect(isQuotaShapedError(KIMI_CYCLE_ERROR)).toBe(true);
+    expect(isQuotaShapedError("Rate limit reached for requests")).toBe(true);
+    expect(
+      isQuotaShapedError("Usage limit reached for 5 hour. Your limit will reset at 2026-08-25 22:56:07")
+    ).toBe(true);
+    expect(isQuotaShapedError("operation timed out after 600000ms")).toBe(false);
+    expect(isQuotaShapedError("agent did not write /tmp/x.json")).toBe(false);
+  });
+
+  it("a cycle-spent primary is tried once (not retried) and the phase fallback answers", async () => {
+    clearProviderDownMarks();
+    const k3 = new CyclesSpent("k3");
+    const glm53 = new FixtureProvider("glm53", fx("provider-stdout-clean.json"));
+    const res = await runProvider("q", { cwd: "." }, { k3, glm53 }, makePhaseCfg(), "verify");
+    expect(res.providerUsed).toBe("glm53");
+    expect(k3.calls).toBe(1); // no in-place retry: the cycle will not refresh between attempts
+  });
+
+  it("later calls skip the dead primary entirely until the recheck window", async () => {
+    clearProviderDownMarks();
+    const k3 = new CyclesSpent("k3");
+    const glm53 = new FixtureProvider("glm53", fx("provider-stdout-clean.json"));
+    const cfg = makePhaseCfg();
+    await runProvider("q1", { cwd: "." }, { k3, glm53 }, cfg, "verify");
+    const res = await runProvider("q2", { cwd: "." }, { k3, glm53 }, cfg, "verify");
+    expect(res.providerUsed).toBe("glm53");
+    expect(k3.calls).toBe(1); // marked down by q1; q2 never touched it
+    clearProviderDownMarks();
+  });
+
+  it("without a fallback the primary is still attempted — degraded beats dead", async () => {
+    clearProviderDownMarks();
+    const cfg = mapConfig(
+      parseKdl(['provider "k3" { command "k3" }', 'defaults { primary "k3" }'].join("\n"))
+    );
+    const k3 = new CyclesSpent("k3");
+    await expect(runProvider("q1", { cwd: "." }, { k3 }, cfg)).rejects.toThrow(ProviderError);
+    await expect(runProvider("q2", { cwd: "." }, { k3 }, cfg)).rejects.toThrow(ProviderError);
+    expect(k3.calls).toBe(2); // one per call: no skip without a fallback, no in-place retry either
+    clearProviderDownMarks();
   });
 });
 

@@ -75,6 +75,12 @@ export interface ErrlookupConfig {
    * phases, a stronger model for verify. Falls back to defaults.primary.
    */
   phaseProviders?: Partial<Record<"scope" | "discovery" | "enrichment" | "defense" | "verify" | "review", string>>;
+  /**
+   * Per-phase fallback overrides, tried before defaults.fallback. Exists so
+   * verify can degrade k3 → glm53 (slower, still verified) when k3's billing
+   * cycle is spent, without giving the bulk phases a fallback they don't want.
+   */
+  phaseFallbacks?: Partial<Record<"scope" | "discovery" | "enrichment" | "defense" | "verify" | "review", string>>;
 }
 
 export const DEFAULT_CONFIG: ErrlookupConfig = {
@@ -167,6 +173,12 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
       for (const phase of ["scope", "discovery", "enrichment", "defense", "verify", "review"] as const) {
         const v = childByName(node, phase)?.values[0];
         if (typeof v === "string" && v) cfg.phaseProviders[phase] = v;
+      }
+    } else if (node.name === "phase-fallbacks") {
+      cfg.phaseFallbacks = {};
+      for (const phase of ["scope", "discovery", "enrichment", "defense", "verify", "review"] as const) {
+        const v = childByName(node, phase)?.values[0];
+        if (typeof v === "string" && v) cfg.phaseFallbacks[phase] = v;
       }
     } else if (node.name === "defaults") {
       cfg.defaults = {
