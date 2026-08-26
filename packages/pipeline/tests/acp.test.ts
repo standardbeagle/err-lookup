@@ -87,6 +87,55 @@ describe("AcpProvider", () => {
     }
   }, 20000);
 
+  it("isolates the agent from user config: empty XDG home, lci the only MCP, deny-all tools", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "acp-iso-"));
+    process.env.FAKE_ACP_ECHO_ENV = "1";
+    try {
+      const p = new AcpProvider("opencode", acpCfg());
+      const r = await p.invoke("echo env", { cwd });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const seen = r.parsed as {
+        xdgConfigHome: string | null;
+        opencodeConfig: { mcp?: Record<string, unknown>; agent: { build: { tools: Record<string, boolean> } } };
+      };
+      expect(seen.xdgConfigHome).toContain("errlookup-acp-config-");
+      expect(seen.xdgConfigHome).not.toBe(process.env.XDG_CONFIG_HOME ?? null);
+      expect(Object.keys(seen.opencodeConfig.mcp ?? {})).toEqual(["lci"]);
+      const tools = seen.opencodeConfig.agent.build.tools;
+      expect(tools["*"]).toBe(false);
+      expect(tools["lci*"]).toBe(true);
+      expect(tools.write).toBe(true);
+      expect(tools.read).toBe(true);
+    } finally {
+      delete process.env.FAKE_ACP_ECHO_ENV;
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 20000);
+
+  it("ERRLOOKUP_ACP_ISOLATION=off restores the legacy merge for A/B runs", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "acp-legacy-"));
+    process.env.FAKE_ACP_ECHO_ENV = "1";
+    process.env.ERRLOOKUP_ACP_ISOLATION = "off";
+    try {
+      const p = new AcpProvider("opencode", acpCfg());
+      const r = await p.invoke("echo env", { cwd });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      const seen = r.parsed as {
+        xdgConfigHome: string | null;
+        opencodeConfig: { mcp?: unknown; agent: { build: { tools: Record<string, boolean> } } };
+      };
+      expect(seen.xdgConfigHome).toBe(process.env.XDG_CONFIG_HOME ?? null);
+      expect(seen.opencodeConfig.mcp).toBeUndefined();
+      expect(seen.opencodeConfig.agent.build.tools["*"]).toBeUndefined();
+    } finally {
+      delete process.env.FAKE_ACP_ECHO_ENV;
+      delete process.env.ERRLOOKUP_ACP_ISOLATION;
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 20000);
+
   it("parses from streamed agent text when no outputFile is requested", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "acp-test-"));
     const p = new AcpProvider("opencode", acpCfg());

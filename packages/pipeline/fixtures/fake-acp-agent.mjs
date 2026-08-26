@@ -11,11 +11,20 @@
  *   FAKE_ACP_STALL=1  go silent after session/prompt (idle-watchdog testing)
  *   FAKE_ACP_DRIP="<ms>,<count>"  before finishing, stream one message chunk
  *     every <ms> for <count> chunks (proves events hold the idle timer off)
+ *   FAKE_ACP_ECHO_ENV=1  payload reports the env the agent was spawned with
+ *     (isolation testing: XDG_CONFIG_HOME + OPENCODE_CONFIG_CONTENT)
  */
 import { writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
-const payload = process.env.FAKE_ACP_PAYLOAD ?? '{"fake":true}';
+const payload =
+  process.env.FAKE_ACP_ECHO_ENV === "1"
+    ? JSON.stringify({
+        fake: true,
+        xdgConfigHome: process.env.XDG_CONFIG_HOME ?? null,
+        opencodeConfig: JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? "null"),
+      })
+    : process.env.FAKE_ACP_PAYLOAD ?? '{"fake":true}';
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + "\n");
 
 let promptId = null;

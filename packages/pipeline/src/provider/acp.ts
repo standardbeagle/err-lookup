@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { LlmProvider, InvokeOptions, ProviderResult } from "./types.js";
 import { extractJson } from "./json.js";
 import type { ProviderConfig } from "../config/index.js";
@@ -59,8 +61,18 @@ const PIPELINE_TOOLS = {
  * whole context four times — so being able to A/B a policy without editing
  * code is worth the four lines.
  */
-function toolPolicy(): Record<string, boolean> {
-  const base: Record<string, boolean> = { ...PIPELINE_TOOLS };
+function toolPolicy(isolated: boolean): Record<string, boolean> {
+  // Isolated: "*" first, so everything not explicitly allowed is off. Without
+  // it, any tool the child discovers beyond the named builtins — an MCP
+  // server's tools, a skill, something a scanned repo's own .opencode/ config
+  // adds — defaults to enabled. Seen live 2026-08-23: a scope call wrote its
+  // answer into "a scratch worktrack task" (via the user-level slop-mcp
+  // registration) instead of the output file, and the repo failed. lci is the
+  // one deliberate exception (its MCP tools are named lci_*). The legacy arm
+  // (ERRLOOKUP_ACP_ISOLATION=off) keeps the old policy for a faithful A/B.
+  const base: Record<string, boolean> = isolated
+    ? { "*": false, ...PIPELINE_TOOLS, "lci*": true }
+    : { ...PIPELINE_TOOLS };
   const raw = process.env.ERRLOOKUP_ACP_TOOLS;
   if (!raw) return base;
   try {
@@ -70,12 +82,41 @@ function toolPolicy(): Record<string, boolean> {
   }
 }
 
+/**
+ * Extraction calls run against a config vacuum, not the developer's setup.
+ * The user-level opencode.json (slop-mcp → worktrack and every other system
+ * MCP), global skills, plugins, and instructions all merge UNDER
+ * OPENCODE_CONFIG_CONTENT — pointing XDG_CONFIG_HOME at an empty directory
+ * makes the content the whole configuration. lci is re-added explicitly as
+ * the one MCP the extraction flow wants.
+ * ERRLOOKUP_ACP_ISOLATION=off restores the legacy merge for A/B comparison.
+ */
+export function acpIsolationEnabled(): boolean {
+  return process.env.ERRLOOKUP_ACP_ISOLATION !== "off";
+}
+
+let isolatedHome: string | null = null;
+function isolatedConfigHome(): string {
+  if (!isolatedHome) {
+    isolatedHome = join(tmpdir(), `errlookup-acp-config-${process.pid}`);
+    mkdirSync(join(isolatedHome, "opencode"), { recursive: true });
+  }
+  return isolatedHome;
+}
+
 export class AcpProvider implements LlmProvider {
   constructor(readonly name: string, private readonly cfg: ProviderConfig) {}
 
   async invoke(prompt: string, opts: InvokeOptions): Promise<ProviderResult> {
     const timeoutMs = opts.timeoutMs ?? this.cfg.timeoutMs;
     const env: NodeJS.ProcessEnv = { ...process.env };
+    const isolated = acpIsolationEnabled();
+    if (isolated) {
+      // Empty config home: the user's opencode.json (and its MCP registry),
+      // global skills, and instructions never reach the extraction agent.
+      // Auth is untouched — it lives under XDG_DATA_HOME.
+      env.XDG_CONFIG_HOME = isolatedConfigHome();
+    }
     // model is "providerId/modelId"; modelOptions pin per-model settings
     // (reasoning effort, thinking toggles) the same way the user's static
     // opencode.json pins them — OPENCODE_CONFIG_CONTENT merges over it.
@@ -88,7 +129,9 @@ export class AcpProvider implements LlmProvider {
       ...(providerId && modelId && this.cfg.modelOptions
         ? { provider: { [providerId]: { models: { [modelId]: { options: this.cfg.modelOptions } } } } }
         : {}),
-      agent: { build: { tools: toolPolicy() } },
+      // The one MCP the extraction flow keeps: lci code search over the clone.
+      ...(isolated ? { mcp: { lci: { type: "local", command: ["lci", "mcp"], enabled: true } } } : {}),
+      agent: { build: { tools: toolPolicy(isolated) } },
     });
 
     let child: ChildProcess;
