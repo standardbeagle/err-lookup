@@ -61,18 +61,14 @@ const PIPELINE_TOOLS = {
  * whole context four times — so being able to A/B a policy without editing
  * code is worth the four lines.
  */
-function toolPolicy(isolated: boolean): Record<string, boolean> {
-  // Isolated: "*" first, so everything not explicitly allowed is off. Without
-  // it, any tool the child discovers beyond the named builtins — an MCP
-  // server's tools, a skill, something a scanned repo's own .opencode/ config
-  // adds — defaults to enabled. Seen live 2026-08-23: a scope call wrote its
-  // answer into "a scratch worktrack task" (via the user-level slop-mcp
-  // registration) instead of the output file, and the repo failed. lci is the
-  // one deliberate exception (its MCP tools are named lci_*). The legacy arm
-  // (ERRLOOKUP_ACP_ISOLATION=off) keeps the old policy for a faithful A/B.
-  const base: Record<string, boolean> = isolated
-    ? { "*": false, ...PIPELINE_TOOLS, "lci*": true }
-    : { ...PIPELINE_TOOLS };
+function toolPolicy(): Record<string, boolean> {
+  // Named denies only — NO "*" wildcard. Probed against opencode 2026-08-26:
+  // {"*":false, ..., write:true} leaves the agent with read+lci but WITHOUT
+  // write (the exact key did not win over the glob), which silently breaks
+  // the output-file handoff of every phase. Unknown-tool exposure is instead
+  // closed by the XDG isolation: with no user config there is no MCP registry
+  // to inherit tools from, and lci's tools (lci_*) are wanted.
+  const base: Record<string, boolean> = { ...PIPELINE_TOOLS };
   const raw = process.env.ERRLOOKUP_ACP_TOOLS;
   if (!raw) return base;
   try {
@@ -131,7 +127,7 @@ export class AcpProvider implements LlmProvider {
         : {}),
       // The one MCP the extraction flow keeps: lci code search over the clone.
       ...(isolated ? { mcp: { lci: { type: "local", command: ["lci", "mcp"], enabled: true } } } : {}),
-      agent: { build: { tools: toolPolicy(isolated) } },
+      agent: { build: { tools: toolPolicy() } },
     });
 
     let child: ChildProcess;

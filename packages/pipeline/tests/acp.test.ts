@@ -103,10 +103,12 @@ describe("AcpProvider", () => {
       expect(seen.xdgConfigHome).not.toBe(process.env.XDG_CONFIG_HOME ?? null);
       expect(Object.keys(seen.opencodeConfig.mcp ?? {})).toEqual(["lci"]);
       const tools = seen.opencodeConfig.agent.build.tools;
-      expect(tools["*"]).toBe(false);
-      expect(tools["lci*"]).toBe(true);
+      // No "*" wildcard: probed 2026-08-26, it silently disables write even
+      // with an explicit write:true — see toolPolicy().
+      expect(tools["*"]).toBeUndefined();
       expect(tools.write).toBe(true);
       expect(tools.read).toBe(true);
+      expect(tools.bash).toBe(false);
     } finally {
       delete process.env.FAKE_ACP_ECHO_ENV;
       rmSync(cwd, { recursive: true, force: true });
@@ -128,7 +130,6 @@ describe("AcpProvider", () => {
       };
       expect(seen.xdgConfigHome).toBe(process.env.XDG_CONFIG_HOME ?? null);
       expect(seen.opencodeConfig.mcp).toBeUndefined();
-      expect(seen.opencodeConfig.agent.build.tools["*"]).toBeUndefined();
     } finally {
       delete process.env.FAKE_ACP_ECHO_ENV;
       delete process.env.ERRLOOKUP_ACP_ISOLATION;
