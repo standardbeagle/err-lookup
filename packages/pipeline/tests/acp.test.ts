@@ -90,7 +90,6 @@ describe("AcpProvider", () => {
   it("isolates the agent from user config: empty XDG home, lci the only MCP, deny-all tools", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "acp-iso-"));
     process.env.FAKE_ACP_ECHO_ENV = "1";
-    process.env.ERRLOOKUP_ACP_ISOLATION = "on";
     try {
       const p = new AcpProvider("opencode", acpCfg());
       const r = await p.invoke("echo env", { cwd });
@@ -110,16 +109,22 @@ describe("AcpProvider", () => {
       expect(tools.write).toBe(true);
       expect(tools.read).toBe(true);
       expect(tools.bash).toBe(false);
+      // opencode collapses write/edit/patch into one "edit" permission class,
+      // last map entry wins. An edit:false or patch:false after write:true
+      // disables the write tool — the 2026-08-26 isolation incident. write
+      // must stay the ONLY edit-class key.
+      expect(tools.edit).toBeUndefined();
+      expect(tools.patch).toBeUndefined();
     } finally {
       delete process.env.FAKE_ACP_ECHO_ENV;
-      delete process.env.ERRLOOKUP_ACP_ISOLATION;
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 20000);
 
-  it("legacy merge is the default (isolation is opt-in until the write regression is solved)", async () => {
+  it("ERRLOOKUP_ACP_ISOLATION=off restores the legacy merge for comparison runs", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "acp-legacy-"));
     process.env.FAKE_ACP_ECHO_ENV = "1";
+    process.env.ERRLOOKUP_ACP_ISOLATION = "off";
     try {
       const p = new AcpProvider("opencode", acpCfg());
       const r = await p.invoke("echo env", { cwd });
@@ -133,6 +138,7 @@ describe("AcpProvider", () => {
       expect(seen.opencodeConfig.mcp).toBeUndefined();
     } finally {
       delete process.env.FAKE_ACP_ECHO_ENV;
+      delete process.env.ERRLOOKUP_ACP_ISOLATION;
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 20000);

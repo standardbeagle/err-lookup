@@ -39,15 +39,23 @@ interface JsonRpcMessage {
  * file (see provider/run.ts), and `read` is the fallback the discovery and
  * analysis prompts offer when an embedded source region is not enough.
  */
+/**
+ * NO `edit` or `patch` keys, deliberately: opencode collapses write/edit/patch
+ * into ONE "edit" permission class, iterating the tools map in insertion order
+ * with last-entry-wins (config.ts: `if (tool === "write" || "edit" || "patch")
+ * perms.edit = action`). The old map's `patch: false` came after `write: true`
+ * and flipped the class to deny — the write tool vanished and every phase
+ * failed with "agent did not write <file>" (the 2026-08-26 isolation
+ * incident). `write: true` must be the only edit-class entry; the edit tool
+ * riding along enabled is harmless in a scratch clone.
+ */
 const PIPELINE_TOOLS = {
   bash: false,
-  edit: false,
   write: true,
   read: true,
   grep: false,
   glob: false,
   list: false,
-  patch: false,
   todowrite: false,
   todoread: false,
   webfetch: false,
@@ -85,15 +93,15 @@ function toolPolicy(): Record<string, boolean> {
  * OPENCODE_CONFIG_CONTENT — pointing XDG_CONFIG_HOME at an empty directory
  * makes the content the whole configuration. lci is re-added explicitly as
  * the one MCP the extraction flow wants.
- * OPT-IN (ERRLOOKUP_ACP_ISOLATION=on) until the write-tool regression is
- * solved: under isolation opencode ACP sessions lose the write tool — agents
- * produce correct JSON and cannot write it (live drain 2026-08-26 21:00Z:
- * 9/10 repos failed, six on "did not write"; probed extensively, the
- * enabling piece of the user config dir is still unidentified). Legacy merge
- * is the default so extraction keeps shipping.
+ * Default ON since the 2026-08-27 probe: the "isolation strips write" incident
+ * of 2026-08-26 was never isolation's fault — the PIPELINE_TOOLS map's
+ * patch:false flipped opencode's collapsed edit-permission class to deny (see
+ * the note on PIPELINE_TOOLS). With write the only edit-class key, the
+ * isolated environment writes fine. ERRLOOKUP_ACP_ISOLATION=off restores the
+ * legacy merge for comparison runs.
  */
 export function acpIsolationEnabled(): boolean {
-  return process.env.ERRLOOKUP_ACP_ISOLATION === "on";
+  return process.env.ERRLOOKUP_ACP_ISOLATION !== "off";
 }
 
 let isolatedHome: string | null = null;
