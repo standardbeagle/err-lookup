@@ -27,6 +27,14 @@ export interface ProviderConfig {
    * provider knob needs no code change.
    */
   modelOptions: Record<string, unknown> | null;
+  /**
+   * Replaces the DIRECT_MODE prompt opener for calls routed to this provider.
+   * The stock opener ("work with minimal thinking…") is tuned for models whose
+   * reasoning is pinned off; a model run at a real effort level wants its own
+   * working style stated instead. KDL: `prompt-directive` with one string
+   * value; null keeps the stock opener.
+   */
+  promptDirective: string | null;
 }
 
 export interface ErrlookupConfig {
@@ -94,6 +102,7 @@ export const DEFAULT_CONFIG: ErrlookupConfig = {
       idleTimeoutMs: 180_000,
       model: null,
       modelOptions: null,
+      promptDirective: null,
     },
   },
   defaults: {
@@ -167,6 +176,9 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
           ? asString(childByName(node, "model")?.values[0], "")
           : null,
         modelOptions: parseModelOptions(providerName, childByName(node, "model-options")?.values[0]),
+        promptDirective: childByName(node, "prompt-directive")?.values[0] != null
+          ? asString(childByName(node, "prompt-directive")?.values[0], "")
+          : null,
       };
     } else if (node.name === "phase-providers") {
       cfg.phaseProviders = {};

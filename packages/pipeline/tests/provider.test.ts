@@ -14,6 +14,7 @@ import {
 import { ProviderError, type LlmProvider } from "../src/provider/types.js";
 import { mapConfig, type ErrlookupConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
+import { DIRECT_MODE } from "../src/phase/prompts.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixtureDir = resolve(__dirname, "..", "fixtures");
@@ -346,5 +347,55 @@ describe("runProvider rate-limit backoff", () => {
     // One pause between the two primary attempts; none before the fallback,
     // which is a different provider and not gated by the primary's limit.
     expect(sleeps).toEqual([RATE_LIMIT_BACKOFF_MS]);
+  });
+});
+
+describe("runProvider per-provider prompt directive", () => {
+  const capture = (name: string, prompts: string[]): LlmProvider => ({
+    name,
+    async invoke(prompt: string) {
+      prompts.push(prompt);
+      return { ok: false as const, kind: "parse" as const, error: "captured" };
+    },
+  });
+
+  it("swaps DIRECT_MODE for the provider's directive; the fallback keeps its own", async () => {
+    const cfg = mapConfig(
+      parseKdl(
+        [
+          'provider "p" { command "p"',
+          '  prompt-directive "Think carefully, then answer."',
+          "}",
+          'provider "f" { command "f" }',
+          'defaults { primary "p"',
+          '  fallback "f"',
+          "}",
+        ].join("\n")
+      )
+    );
+    const pPrompts: string[] = [];
+    const fPrompts: string[] = [];
+    const providers: Record<string, LlmProvider> = { p: capture("p", pPrompts), f: capture("f", fPrompts) };
+    await expect(
+      runProvider(DIRECT_MODE + "the task", { cwd: "." }, providers, cfg)
+    ).rejects.toBeInstanceOf(ProviderError);
+    for (const prompt of pPrompts) {
+      expect(prompt.startsWith("Think carefully, then answer.\n\nthe task")).toBe(true);
+      expect(prompt).not.toContain(DIRECT_MODE);
+    }
+    // The fallback's model was not tuned — it keeps the stock opener.
+    expect(fPrompts.length).toBeGreaterThan(0);
+    for (const prompt of fPrompts) expect(prompt.startsWith(DIRECT_MODE)).toBe(true);
+  });
+
+  it("leaves a prompt without the stock opener untouched", async () => {
+    const cfg = mapConfig(
+      parseKdl(['provider "p" { command "p"', '  prompt-directive "Custom."', "}", 'defaults { primary "p" }'].join("\n"))
+    );
+    const pPrompts: string[] = [];
+    await expect(
+      runProvider("bare task", { cwd: "." }, { p: capture("p", pPrompts) }, cfg)
+    ).rejects.toBeInstanceOf(ProviderError);
+    for (const prompt of pPrompts) expect(prompt.startsWith("bare task")).toBe(true);
   });
 });

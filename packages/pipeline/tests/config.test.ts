@@ -80,6 +80,7 @@ describe("config mapping", () => {
       idleTimeoutMs: 180_000,
       model: null,
       modelOptions: null,
+      promptDirective: null,
     });
     expect(cfg.providers.claude.args).toContain("--max-turns");
     expect(cfg.defaults).toEqual({

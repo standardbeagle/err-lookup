@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider, InvokeOptions, ProviderResult } from "./types.js";
 import { ProviderError } from "./types.js";
+import { DIRECT_MODE } from "../phase/prompts.js";
 
 /** Prefix for the file (inside the invocation cwd) where the agent must write its JSON. */
 export const OUTPUT_PREFIX = ".errlookup.out";
@@ -137,6 +138,14 @@ export function clearProviderDownMarks(): void {
 
 const realSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/** Swap the stock DIRECT_MODE opener for the provider's own working style
+ *  (`prompt-directive` in the KDL). Only the known prefix is replaced — a
+ *  prompt built without it is delivered untouched. */
+function withDirective(prompt: string, directive: string | null | undefined): string {
+  if (!directive || !prompt.startsWith(DIRECT_MODE)) return prompt;
+  return `${directive.trim()}\n\n${prompt.slice(DIRECT_MODE.length)}`;
+}
+
 function withOutputInstruction(prompt: string, outputFile: string): string {
   return (
     `${prompt}\n\n` +
@@ -201,7 +210,10 @@ export async function runProvider(
   // cwd (inside the agent's write sandbox); each attempt starts from a clean slate.
   const outputFile = nextOutputFile(opts.cwd);
   const attemptOpts: InvokeOptions = { ...opts, outputFile };
-  const attemptPrompt = withOutputInstruction(prompt, outputFile);
+  // The directive is per-provider, so the delivered prompt is too — the
+  // fallback must not inherit an opener tuned for the primary's model.
+  const promptFor = (name: string): string =>
+    withOutputInstruction(withDirective(prompt, cfg.providers[name]?.promptDirective), outputFile);
   const clean = () => rmSync(outputFile, { force: true });
 
   try {
@@ -214,7 +226,7 @@ export async function runProvider(
       for (let attempt = 0; attempt < 2; attempt++) {
         if (lastFailure && isRateLimitError(lastFailure.error)) await sleep(RATE_LIMIT_BACKOFF_MS);
         clean();
-        const r = await primary.invoke(attemptPrompt, attemptOpts);
+        const r = await primary.invoke(promptFor(primaryName), attemptOpts);
         if (r.ok) return { parsed: r.parsed, raw: r.raw, providerUsed: primary.name };
         lastFailure = r;
         if (isBillingCycleExhausted(r.error)) {
@@ -238,7 +250,7 @@ export async function runProvider(
     // provider, so the primary's rate limit does not gate it.
     if (fallback) {
       clean();
-      const r = await fallback.invoke(attemptPrompt, attemptOpts);
+      const r = await fallback.invoke(promptFor(fallbackName!), attemptOpts);
       if (r.ok) return { parsed: r.parsed, raw: r.raw, providerUsed: fallback.name };
       if (!lastFailure) lastFailure = r;
     }
