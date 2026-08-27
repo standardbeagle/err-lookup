@@ -1,0 +1,54 @@
+// Isolation comparison (2026-08-27): rerun already-published medium repos with
+// the updated minimal-MCP ACP isolation (d9833e3→2e71516, default ON) and
+// compare against their current production records (pre-isolation baseline in
+// data/baseline-isolation-cmp.db). Same model routing as blitz-glm-k3.kdl so
+// the diff measures the pipeline change, not the model.
+// Reduced concurrency: production's drain shares the z.ai 10-concurrent
+// account gate — a local comparison must not starve it.
+// Use with: ERRLOOKUP_CONFIG=configs/compare-isolation.kdl ERRLOOKUP_DB=data/compare-isolation.db
+provider "glm" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "zai-coding-plan/glm-5.2"
+    timeout-ms 600000
+    idle-timeout-ms 180000
+    model-options "{\"thinking\":{\"type\":\"disabled\"}}"
+}
+provider "k3" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "kimi-for-coding/k3"
+    timeout-ms 1800000
+    idle-timeout-ms 180000
+    model-options "{\"thinking\":{\"type\":\"disabled\"}}"
+}
+provider "glm53" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "zai-coding-plan/glm-5.3"
+    timeout-ms 600000
+    idle-timeout-ms 180000
+    model-options "{\"thinking\":{\"type\":\"disabled\"}}"
+}
+defaults {
+    primary "glm"
+    provider-max-concurrent 3
+    max-concurrent 1
+    batch-concurrency 3
+    analysis-batch-size 20
+    // skip-peak: comparison credits are discretionary — never spend them at 2x.
+    skip-peak true
+    source-window 6
+    call-facts true
+    delay-between-phases-ms 2000
+}
+phase-providers {
+    verify "k3"
+    review "glm53"
+}
+phase-fallbacks {
+    verify "glm53"
+}
