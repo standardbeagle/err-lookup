@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import type { LlmProvider, InvokeOptions, ProviderResult } from "./types.js";
 import { extractJson } from "./json.js";
@@ -120,6 +120,18 @@ export class AcpProvider implements LlmProvider {
     // global skills, and instructions never reach the extraction agent.
     // Auth is untouched — it lives under XDG_DATA_HOME.
     env.XDG_CONFIG_HOME = isolatedConfigHome();
+    // XDG_CONFIG_HOME alone is not the whole vacuum: opencode also scans
+    // dot-directories under HOME itself — every 2026-08-27 eval agent loaded
+    // the developer's ~/.claude/skills and ~/.agents/skills ("duplicate skill
+    // name" warnings in opencode's log). Redirect HOME to the same empty dir,
+    // and pin the other XDG roots to their real defaults first so auth
+    // (XDG_DATA_HOME), the model catalog cache (XDG_CACHE_HOME), and state
+    // keep resolving to the developer's locations.
+    const realHome = env.HOME ?? homedir();
+    env.XDG_DATA_HOME = env.XDG_DATA_HOME ?? join(realHome, ".local", "share");
+    env.XDG_CACHE_HOME = env.XDG_CACHE_HOME ?? join(realHome, ".cache");
+    env.XDG_STATE_HOME = env.XDG_STATE_HOME ?? join(realHome, ".local", "state");
+    env.HOME = isolatedConfigHome();
     // model is "providerId/modelId"; modelOptions pin per-model settings
     // (reasoning effort, thinking toggles) the same way the user's static
     // opencode.json pins them — OPENCODE_CONFIG_CONTENT merges over it.

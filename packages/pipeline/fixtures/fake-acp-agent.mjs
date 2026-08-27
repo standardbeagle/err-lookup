@@ -22,6 +22,8 @@ const payload =
     ? JSON.stringify({
         fake: true,
         xdgConfigHome: process.env.XDG_CONFIG_HOME ?? null,
+        home: process.env.HOME ?? null,
+        xdgDataHome: process.env.XDG_DATA_HOME ?? null,
         opencodeConfig: JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? "null"),
       })
     : process.env.FAKE_ACP_PAYLOAD ?? '{"fake":true}';
