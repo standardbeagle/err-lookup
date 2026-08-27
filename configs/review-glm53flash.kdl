@@ -1,0 +1,21 @@
+// Review-phase candidate: GLM 5.3 Flash via opencode ACP (Z.AI coding plan).
+// Same 9-record traffic-subset dry-run as the 2026-08-16 review comparison
+// (docs/model-comparison-2026-08-16-review-phase.md) so verdict calibration
+// compares directly against glm-5.3 and the Codex three.
+// skip-peak: z.ai bills Mon-Fri 06:00-10:00 UTC at 2x — discretionary runs wait.
+// Use with: ERRLOOKUP_CONFIG=configs/review-glm53flash.kdl ERRLOOKUP_DB=data/review-subset.db
+provider "flash" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "zai-coding-plan/glm-5.3-flash"
+    timeout-ms 600000
+    idle-timeout-ms 180000
+    model-options "{\"thinking\":{\"type\":\"disabled\"}}"
+}
+defaults {
+    primary "flash"
+    max-concurrent 1
+    skip-peak true
+    delay-between-phases-ms 2000
+}

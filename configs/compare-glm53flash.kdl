@@ -1,0 +1,31 @@
+// glm-5.3-flash evaluation (2026-08-27): one model for EVERY phase — scope,
+// discovery, analysis, verify (no k3, no glm53 review split). Candidate to
+// replace the glm-5.2 bulk + glm-5.3 review routing if quality holds; flash
+// pricing would cut per-repo credit cost. Compare against
+// data/baseline-isolation-cmp.db and the glm-5.2 runs of
+// docs/isolation-comparison-2026-08-27.md.
+// Reduced concurrency: production's drain shares the z.ai account gate.
+// Use with: ERRLOOKUP_CONFIG=configs/compare-glm53flash.kdl ERRLOOKUP_DB=data/compare-glm53flash.db
+provider "flash" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "zai-coding-plan/glm-5.3-flash"
+    timeout-ms 600000
+    idle-timeout-ms 180000
+    // Same Anthropic-shape thinking toggle the other z.ai models accept —
+    // bulk classification needs no deliberation.
+    model-options "{\"thinking\":{\"type\":\"disabled\"}}"
+}
+defaults {
+    primary "flash"
+    provider-max-concurrent 3
+    max-concurrent 1
+    batch-concurrency 3
+    analysis-batch-size 20
+    // skip-peak: comparison credits are discretionary — never spend them at 2x.
+    skip-peak true
+    source-window 6
+    call-facts true
+    delay-between-phases-ms 2000
+}
