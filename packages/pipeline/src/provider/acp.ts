@@ -93,17 +93,14 @@ function toolPolicy(): Record<string, boolean> {
  * OPENCODE_CONFIG_CONTENT — pointing XDG_CONFIG_HOME at an empty directory
  * makes the content the whole configuration. lci is re-added explicitly as
  * the one MCP the extraction flow wants.
- * Default ON since the 2026-08-27 probe: the "isolation strips write" incident
- * of 2026-08-26 was never isolation's fault — the PIPELINE_TOOLS map's
- * patch:false flipped opencode's collapsed edit-permission class to deny (see
- * the note on PIPELINE_TOOLS). With write the only edit-class key, the
- * isolated environment writes fine. ERRLOOKUP_ACP_ISOLATION=off restores the
- * legacy merge for comparison runs.
+ *
+ * This is the only path — the legacy developer-config merge is gone. The
+ * 2026-08-26 "isolation strips write" incident was never isolation's fault
+ * (the PIPELINE_TOOLS map's patch:false flipped opencode's collapsed
+ * edit-permission class — see the note on PIPELINE_TOOLS), and the 2026-08-27
+ * three-repo comparison exonerated it: the un-isolated control did worse on
+ * the same inputs (docs/isolation-comparison-2026-08-27.md).
  */
-export function acpIsolationEnabled(): boolean {
-  return process.env.ERRLOOKUP_ACP_ISOLATION !== "off";
-}
-
 let isolatedHome: string | null = null;
 function isolatedConfigHome(): string {
   if (!isolatedHome) {
@@ -119,13 +116,10 @@ export class AcpProvider implements LlmProvider {
   async invoke(prompt: string, opts: InvokeOptions): Promise<ProviderResult> {
     const timeoutMs = opts.timeoutMs ?? this.cfg.timeoutMs;
     const env: NodeJS.ProcessEnv = { ...process.env };
-    const isolated = acpIsolationEnabled();
-    if (isolated) {
-      // Empty config home: the user's opencode.json (and its MCP registry),
-      // global skills, and instructions never reach the extraction agent.
-      // Auth is untouched — it lives under XDG_DATA_HOME.
-      env.XDG_CONFIG_HOME = isolatedConfigHome();
-    }
+    // Empty config home: the user's opencode.json (and its MCP registry),
+    // global skills, and instructions never reach the extraction agent.
+    // Auth is untouched — it lives under XDG_DATA_HOME.
+    env.XDG_CONFIG_HOME = isolatedConfigHome();
     // model is "providerId/modelId"; modelOptions pin per-model settings
     // (reasoning effort, thinking toggles) the same way the user's static
     // opencode.json pins them — OPENCODE_CONFIG_CONTENT merges over it.
@@ -139,7 +133,7 @@ export class AcpProvider implements LlmProvider {
         ? { provider: { [providerId]: { models: { [modelId]: { options: this.cfg.modelOptions } } } } }
         : {}),
       // The one MCP the extraction flow keeps: lci code search over the clone.
-      ...(isolated ? { mcp: { lci: { type: "local", command: ["lci", "mcp"], enabled: true } } } : {}),
+      mcp: { lci: { type: "local", command: ["lci", "mcp"], enabled: true } },
       agent: { build: { tools: toolPolicy() } },
     });
 

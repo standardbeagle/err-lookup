@@ -121,7 +121,11 @@ describe("AcpProvider", () => {
     }
   }, 20000);
 
-  it("ERRLOOKUP_ACP_ISOLATION=off restores the legacy merge for comparison runs", async () => {
+  it("isolation is unconditional — the retired off-switch changes nothing", async () => {
+    // ERRLOOKUP_ACP_ISOLATION=off was the comparison-run escape hatch; the
+    // 2026-08-27 comparison retired it (docs/isolation-comparison-2026-08-27.md).
+    // A stale deployment env carrying the variable must not resurrect the
+    // legacy developer-config merge.
     const cwd = mkdtempSync(join(tmpdir(), "acp-legacy-"));
     process.env.FAKE_ACP_ECHO_ENV = "1";
     process.env.ERRLOOKUP_ACP_ISOLATION = "off";
@@ -132,10 +136,10 @@ describe("AcpProvider", () => {
       if (!r.ok) return;
       const seen = r.parsed as {
         xdgConfigHome: string | null;
-        opencodeConfig: { mcp?: unknown; agent: { build: { tools: Record<string, boolean> } } };
+        opencodeConfig: { mcp?: Record<string, unknown>; agent: { build: { tools: Record<string, boolean> } } };
       };
-      expect(seen.xdgConfigHome).toBe(process.env.XDG_CONFIG_HOME ?? null);
-      expect(seen.opencodeConfig.mcp).toBeUndefined();
+      expect(seen.xdgConfigHome).toContain("errlookup-acp-config-");
+      expect(Object.keys(seen.opencodeConfig.mcp ?? {})).toEqual(["lci"]);
     } finally {
       delete process.env.FAKE_ACP_ECHO_ENV;
       delete process.env.ERRLOOKUP_ACP_ISOLATION;
