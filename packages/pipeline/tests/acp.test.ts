@@ -37,17 +37,40 @@ describe("AcpProvider", () => {
     rmSync(cwd, { recursive: true, force: true });
   }, 20000);
 
-  it("fails loudly when the agent never writes the output file", async () => {
+  it("salvages the answer from streamed text when the file is missing", async () => {
+    // glm-5.3-flash (2026-08-27): the complete JSON streamed as chat text, no
+    // write-tool call. The answer is the same either way — only delivery
+    // differs — so a parseable stream rescues the batch.
     const cwd = mkdtempSync(join(tmpdir(), "acp-test-"));
     process.env.FAKE_ACP_SKIP_FILE = "1";
     try {
       const p = new AcpProvider("opencode", acpCfg());
       const outputFile = join(cwd, `${OUTPUT_PREFIX}.test.json`);
       const r = await p.invoke(`x\nWrite the final JSON to the file "${outputFile}"`, { cwd, outputFile });
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.kind).toBe("empty");
+      expect(r.ok).toBe(true);
+      if (r.ok) expect((r.parsed as { fake: boolean }).fake).toBe(true);
     } finally {
       delete process.env.FAKE_ACP_SKIP_FILE;
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 20000);
+
+  it("fails loudly when neither the file nor the stream carries JSON", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "acp-test-"));
+    process.env.FAKE_ACP_SKIP_FILE = "1";
+    process.env.FAKE_ACP_PAYLOAD = "no json anywhere in this text";
+    try {
+      const p = new AcpProvider("opencode", acpCfg());
+      const outputFile = join(cwd, `${OUTPUT_PREFIX}.test.json`);
+      const r = await p.invoke(`x\nWrite the final JSON to the file "${outputFile}"`, { cwd, outputFile });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.kind).toBe("empty");
+        expect(r.error).toContain("did not write");
+      }
+    } finally {
+      delete process.env.FAKE_ACP_SKIP_FILE;
+      delete process.env.FAKE_ACP_PAYLOAD;
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 20000);

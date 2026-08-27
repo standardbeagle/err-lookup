@@ -288,6 +288,13 @@ export class AcpProvider implements LlmProvider {
 
     if (opts.outputFile) {
       if (!existsSync(opts.outputFile)) {
+        // Some models stream the complete JSON as chat text instead of
+        // calling the write tool (glm-5.3-flash, 2026-08-27 — a whole batch
+        // lost with its answer sitting in the transcript). The answer is the
+        // same either way; only the delivery channel differs, so salvage from
+        // the stream before declaring the call empty.
+        const salvaged = extractJson(agentText);
+        if (salvaged.ok) return salvaged;
         return {
           ok: false,
           kind: "empty",
