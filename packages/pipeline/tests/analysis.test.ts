@@ -35,6 +35,9 @@ class RecordingProvider implements LlmProvider {
       failPrompts?: (p: string) => boolean;
       /** Failure kind for failPrompts hits — only "timeout" is size-fixable. */
       failKind?: "empty" | "timeout";
+      /** Answer these prompts ok but with no entries — the silent stub a
+       *  throttled provider produces (docs/isolation-comparison-2026-08-27.md). */
+      emptyPrompts?: (p: string) => boolean;
       /** Hold every call open until releaseAll() — lets a test observe true
        *  peak concurrency instead of racing the scheduler. */
       holdOpen?: boolean;
@@ -61,6 +64,9 @@ class RecordingProvider implements LlmProvider {
       }
       if (this.opts.failPrompts?.(prompt)) {
         return { ok: false, kind: this.opts.failKind ?? "empty", error: "simulated batch failure" };
+      }
+      if (this.opts.emptyPrompts?.(prompt)) {
+        return { ok: true, parsed: {}, raw: "{}" };
       }
       // Answer for exactly the indices this prompt lists.
       const indices = [...prompt.matchAll(/^\[(\d+)\]/gm)].map((m) => Number(m[1]));
@@ -330,6 +336,35 @@ describe("runAnalysis oversized-batch recovery", () => {
 
     expect(p.prompts.map(listed)).toEqual([20, 20]);
     expect(res.failedBatches).toBe(1);
+  });
+
+  it("halves a batch whose answer came back empty instead of booking it a success", async () => {
+    // The 2026-08-27 fastapi collapse: an ok response with zero entries for a
+    // 20-error batch counted as "0 failed" and the records died unenriched.
+    const p = new RecordingProvider("bulk", { emptyPrompts: (t) => listed(t) > 10 });
+    const cfg = cfgFrom(["  analysis-batch-size 20"]);
+    const logs: string[] = [];
+    const res = await runAnalysis(FAKE_REPO, discovered(20), { bulk: p }, cfg, BOTH, undefined, (m) => logs.push(m));
+
+    expect(p.prompts.map(listed)).toEqual([20, 10, 10]);
+    expect(res.failedBatches).toBe(0);
+    expect(res.enrichedByIndex.size).toBe(20);
+    expect(res.defenseByIndex.size).toBe(20);
+    expect(logs.some((l) => l.includes("returned empty — retrying as halves"))).toBe(true);
+  });
+
+  it("an empty half is a loud failed batch, never a success", async () => {
+    const p = new RecordingProvider("bulk", { emptyPrompts: () => true });
+    const cfg = cfgFrom(["  analysis-batch-size 20"]);
+    const logs: string[] = [];
+    const res = await runAnalysis(FAKE_REPO, discovered(20), { bulk: p }, cfg, BOTH, undefined, (m) => logs.push(m));
+
+    // 20 → 10 + 10, both halves still empty: two failed batches on the books
+    // and a log line naming each, instead of "0 failed" over zero records.
+    expect(p.prompts.map(listed)).toEqual([20, 10, 10]);
+    expect(res.failedBatches).toBe(2);
+    expect(res.enrichedByIndex.size).toBe(0);
+    expect(logs.filter((l) => l.includes("failed: answer carried no enrichment entries")).length).toBe(2);
   });
 
   it("splits once, never recursively — a dead batch cannot outspend its old retry", async () => {

@@ -42,10 +42,23 @@ interface AnalysisPayload {
  *  size can digest is recovered instead of lost. */
 const SPLIT_FLOOR = 10;
 
-/** A timeout — the provider's own, or the phase watchdog's — is the failure a
- *  smaller batch can fix. Everything else (rate limit, parse, spawn) is not. */
+/** A parseable answer carrying none of the entries the pass asked for.
+ *  Accepting it silently cost fastapi 20/26 records on 2026-08-27
+ *  (docs/isolation-comparison-2026-08-27.md): glm-5.2 under account throttling
+ *  answers quickly with an empty stub, and `?? []` booked the batch a success
+ *  while its errors died unenriched in verify. */
+class EmptyBatchError extends Error {}
+
+/** A timeout — the provider's own, or the phase watchdog's — is a failure a
+ *  smaller batch can fix. So is an empty answer: the same run's halves reached
+ *  90% coverage on batches whose full size came back empty (nest, 2026-08-27).
+ *  Everything else (rate limit, parse, spawn) is not. */
 function isSizeFixable(err: unknown): boolean {
-  return err instanceof TimeoutError || (err instanceof ProviderError && err.kind === "timeout");
+  return (
+    err instanceof TimeoutError ||
+    err instanceof EmptyBatchError ||
+    (err instanceof ProviderError && err.kind === "timeout")
+  );
 }
 
 export interface AnalysisResult {
@@ -192,6 +205,19 @@ export async function runAnalysis(
         enriched: parsed.enriched ?? [],
         defenseStrategies: parsed.defenseStrategies ?? [],
       };
+      // Every error in the batch is asked for every section of the pass, so a
+      // pass whose section comes back with zero entries is a failed call, not
+      // a judgment — fail it loudly instead of losing the whole batch.
+      if (unit.batch.length > 0) {
+        const empty = unit.pass.enrichment && payload.enriched.length === 0
+          ? "enrichment"
+          : unit.pass.defense && payload.defenseStrategies.length === 0
+            ? "defense"
+            : null;
+        if (empty) {
+          throw new EmptyBatchError(`answer carried no ${empty} entries for ${unit.batch.length} errors`);
+        }
+      }
       // Persist only what applyParsed will read back, not the raw provider
       // output. A failed unit is deliberately never persisted — it retries on
       // the next resume, which also converts rate-limit losses into retries.
@@ -205,7 +231,8 @@ export async function runAnalysis(
       // discovery does. Rate-limit and parse failures are NOT split: more
       // calls against a pinned limit spend more of it for the same answer.
       if (canSplit && isSizeFixable(err) && unit.batch.length >= SPLIT_FLOOR) {
-        onLog?.(`${routingPhase} batch at errors ${label(unit)} timed out — retrying as halves`);
+        const why = err instanceof EmptyBatchError ? "returned empty" : "timed out";
+        onLog?.(`${routingPhase} batch at errors ${label(unit)} ${why} — retrying as halves`);
         const mid = Math.ceil(unit.batch.length / 2);
         const first = await runUnit(half(unit, 0, mid), false);
         const second = await runUnit(half(unit, mid, unit.batch.length), false);
