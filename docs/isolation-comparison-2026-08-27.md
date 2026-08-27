@@ -64,6 +64,19 @@ for a non-empty batch as a failed batch (log + split-retry like a timeout).
 That is a size-independent failure, so route it like rate-limit/parse failures
 (no split), or split once and then fail loudly — but never count it a success.
 
+## Post-fix rerun (same day)
+
+With the empty-batch fail-fast landed (7e633dc) and the isolation off-switch
+retired (ba292ef), fastapi rerun into `data/compare-isolation-fixed.db`:
+25 discovered, **25/25 enriched**, 18 records / 7 rejects — vs 3 records
+before the fix. No batch returned empty this round (the provider was calmer
+off-peak), so the split path is pinned by tests rather than observed live.
+The remaining 18-vs-50 gap against the 08-14 baseline is discovery-side —
+the halved source window, scope exclusions (docs_src/, scripts/), and the
+pattern guard rejecting placeholder-only messages — i.e. today's deliberate
+config, not lost batches. Enrichment coverage, the thing this comparison
+caught, is whole.
+
 ## Caveats
 
 - Baseline rows predate the 08-24 verify overhaul and the 08-26 quota-fallback
