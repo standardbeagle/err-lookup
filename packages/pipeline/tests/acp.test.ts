@@ -97,11 +97,13 @@ describe("AcpProvider", () => {
 
   it("streamed events hold the idle timer off past the idle window", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "acp-drip-"));
-    // 6 chunks every 150ms ≈ 900ms of work, idle window 500ms: only the
-    // per-event reset lets this finish.
-    process.env.FAKE_ACP_DRIP = "150,6";
+    // 6 chunks every 300ms ≈ 1.8s of work, idle window 1200ms: only the
+    // per-event reset lets this finish. The 900ms inter-chunk margin absorbs
+    // scheduler hiccups on a loaded machine — 150/500 flaked when a comparison
+    // run saturated the box (2026-08-27).
+    process.env.FAKE_ACP_DRIP = "300,6";
     try {
-      const p = new AcpProvider("opencode", { ...acpCfg(), idleTimeoutMs: 500 });
+      const p = new AcpProvider("opencode", { ...acpCfg(), idleTimeoutMs: 1200 });
       const r = await p.invoke("drip", { cwd });
       expect(r.ok).toBe(true);
     } finally {
