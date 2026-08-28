@@ -25,10 +25,8 @@ provider "k3" {
     idle-timeout-ms 180000
     model-options "{\"thinking\":{\"type\":\"disabled\"}}"
 }
-// Review-phase winner of docs/model-comparison-2026-08-16-review-phase.md:
-// only candidate with a calibrated verdict distribution (says "good", patches
-// single fields). 5.3 stays off the bulk phases — it lost that comparison
-// (docs/model-comparison-2026-08-14-glm53.md).
+// Verify fallback when k3's cycle is spent. Lost the 2026-08-16 review
+// comparison's crown to flash on 2026-08-27 (see below); stays for verify.
 provider "glm53" {
     command "opencode"
     args "acp" "--pure"
@@ -37,6 +35,23 @@ provider "glm53" {
     timeout-ms 600000
     idle-timeout-ms 180000
     model-options "{\"thinking\":{\"type\":\"disabled\"}}"
+}
+// Review-phase winner of docs/model-comparison-2026-08-27-glm53-flash.md:
+// best-calibrated verdicts on the 9-record traffic subset (7 good / 1
+// improved / 1 defective, the safe defective stance on grpc-go, targeted
+// patches only) at 27s/record — 2.5x faster than glm-5.3 — with ~50x its
+// rate limit. Effort pinned LOW explicitly: it is where that calibration was
+// measured, and review's single-record calls never hit the low-effort
+// compliance failures the bulk phases saw. Watch item: it under-patches
+// subtle single-field defects glm-5.3 caught — omissions, never invention.
+provider "flash" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "zai-coding-plan/glm-5.3-flash"
+    timeout-ms 600000
+    idle-timeout-ms 180000
+    model-options "{\"reasoningEffort\":\"low\"}"
 }
 defaults {
     primary "glm"
@@ -70,7 +85,7 @@ defaults {
 }
 phase-providers {
     verify "k3"
-    review "glm53"
+    review "flash"
 }
 // When k3's billing cycle is spent (seen 2026-08-25), verify degrades to
 // glm-5.3 — slower, but records still ship verified instead of unpatched.
