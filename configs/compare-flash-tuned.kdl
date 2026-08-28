@@ -1,0 +1,32 @@
+// glm-5.3-flash step 3: effort HIGH + model-specific tuning — the parity
+// ladder's last rung (step 1: docs/model-comparison-2026-08-27-glm53-flash.md
+// at effort low; step 2: configs/compare-flash-high.kdl, tokio 114 records but
+// fastapi sunk by empty halves and one mid-string JSON truncation).
+// Tuning targets those two failure shapes:
+//  - analysis-batch-size 10: half-size outputs cannot hit the truncation
+//    ceiling, and flash's ~5x rate limit absorbs the doubled call count.
+//  - prompt-directive: replaces the stock "minimal thinking" opener (wrong for
+//    a model run at a real effort level) with complete-coverage + brevity +
+//    write-tool delivery, aimed at the empty-answer and truncation modes.
+// Use with: ERRLOOKUP_CONFIG=configs/compare-flash-tuned.kdl ERRLOOKUP_DB=data/compare-flash-tuned.db
+provider "flash" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "zai-coding-plan/glm-5.3-flash"
+    timeout-ms 600000
+    idle-timeout-ms 180000
+    model-options "{\"reasoningEffort\":\"high\"}"
+    prompt-directive "Be thorough and complete. Produce an entry for EVERY item asked for — an incomplete answer is a failed answer. Keep each field brief and factual; never pad. Deliver the output exactly as the delivery instruction says, using the write tool, and verify the file holds the complete JSON before finishing."
+}
+defaults {
+    primary "flash"
+    provider-max-concurrent 6
+    max-concurrent 1
+    batch-concurrency 6
+    analysis-batch-size 10
+    skip-peak true
+    source-window 6
+    call-facts true
+    delay-between-phases-ms 2000
+}

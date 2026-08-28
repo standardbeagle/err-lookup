@@ -1,0 +1,30 @@
+// glm-5.3-flash at reasoningEffort HIGH — step 2 of the flash parity ladder
+// (docs/model-comparison-2026-08-27-glm53-flash.md was step 1, which ran at
+// opencode variant=low: thinking:{disabled} maps to an effort model's MINIMUM
+// effort). Testing whether higher effort fixes the low-run's compliance
+// failures (answer streamed as text instead of the output file, empty stubs).
+// Prompts unchanged from the low run — one variable at a time.
+// Concurrency raised vs the glm-5.2 comparisons: flash has ~5x glm-5.2's rate
+// limit (user-provided), so it can run wider without starving the production
+// drain's glm-5.2 traffic.
+// Use with: ERRLOOKUP_CONFIG=configs/compare-flash-high.kdl ERRLOOKUP_DB=data/compare-flash-high.db
+provider "flash" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "zai-coding-plan/glm-5.3-flash"
+    timeout-ms 600000
+    idle-timeout-ms 180000
+    model-options "{\"reasoningEffort\":\"high\"}"
+}
+defaults {
+    primary "flash"
+    provider-max-concurrent 6
+    max-concurrent 1
+    batch-concurrency 6
+    analysis-batch-size 20
+    skip-peak true
+    source-window 6
+    call-facts true
+    delay-between-phases-ms 2000
+}
