@@ -1,32 +1,49 @@
-// Corpus-blitz routing: GLM 5.2 (comparison winner) does the bulk phases over
-// pre-extracted candidates; Kimi K3 (strong, pricier) validates.
+// Corpus-blitz routing: GLM 5.3 Flash does EVERY phase (switched 2026-08-28;
+// filename kept because four ops scripts reference it). The parity ladder in
+// docs/model-comparison-2026-08-27-glm53-flash.md put tuned flash at or above
+// glm-5.2 on all three comparison repos (22/107/88 records vs 18/82/47) with
+// a request-rate cap several times glm-5.2's — same concurrency knobs now buy
+// ~3x the usable throughput headroom. glm-5.2 and k3 are removed, not kept as
+// fallbacks; glm-5.3 stays only as the verify fallback.
 // Use with: ERRLOOKUP_CONFIG=configs/blitz-glm-k3.kdl
-provider "glm" {
+//
+// Bulk flash runs the step-3 recipe, each knob tied to a measured failure:
+//  - reasoningEffort high: thinking:{disabled} maps to an effort model's
+//    MINIMUM effort, and low is where the compliance failures lived (empty
+//    stubs, answer streamed as text, truncation).
+//  - prompt-directive: replaces the stock minimal-thinking opener — complete
+//    coverage of every index, brief factual fields, write-tool delivery.
+//  - analysis-batch-size 10 (defaults below): half-size outputs cannot hit
+//    the truncation ceiling; the rate-limit headroom absorbs the extra calls.
+provider "flash" {
     command "opencode"
     args "acp" "--pure"
     type "acp"
-    model "zai-coding-plan/glm-5.2"
+    model "zai-coding-plan/glm-5.3-flash"
     timeout-ms 600000
     idle-timeout-ms 180000
-    // Bulk classification needs no deliberation: thinking off (Anthropic-shape
-    // option — the z.ai coding-plan endpoint is Anthropic-compatible).
-    model-options "{\"thinking\":{\"type\":\"disabled\"}}"
+    model-options "{\"reasoningEffort\":\"high\"}"
+    prompt-directive "Be thorough and complete. Produce an entry for EVERY item asked for — an incomplete answer is a failed answer. Keep each field brief and factual; never pad. Deliver the output exactly as the delivery instruction says, using the write tool, and verify the file holds the complete JSON before finishing."
 }
-provider "k3" {
+// Review-phase winner of docs/model-comparison-2026-08-27-glm53-flash.md:
+// best-calibrated verdicts on the 9-record traffic subset (7 good / 1
+// improved / 1 defective, the safe defective stance on grpc-go, targeted
+// patches only) at 27s/record. Effort pinned LOW explicitly: it is where that
+// calibration was measured, and review's single-record calls never hit the
+// low-effort compliance failures the bulk phases saw. Watch item: it
+// under-patches subtle single-field defects glm-5.3 caught — omissions,
+// never invention.
+provider "flash-review" {
     command "opencode"
     args "acp" "--pure"
     type "acp"
-    model "kimi-for-coding/k3"
-    // Stalls are caught by idle-timeout-ms (no ACP events), so the wall clock
-    // is only a backstop. 600s here killed actively-streaming verify calls on
-    // tensorflow-scale batches; 30min lets a busy call finish while a stalled
-    // one still dies within 3 minutes.
-    timeout-ms 1800000
+    model "zai-coding-plan/glm-5.3-flash"
+    timeout-ms 600000
     idle-timeout-ms 180000
-    model-options "{\"thinking\":{\"type\":\"disabled\"}}"
+    model-options "{\"reasoningEffort\":\"low\"}"
 }
-// Verify fallback when k3's cycle is spent. Lost the 2026-08-16 review
-// comparison's crown to flash on 2026-08-27 (see below); stays for verify.
+// Verify fallback only: records still ship verified if flash is down or
+// rate-limit-stormed. Off every primary path since 2026-08-28.
 provider "glm53" {
     command "opencode"
     args "acp" "--pure"
@@ -36,36 +53,20 @@ provider "glm53" {
     idle-timeout-ms 180000
     model-options "{\"thinking\":{\"type\":\"disabled\"}}"
 }
-// Review-phase winner of docs/model-comparison-2026-08-27-glm53-flash.md:
-// best-calibrated verdicts on the 9-record traffic subset (7 good / 1
-// improved / 1 defective, the safe defective stance on grpc-go, targeted
-// patches only) at 27s/record — 2.5x faster than glm-5.3 — with ~50x its
-// rate limit. Effort pinned LOW explicitly: it is where that calibration was
-// measured, and review's single-record calls never hit the low-effort
-// compliance failures the bulk phases saw. Watch item: it under-patches
-// subtle single-field defects glm-5.3 caught — omissions, never invention.
-provider "flash" {
-    command "opencode"
-    args "acp" "--pure"
-    type "acp"
-    model "zai-coding-plan/glm-5.3-flash"
-    timeout-ms 600000
-    idle-timeout-ms 180000
-    model-options "{\"reasoningEffort\":\"low\"}"
-}
 defaults {
-    primary "glm"
-    // GLM 5.2 allows 10 concurrent requests, enforced process-wide below. The
-    // two knobs deliberately over-subscribe that (3 x 6 = 18 potential): the
-    // gate keeps the real ceiling at 10, and the slack means a repo cloning or
-    // between phases does not leave provider slots idle.
+    primary "flash"
+    // Concurrency deliberately UNCHANGED from the glm-5.2 era (user call,
+    // 2026-08-28): the same 10-slot gate against flash's several-times-higher
+    // request-rate cap means the drain stops tripping the account ceiling
+    // instead of running faster — throughput headroom, not more load.
     provider-max-concurrent 10
-    // 6 repos in flight (was 3): the shared gate caps real provider calls at
-    // 10, so extra repos only fill slots left idle by clones, candidate
-    // extraction, and assembly — and ls-remote skips make idle workers cheap.
+    // 6 repos in flight: the shared gate caps real provider calls at 10, so
+    // extra repos only fill slots left idle by clones, candidate extraction,
+    // and assembly — and ls-remote skips make idle workers cheap.
     max-concurrent 6
     batch-concurrency 6
-    analysis-batch-size 20
+    // Step-3 recipe (see the flash provider note): half-size analysis calls.
+    analysis-batch-size 10
     // Off-peak only: the plan bills peak (Mon-Fri 06:00-10:00 UTC) at twice the
     // credit rate, so a long unattended run holds between repos rather than
     // spending double for the same output.
@@ -84,13 +85,8 @@ defaults {
     delay-between-phases-ms 2000
 }
 phase-providers {
-    verify "k3"
-    review "flash"
+    review "flash-review"
 }
-// When k3's billing cycle is spent (seen 2026-08-25), verify degrades to
-// glm-5.3 — slower, but records still ship verified instead of unpatched.
-// runProvider skips the dead k3 after its first cycle-spent answer and
-// re-probes it hourly.
 phase-fallbacks {
     verify "glm53"
 }
