@@ -98,9 +98,26 @@ describe("parseScope", () => {
   });
 
   it("fails loudly on hallucinated dirs — a wrong includeRoot would scan nothing", () => {
-    expect(() => parseScope({ includeRoots: ["lib"] }, dirs)).toThrow(/does not match/);
+    expect(() => parseScope({ includeRoots: ["lib"] }, dirs)).toThrow(/not a directory in the repo/);
     expect(() => parseScope({ excludeDirs: ["../etc"] }, dirs)).toThrow(/invalid path/);
     expect(() => parseScope({ includeRoots: "src" }, dirs)).toThrow(/not an array/);
+  });
+
+  it("accepts a real directory the rendered tree omitted", () => {
+    // The tree deliberately hides dot-dirs, the SKIP_DIRS floor, and anything
+    // past its depth/size caps. Models keep excluding those real dirs
+    // ("tests", "docs", ".github") — harmless agreement with the floor, and it
+    // failed 11 production repos before this existed. Only a path the repo
+    // does not contain is a hallucination.
+    const onDisk = new Set(["tests", ".github", "src/deep/nested"]);
+    const exists = (rel: string) => onDisk.has(rel);
+    const s = parseScope(
+      { includeRoots: ["src/deep/nested"], excludeDirs: ["tests", ".github"] },
+      dirs,
+      exists
+    );
+    expect(s).toEqual({ includeRoots: ["src/deep/nested"], excludeDirs: ["tests", ".github"] });
+    expect(() => parseScope({ excludeDirs: ["invented"] }, dirs, exists)).toThrow(/not a directory in the repo/);
   });
 });
 
@@ -176,7 +193,7 @@ describe("runScope", () => {
   it("fails the phase when the model invents a directory", async () => {
     const dir = monorepoFixture();
     const p = new ScopeProvider("p", { includeRoots: ["lib"] });
-    await expect(runScope(dir, "o/mono", { p }, cfg())).rejects.toThrow(/does not match/);
+    await expect(runScope(dir, "o/mono", { p }, cfg())).rejects.toThrow(/not a directory in the repo/);
     disposeRepo(dir);
   });
 });

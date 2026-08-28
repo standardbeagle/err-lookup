@@ -8,7 +8,7 @@
  * output fails the phase loudly — a hallucinated include-root would silently
  * scan nothing.
  */
-import { readdirSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { ErrlookupConfig } from "../config/index.js";
 import type { LlmProvider } from "../provider/types.js";
@@ -107,10 +107,20 @@ export function renderTree(dirs: TreeDir[], suspectFileCount = DEFAULTS.suspectF
 }
 
 /**
- * Validate the model's scope answer against the tree it was shown. Any entry
- * that is not a directory we listed fails the phase — no silent repair.
+ * Validate the model's scope answer against the repo. The rendered tree is the
+ * fast path, but it deliberately omits directories — dot-dirs, the SKIP_DIRS
+ * floor, anything past maxDepth/maxDirs — and models keep naming those
+ * (excludeDirs "tests"/"docs"/".github": harmless agreement with the floor;
+ * 11 production repos failed on it by 2026-08-28). An entry that is not in the
+ * tree but IS a real directory on disk is accepted; only a path the repo does
+ * not contain fails the phase — that one is a genuine hallucination, and a
+ * hallucinated includeRoot would silently scan nothing.
  */
-export function parseScope(parsed: unknown, dirs: TreeDir[]): ScanScope {
+export function parseScope(
+  parsed: unknown,
+  dirs: TreeDir[],
+  dirExists: (rel: string) => boolean = () => false
+): ScanScope {
   const known = new Set(dirs.map((d) => d.path));
   const p = parsed as { includeRoots?: unknown; excludeDirs?: unknown } | null;
   const clean = (v: unknown, field: string): string[] => {
@@ -122,8 +132,8 @@ export function parseScope(parsed: unknown, dirs: TreeDir[]): ScanScope {
       if (s === "" || s.startsWith("/") || s.split("/").includes("..")) {
         throw new Error(`scope: invalid path ${JSON.stringify(x)} in ${field}`);
       }
-      if (!known.has(s)) {
-        throw new Error(`scope: ${field} entry "${s}" does not match any directory in the tree`);
+      if (!known.has(s) && !dirExists(s)) {
+        throw new Error(`scope: ${field} entry "${s}" is not a directory in the repo`);
       }
       return s;
     });
@@ -164,7 +174,13 @@ export async function runScope(
     runProvider(scopePrompt(repo, renderTree(dirs)), { cwd: repoPath }, providers, cfg, "scope"),
     watchdogBudgetMs(cfg, "scope")
   );
-  const scope = parseScope(result.parsed, dirs);
+  const scope = parseScope(result.parsed, dirs, (rel) => {
+    try {
+      return statSync(join(repoPath, rel)).isDirectory();
+    } catch {
+      return false;
+    }
+  });
   onLog?.(
     `includeRoots=[${scope.includeRoots.join(", ")}] excludeDirs=[${scope.excludeDirs.join(", ")}] via ${result.providerUsed}`
   );
