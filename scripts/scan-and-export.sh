@@ -14,7 +14,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="${ERRLOOKUP_LOG_DIR:-$HOME/.local/state/errlookup}"
 LOCK_FILE="$LOG_DIR/scan.lock"
 CORPUS="${ERRLOOKUP_CORPUS:-$REPO_ROOT/docs/blitz-corpus.txt}"
-# GLM 5.2 bulk + K3 verify won the model comparison (docs/model-comparison-2026-07-31.md)
+# GLM 5.3 Flash on every phase since 2026-08-28 (docs/model-comparison-2026-08-27-glm53-flash.md);
+# the config filename is historical.
 export ERRLOOKUP_CONFIG="${ERRLOOKUP_CONFIG:-$REPO_ROOT/configs/blitz-glm-k3.kdl}"
 
 mkdir -p "$LOG_DIR"
@@ -28,10 +29,32 @@ if ! flock -n 9; then
   exit 0
 fi
 
-# Disk hygiene (§11.3): reap orphaned clone dirs from crashed runs, then
-# refuse to start below the free-space floor — a full disk mid-batch corrupts
-# nothing (atomic export) but wastes a night.
-find /tmp -maxdepth 1 -name 'errlookup-*' -mmin +720 -exec rm -rf {} + 2>/dev/null
+# Disk hygiene (§11.3): reap orphaned work dirs from killed runs, then refuse
+# to start below the free-space floor — a full disk mid-batch corrupts nothing
+# (atomic export) but wastes a night.
+#
+# Liveness-based, not age-based: the old 12h threshold left ~4.5GB of clones
+# from a killed drain sitting for half a day (2026-08-29). We hold the drain
+# flock, so no other drain owns anything here; a dir is live only if some
+# process still has its cwd inside it (cron helpers mid-call). The 60-min
+# mtime grace covers a helper between calls. errlookup-acp-home is the
+# persistent agent-runtime cache (opencode's self-installed deps) — never
+# swept.
+dir_in_use() {
+  local p target
+  for p in /proc/[0-9]*; do
+    target=$(readlink "$p/cwd" 2>/dev/null) || continue
+    case "$target" in "$1"|"$1"/*) return 0 ;; esac
+  done
+  return 1
+}
+for d in /tmp/errlookup-*; do
+  [ -e "$d" ] || continue
+  case "$d" in */errlookup-acp-home) continue ;; esac
+  [ -n "$(find "$d" -maxdepth 0 -mmin -60 2>/dev/null)" ] && continue
+  dir_in_use "$d" && continue
+  rm -rf "$d"
+done
 MIN_FREE_GB="${ERRLOOKUP_MIN_FREE_GB:-10}"
 free_gb=$(df -BG --output=avail /tmp | tail -1 | tr -dc '0-9')
 if [ "${free_gb:-0}" -lt "$MIN_FREE_GB" ]; then

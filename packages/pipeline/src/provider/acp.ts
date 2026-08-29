@@ -101,10 +101,19 @@ function toolPolicy(): Record<string, boolean> {
  * three-repo comparison exonerated it: the un-isolated control did worse on
  * the same inputs (docs/isolation-comparison-2026-08-27.md).
  */
+/**
+ * One FIXED path, not per-pid: opencode installs its own runtime deps into
+ * $XDG_CONFIG_HOME/opencode/node_modules and npm caches into $HOME/.npm —
+ * ~160MB it re-downloaded on every drain start while this was keyed by pid,
+ * and each killed drain stranded its copy in /tmp (found 2026-08-29). The dir
+ * holds only what opencode itself writes — never user config, skills, or MCP
+ * registrations — so reusing it across processes keeps the isolation intact
+ * while the install survives.
+ */
 let isolatedHome: string | null = null;
 function isolatedConfigHome(): string {
   if (!isolatedHome) {
-    isolatedHome = join(tmpdir(), `errlookup-acp-config-${process.pid}`);
+    isolatedHome = join(tmpdir(), "errlookup-acp-home");
     mkdirSync(join(isolatedHome, "opencode"), { recursive: true });
   }
   return isolatedHome;

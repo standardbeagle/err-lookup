@@ -126,13 +126,13 @@ describe("AcpProvider", () => {
         xdgDataHome: string | null;
         opencodeConfig: { mcp?: Record<string, unknown>; agent: { build: { tools: Record<string, boolean> } } };
       };
-      expect(seen.xdgConfigHome).toContain("errlookup-acp-config-");
+      expect(seen.xdgConfigHome).toContain("errlookup-acp-home");
       expect(seen.xdgConfigHome).not.toBe(process.env.XDG_CONFIG_HOME ?? null);
       // HOME itself is redirected: opencode scans ~/.claude/skills and
       // ~/.agents/skills outside XDG_CONFIG_HOME (the 2026-08-27 skills leak).
       // Auth must keep resolving, so XDG_DATA_HOME is pinned to the real one.
-      expect(seen.home).toContain("errlookup-acp-config-");
-      expect(seen.xdgDataHome).not.toContain("errlookup-acp-config-");
+      expect(seen.home).toContain("errlookup-acp-home");
+      expect(seen.xdgDataHome).not.toContain("errlookup-acp-home");
       expect(seen.xdgDataHome).toBeTruthy();
       expect(Object.keys(seen.opencodeConfig.mcp ?? {})).toEqual(["lci"]);
       const tools = seen.opencodeConfig.agent.build.tools;
@@ -171,7 +171,7 @@ describe("AcpProvider", () => {
         xdgConfigHome: string | null;
         opencodeConfig: { mcp?: Record<string, unknown>; agent: { build: { tools: Record<string, boolean> } } };
       };
-      expect(seen.xdgConfigHome).toContain("errlookup-acp-config-");
+      expect(seen.xdgConfigHome).toContain("errlookup-acp-home");
       expect(Object.keys(seen.opencodeConfig.mcp ?? {})).toEqual(["lci"]);
     } finally {
       delete process.env.FAKE_ACP_ECHO_ENV;
