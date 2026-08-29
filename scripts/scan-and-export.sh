@@ -50,7 +50,12 @@ dir_in_use() {
 }
 for d in /tmp/errlookup-*; do
   [ -e "$d" ] || continue
-  case "$d" in */errlookup-acp-home) continue ;; esac
+  case "$d" in
+    # Persistent, never swept: the shared agent-runtime cache, and the
+    # mkdir-based large-repo mutex (absent = free — deleting a HELD lock
+    # would admit a second large repo alongside the holder).
+    */errlookup-acp-home|*/errlookup-large-repo.lock) continue ;;
+  esac
   [ -n "$(find "$d" -maxdepth 0 -mmin -60 2>/dev/null)" ] && continue
   dir_in_use "$d" && continue
   rm -rf "$d"
