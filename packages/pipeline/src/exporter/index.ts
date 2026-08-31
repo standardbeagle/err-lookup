@@ -132,51 +132,52 @@ interface FileOut {
   content: string | Buffer;
 }
 
-/** New repos admitted to the crawlable site per UTC day (0 freezes admission). */
-function dailyAdmissionBudget(): number {
-  const n = Number(process.env.ERRLOOKUP_PUBLISH_NEW_REPOS_PER_DAY ?? 25);
-  return Number.isFinite(n) && n >= 0 ? n : 25;
+/** Days between a repo's first export and its crawl-surface admission. */
+function admissionDelayDays(): number {
+  const n = Number(process.env.ERRLOOKUP_PUBLISH_DELAY_DAYS ?? 7);
+  return Number.isFinite(n) && n >= 0 ? n : 7;
 }
 
 /**
  * Scheduled publishing: decide which repos the crawlable site advertises.
  * The dataset itself always ships whole — search, /api, and the MCP get every
- * analyzed repo immediately — but sitemaps and page indexability follow this
- * set, so Google meets new sections at a rate its admission systems accept
- * instead of the August bulk drops it refused wholesale.
+ * analyzed repo immediately — but sitemaps, navigation, and page indexability
+ * lag it by a fixed delay: a repo is admitted once its first export is
+ * ERRLOOKUP_PUBLISH_DELAY_DAYS old (default 7). A delay, not a quota — site
+ * admission tracks analysis pace exactly, just shifted, so the pipeline is
+ * never throttled and the August pattern (a bulk drop of brand-new sections
+ * that Google refused wholesale) cannot recur: by the time a crawler is
+ * invited, the section has been live, verified, and serving search traffic
+ * for a week.
  *
- * Admission is a one-way ledger: up to the daily budget of not-yet-published
- * repos joins per UTC day, highest stars first (the strongest content leads).
- * An empty ledger bootstraps by grandfathering every analyzed repo — those
- * pages are already live and indexed; yanking them into noindex on feature
- * arrival would be a mass self-deindexing.
+ * The ledger records each repo's first export. An empty ledger bootstraps by
+ * grandfathering every analyzed repo — those pages are already live and
+ * indexed; yanking them into noindex on feature arrival would be a mass
+ * self-deindexing — by backdating their first export past the delay window.
  */
 export function admitReposForSite(db: Db, analyzed: RepoEntry[], now = new Date()): Set<string> {
+  const delayMs = admissionDelayDays() * 86_400_000;
+  const cutoffIso = new Date(now.getTime() - delayMs).toISOString();
   const rows = db.select().from(publishedRepos).all();
-  const nowIso = now.toISOString();
   if (rows.length === 0) {
     if (analyzed.length > 0) {
       db.insert(publishedRepos)
-        .values(analyzed.map((r) => ({ repo: r.repo, firstPublishedAt: nowIso })))
+        .values(analyzed.map((r) => ({ repo: r.repo, firstPublishedAt: cutoffIso })))
         .onConflictDoNothing()
         .run();
     }
     return new Set(analyzed.map((r) => r.repo));
   }
-  const published = new Set(rows.map((r) => r.repo));
-  const today = nowIso.slice(0, 10);
-  const admittedToday = rows.filter((r) => r.firstPublishedAt.slice(0, 10) === today).length;
-  let budget = Math.max(0, dailyAdmissionBudget() - admittedToday);
-  const candidates = analyzed
-    .filter((r) => !published.has(r.repo))
-    .sort((a, b) => b.stars - a.stars || a.repo.localeCompare(b.repo));
-  for (const c of candidates) {
-    if (budget <= 0) break;
-    budget--;
-    db.insert(publishedRepos).values({ repo: c.repo, firstPublishedAt: nowIso }).onConflictDoNothing().run();
-    published.add(c.repo);
+  const firstSeen = new Map(rows.map((r) => [r.repo, r.firstPublishedAt]));
+  const nowIso = now.toISOString();
+  for (const r of analyzed) {
+    if (firstSeen.has(r.repo)) continue;
+    db.insert(publishedRepos).values({ repo: r.repo, firstPublishedAt: nowIso }).onConflictDoNothing().run();
+    firstSeen.set(r.repo, nowIso);
   }
-  return published;
+  return new Set(
+    analyzed.filter((r) => (firstSeen.get(r.repo) ?? nowIso) <= cutoffIso).map((r) => r.repo)
+  );
 }
 
 /**

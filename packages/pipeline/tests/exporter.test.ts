@@ -163,13 +163,12 @@ describe("scheduled publishing (crawl-surface admission)", () => {
     };
   }
 
-  it("bootstraps by grandfathering every analyzed repo, then drips by daily budget", () => {
+  it("bootstraps by grandfathering every analyzed repo, then admits after the delay", () => {
     const dbPath = tmpDbPath("export-admission");
     const { db, raw } = openDb(dbPath);
     seed(db);
     db.insert(repositories).values([repoRow("c/low", 1), repoRow("b/mid", 50), repoRow("a/high", 999)]).run();
 
-    process.env.ERRLOOKUP_PUBLISH_NEW_REPOS_PER_DAY = "1";
     try {
       // First export ever: everything already analyzed is grandfathered — those
       // pages are live and indexed; noindexing them would be self-deindexing.
@@ -178,41 +177,32 @@ describe("scheduled publishing (crawl-surface admission)", () => {
         first.files.find((f) => f.relPath === "published.json")!.content as string
       );
       expect(firstPublished).toEqual(["a/high", "axios/axios", "b/mid", "c/low"]);
+      // ...and stays admitted on the very next export (the backdate must clear
+      // the delay window, not sit exactly on its edge).
+      const again = buildDataset(db);
+      expect(
+        JSON.parse(again.files.find((f) => f.relPath === "published.json")!.content as string)
+      ).toEqual(["a/high", "axios/axios", "b/mid", "c/low"]);
 
-      // Bootstrap day spends the whole budget (the grandfathered rows carry
-      // today's date), so newcomers analyzed the same day wait. On the next
-      // day, 1/day admits only the starriest newcomer; a same-day re-run
-      // admits no second one.
-      db.insert(repositories).values([repoRow("d/new-big", 500), repoRow("e/new-small", 5)]).run();
+      // A repo analyzed after bootstrap waits out the delay — a time shift,
+      // not a quota, so admission tracks analysis pace exactly.
+      db.insert(repositories).values([repoRow("d/new", 500)]).run();
       const sameDay = buildDataset(db);
-      const sameDayPublished = JSON.parse(
-        sameDay.files.find((f) => f.relPath === "published.json")!.content as string
-      );
-      expect(sameDayPublished).not.toContain("d/new-big");
+      expect(
+        JSON.parse(sameDay.files.find((f) => f.relPath === "published.json")!.content as string)
+      ).not.toContain("d/new");
 
-      const newcomers = [
-        { repo: "d/new-big", stars: 500 },
-        { repo: "e/new-small", stars: 5 },
-      ] as Parameters<typeof admitReposForSite>[1];
-      const nextDay = new Date(Date.now() + 86_400_000);
-      const admitted = admitReposForSite(db, newcomers, nextDay);
-      expect(admitted.has("d/new-big")).toBe(true);
-      expect(admitted.has("e/new-small")).toBe(false);
-      const rerun = admitReposForSite(db, newcomers, nextDay);
-      expect(rerun.has("e/new-small")).toBe(false);
+      const newcomer = [{ repo: "d/new", stars: 500 }] as Parameters<typeof admitReposForSite>[1];
+      const beforeDelay = new Date(Date.now() + 6 * 86_400_000);
+      expect(admitReposForSite(db, newcomer, beforeDelay).has("d/new")).toBe(false);
+      const afterDelay = new Date(Date.now() + 8 * 86_400_000);
+      expect(admitReposForSite(db, newcomer, afterDelay).has("d/new")).toBe(true);
 
       // The full dataset still ships every repo — admission gates crawl
       // exposure, never data availability.
-      const after = buildDataset(db);
-      const afterPublished = JSON.parse(
-        after.files.find((f) => f.relPath === "published.json")!.content as string
-      );
-      expect(afterPublished).toContain("d/new-big");
-      expect(afterPublished).not.toContain("e/new-small");
-      const repos = JSON.parse(after.files.find((f) => f.relPath === "repos.json")!.content as string);
-      expect(repos.map((r: { repo: string }) => r.repo)).toContain("e/new-small");
+      const repos = JSON.parse(sameDay.files.find((f) => f.relPath === "repos.json")!.content as string);
+      expect(repos.map((r: { repo: string }) => r.repo)).toContain("d/new");
     } finally {
-      delete process.env.ERRLOOKUP_PUBLISH_NEW_REPOS_PER_DAY;
       raw.close();
     }
   });
