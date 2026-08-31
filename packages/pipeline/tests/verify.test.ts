@@ -24,7 +24,12 @@ function record(overrides: Partial<ErrorEntry> = {}): ErrorEntry {
     sourceCodeStart: 1,
     sourceCodeEnd: 1,
     githubUrl: "https://github.com/a/b/blob/deadbeef/src/a.js#L1",
-    documentation: "It booms.",
+    // ≥200 chars: verify counts a shorter documentation as a gap (MIN_DOC_CHARS),
+    // so the base fixture must clear the bar for the "complete record" tests.
+    documentation:
+      "The boom() entry point throws unconditionally because it exists to demonstrate failure paths. " +
+      "Any call site that reaches it without a guard will terminate the request, so callers are expected " +
+      "to branch on canBoom() before invoking it.",
     triggerScenarios: "Calling boom().",
     commonSituations: "Always.",
     solutions: ["do not call boom()"],
@@ -68,6 +73,15 @@ describe("runVerify gap gate", () => {
     const p = new CountingProvider("p");
     await runVerify("/tmp/x", [record({ solutions: [] })], { p }, cfg);
     // ≥1, not ==1: the provider runner may retry within the call
+    expect(p.calls).toBeGreaterThanOrEqual(1);
+  });
+
+  it("treats a one-clause documentation as a gap, not just an empty one", async () => {
+    // 21.9% of the 2026-08-31 corpus shipped with a documentation under 200
+    // chars because the old bar was "non-empty" — those records never re-earned
+    // a verify line and stayed thin forever.
+    const p = new CountingProvider("p");
+    await runVerify("/tmp/x", [record({ documentation: "It booms." })], { p }, cfg);
     expect(p.calls).toBeGreaterThanOrEqual(1);
   });
 });

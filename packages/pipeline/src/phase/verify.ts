@@ -16,6 +16,15 @@ export interface VerifyResult {
   failedRecords: number;
 }
 
+/**
+ * A documentation below this length counts as a gap, not just an empty one.
+ * "Non-empty" as the bar shipped 54,705 published records (21.9% of the
+ * 2026-08-31 corpus) whose documentation was a single clause — mostly written
+ * during the Aug 12-26 quota storms when verify stubs were abandoned wholesale.
+ * 200 chars is the same threshold the site uses to classify a page as thin.
+ */
+const MIN_DOC_CHARS = 200;
+
 /** Records per verify call (ERRLOOKUP_VERIFY_BATCH, default 200). One call
  *  over the whole record set blew up on exactly the biggest repos — the
  *  1,352-record elasticsearch prompt failed every provider it was sent to. */
@@ -38,7 +47,7 @@ export async function runVerify(
     message: r.errorMessage,
     file: r.filePath,
     line: r.lineNumber,
-    hasDoc: r.documentation.trim().length > 0,
+    hasDoc: r.documentation.trim().length >= MIN_DOC_CHARS,
     hasSolutions: r.solutions.length > 0,
     hasSource: r.sourceCode !== null && r.sourceCode.trim().length > 0,
     hasDefense: r.handlingStrategy !== null || r.preventionTips.length > 0,
