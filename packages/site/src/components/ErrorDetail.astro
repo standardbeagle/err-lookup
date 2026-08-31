@@ -17,10 +17,28 @@ const { error: e, repoFullName, related, backgroundArticle = null } = Astro.prop
 // truncated copy of the message printed it twice ("Expected a function, got
 // {type}: Expected a function, got {type}"), spending the part of the title
 // search engines actually show on a stutter.
+//
+// Google shows ~60 chars of title and prints the site name on its own line
+// above it, so every character spent on "owner/" (usually repeating the repo
+// name) or a "| ErrLookup" suffix is a character of the error message cut
+// from the SERP. The message stays in the title: the same code thrown from
+// two files is two pages (slug gets an id suffix), and the message is what
+// keeps their titles distinct.
+const repoName = repoFullName.split("/")[1] ?? repoFullName;
 const title = e.errorCode
-  ? `${e.errorCode}: ${e.errorMessage} — ${repoFullName} | ErrLookup`
-  : `${e.errorMessage} — ${repoFullName} | ErrLookup`;
-const description = e.documentation.slice(0, 155);
+  ? `${e.errorCode}: ${e.errorMessage} — ${repoName}`
+  : `${e.errorMessage} — ${repoName}`;
+// Meta description: a complete sentence cut on a word boundary. The old
+// slice(0,155) ended mid-word, which reads as machine output and loses to
+// Google's own snippet extraction (a live SERP showed text scraped from the
+// bottom of the page instead).
+const truncateAtWord = (s: string, max: number) =>
+  s.length <= max ? s : `${s.slice(0, s.lastIndexOf(" ", max - 1)).replace(/[,;:.]$/, "")}…`;
+const firstSentence = e.documentation.match(/^.*?[.!?](?=\s|$)/s)?.[0] ?? e.documentation;
+const description = truncateAtWord(
+  `${e.errorCode ?? "This error"} in ${repoFullName}: ${firstSentence} See causes, fixes, and prevention.`,
+  160
+);
 const guides = guidesFor(e.errorCode, e.errorMessage);
 const jsonUrl = `/api/errors/${e.id}`;
 const issuesUrl = `https://github.com/${repoFullName}/issues`;
@@ -48,10 +66,24 @@ const ld = {
     },
     {
       "@type": "TechArticle",
-      headline: e.errorCode ?? e.errorMessage.slice(0, 80),
+      headline: (e.errorCode ?? e.errorMessage).slice(0, 110),
       description: e.documentation,
       about: `${repoFullName} — ${e.errorMessage}`,
-      url: `https://errors.standardbeagle.com/${repoFullName}/${e.slug}/`,
+      url: `${SITE}/${repoFullName}/${e.slug}/`,
+      mainEntityOfPage: `${SITE}/${repoFullName}/${e.slug}/`,
+      // Article-family rich results want dates, author, and publisher; without
+      // them the TechArticle node is parsed but not eligible. analyzedAt is
+      // the only date the dataset carries — the record is regenerated whole on
+      // each analysis, so it is honestly both published and modified then.
+      datePublished: e.analyzedAt,
+      dateModified: e.analyzedAt,
+      author: { "@type": "Organization", name: "Standard Beagle", url: "https://standardbeagle.com" },
+      publisher: {
+        "@type": "Organization",
+        name: "ErrLookup",
+        url: SITE,
+        logo: { "@type": "ImageObject", url: `${SITE}/og/default.png` },
+      },
       proficiencyLevel: "Expert",
       keywords: [...e.tags, ...(e.backgroundTag ? [e.backgroundTag] : [])].join(", "),
     },
@@ -71,7 +103,7 @@ const ld = {
   ],
 };
 ---
-<Base ogImage={repoOg(repoFullName)} title={title} description={description}>
+<Base ogImage={repoOg(repoFullName)} title={title} description={description} ogType="article">
   <Fragment slot="head">
     <link rel="alternate" type="application/json" href={jsonUrl} title="JSON dataset record" />
     <link rel="canonical" href={`https://errors.standardbeagle.com/${repoFullName}/${e.slug}/`} />

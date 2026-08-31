@@ -39,6 +39,7 @@ function readErrorRecords(): {
   errorMessage: string;
   errorCode: string | null;
   id: string;
+  analyzedAt: string;
 }[] {
   const repos = JSON.parse(readFileSync(resolve(publicData, "repos.json"), "utf8")) as { repo: string }[];
   const out: ReturnType<typeof readErrorRecords> = [];
@@ -46,7 +47,7 @@ function readErrorRecords(): {
     const [owner, name] = r.repo.split("/");
     const errors = JSON.parse(readFileSync(resolve(publicData, `repos/${owner}/${name}.json`), "utf8"));
     for (const e of errors)
-      out.push({ repo: r.repo, slug: e.slug, errorMessage: e.errorMessage, errorCode: e.errorCode ?? null, id: e.id });
+      out.push({ repo: r.repo, slug: e.slug, errorMessage: e.errorMessage, errorCode: e.errorCode ?? null, id: e.id, analyzedAt: e.analyzedAt });
   }
   return out;
 }
@@ -123,6 +124,14 @@ describe("site build (§8.3)", () => {
       const types = ld["@graph"].map((g: { "@type": string }) => g["@type"]);
       expect(types).toContain("TechArticle");
       expect(types).toContain("FAQPage");
+      // Article-family rich results are ineligible without dates, author, and
+      // publisher — the node parses but earns nothing in the SERP.
+      const article = ld["@graph"].find((g: { "@type": string }) => g["@type"] === "TechArticle");
+      expect(article.datePublished).toBe(e.analyzedAt);
+      expect(article.dateModified).toBe(e.analyzedAt);
+      expect(article.author?.name).toBe("Standard Beagle");
+      expect(article.publisher?.logo?.url).toContain("/og/default.png");
+      expect(article.headline.length).toBeLessThanOrEqual(110);
     }
   });
 
