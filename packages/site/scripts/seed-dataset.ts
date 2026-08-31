@@ -188,6 +188,10 @@ const indexGz = gzipSync(indexJson);
 rmSync(resolve(dataDir, "index.json"), { force: true });
 write("index.json.gz", indexGz);
 write("repos.json", reposJson);
+// Crawl-surface admission list (scheduled publishing): every fixture repo is
+// admitted, mirroring the exporter's bootstrap, so the build exercises the
+// file-present code path rather than the legacy-dataset fallback.
+write("published.json", JSON.stringify(repos.map((r) => r.repo).sort()));
 for (const r of repos) {
   const [owner, name] = r.repo.split("/");
   write(`repos/${owner}/${name}.json`, errors.filter((e) => e.repo === r.repo));

@@ -1,4 +1,4 @@
-import { getRepos } from "./load.js";
+import { getPublishedRepoEntries } from "./load.js";
 
 export const SITE = "https://errors.standardbeagle.com";
 
@@ -17,7 +17,9 @@ export function sitemapIndexXml(): string {
     '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     `  <sitemap><loc>${SITE}/sitemaps/pages.xml</loc></sitemap>`,
   ];
-  for (const r of getRepos()) {
+  // Only admitted repos: the sitemap is the crawl invitation, and scheduled
+  // publishing paces those invitations (see data/indexing.ts).
+  for (const r of getPublishedRepoEntries()) {
     const [owner, name] = r.repo.split("/");
     parts.push(`  <sitemap><loc>${SITE}/sitemaps/${owner}/${name}.xml</loc></sitemap>`);
   }

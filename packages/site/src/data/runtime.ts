@@ -44,6 +44,15 @@ export function findBackgroundArticle(
   return null;
 }
 
+/**
+ * Crawl-surface admission list for on-demand routes. null = dataset predates
+ * scheduled publishing; treat every repo as published.
+ */
+export async function fetchPublishedRepos(locals: RuntimeLocals, origin: string): Promise<Set<string> | null> {
+  const list = await fetchDataJson<string[]>(locals, origin, "published.json");
+  return list === null ? null : new Set(list);
+}
+
 export async function fetchRepoErrors(
   locals: RuntimeLocals,
   origin: string,

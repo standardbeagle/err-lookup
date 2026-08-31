@@ -1,9 +1,12 @@
 import type { APIRoute } from "astro";
-import { getRepos, getRepoErrors } from "../../../data/load.js";
+import { getPublishedRepoEntries, getRepoErrors } from "../../../data/load.js";
+import { indexableSlugs } from "../../../data/indexing.js";
 
-// Per-repo sitemap: /sitemaps/{owner}/{name}.xml (§6.2).
+// Per-repo sitemap: /sitemaps/{owner}/{name}.xml (§6.2). Only repos the
+// scheduled publisher has admitted get one — an unadmitted repo's pages are
+// noindex and inviting a crawl to them would contradict the meta.
 export function getStaticPaths() {
-  return getRepos().map((r) => {
+  return getPublishedRepoEntries().map((r) => {
     const [owner, name] = r.repo.split("/");
     return { params: { owner, name }, props: { repo: r.repo } };
   });
@@ -12,14 +15,20 @@ export function getStaticPaths() {
 export const GET: APIRoute = ({ props }) => {
   const repo = props.repo as string;
   const errors = getRepoErrors(repo);
-  const repoLastmod = getRepos().find((r) => r.repo === repo)?.analyzedAt;
+  // Thin records and non-canonical pattern variants render noindex, so they
+  // earn no sitemap line either (data/indexing.ts) — the sitemap advertises
+  // exactly the set we want judged.
+  const indexable = indexableSlugs(errors);
+  const repoLastmod = getPublishedRepoEntries().find((r) => r.repo === repo)?.analyzedAt;
   const base = `https://errors.standardbeagle.com/${repo}`;
   // Real lastmod instead of changefreq=weekly: pages only change when their
   // repo is re-analyzed, and the blanket weekly hint had crawlers re-fetching
   // the whole long tail on a schedule — 74% of worker invocations were Google.
   const urls = [
     { loc: `${base}/`, lastmod: repoLastmod },
-    ...errors.map((e) => ({ loc: `${base}/${e.slug}/`, lastmod: e.analyzedAt ?? repoLastmod })),
+    ...errors
+      .filter((e) => indexable.has(e.slug))
+      .map((e) => ({ loc: `${base}/${e.slug}/`, lastmod: e.analyzedAt ?? repoLastmod })),
   ];
   const body = [
     '<?xml version="1.0" encoding="UTF-8"?>',

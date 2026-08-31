@@ -51,6 +51,24 @@ export function getRepos(): RepoEntry[] {
   return readJson<RepoEntry[]>("repos.json");
 }
 
+/**
+ * Crawl-surface admission list (scheduled publishing): the repos the site
+ * advertises to crawlers. null means the dataset predates published.json —
+ * every repo is treated as published, which is exactly what that dataset's
+ * exporter believed.
+ */
+export function getPublishedRepos(): Set<string> | null {
+  const p = resolve(siteRoot, "public", "data", "published.json");
+  return existsSync(p) ? new Set(JSON.parse(readFileSync(p, "utf8")) as string[]) : null;
+}
+
+/** Repos the crawlable site lists and sitemaps: admitted ones only. */
+export function getPublishedRepoEntries(): RepoEntry[] {
+  const published = getPublishedRepos();
+  const repos = getRepos();
+  return published === null ? repos : repos.filter((r) => published.has(r.repo));
+}
+
 export function getIndex(): { schemaVersion: number; datasetVersion: string; errors: IndexError[] } {
   // Gzipped in the dataset (the raw file broke Pages' 25 MiB per-file cap).
   // Build-time only — prerendered routes read it under node, never the worker.

@@ -1,7 +1,8 @@
 ---
 import ErrorDetail from "../../../../components/ErrorDetail.astro";
 import { missingErrorPage, relatedFrom } from "../../../../data/load.js";
-import { fetchRepoErrors, fetchInfoIndex, findBackgroundArticle } from "../../../../data/runtime.js";
+import { indexableSlugs } from "../../../../data/indexing.js";
+import { fetchRepoErrors, fetchInfoIndex, findBackgroundArticle, fetchPublishedRepos } from "../../../../data/runtime.js";
 
 // On demand (§6 revised): one prerendered page per error stopped scaling —
 // the corpus outgrew Pages' per-deployment file cap and the build clock. The
@@ -20,9 +21,13 @@ if (!e) {
 }
 const related = relatedFrom(all, e.slug);
 const backgroundArticle = findBackgroundArticle(await fetchInfoIndex(Astro.locals, Astro.url.origin), e);
+// Crawl-surface gate: repo admitted by the scheduled publisher AND this record
+// is the canonical, non-thin carrier of its message pattern (data/indexing.ts).
+const published = await fetchPublishedRepos(Astro.locals, Astro.url.origin);
+const indexable = (published === null || published.has(repoFullName)) && indexableSlugs(all).has(e.slug);
 
 // Rendered HTML is immutable until the next dataset publish; let the CDN keep
 // it for an hour and serve stale while revalidating.
 Astro.response.headers.set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
 ---
-<ErrorDetail error={e} repoFullName={repoFullName} related={related} backgroundArticle={backgroundArticle} />
+<ErrorDetail error={e} repoFullName={repoFullName} related={related} backgroundArticle={backgroundArticle} indexable={indexable} />

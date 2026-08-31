@@ -1,5 +1,5 @@
 ---
-const { title, description, canonical, noCanonical, ogImage, ogType } = Astro.props;
+const { title, description, canonical, noCanonical, ogImage, ogType, noindex } = Astro.props;
 const fullTitle = title ?? "ErrLookup";
 const SITE = "https://errors.standardbeagle.com";
 // noCanonical is for pages whose own URL is not a real address — the 404 body
@@ -16,6 +16,10 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{fullTitle}</title>
+    {/* noindex,follow: the page serves humans (site search, internal links)
+        but stays out of the index — thin records, pattern variants, and repos
+        not yet admitted by the scheduled publisher. */}
+    {noindex && <meta name="robots" content="noindex, follow" />}
     {description && <meta name="description" content={description} />}
     {canonicalUrl && <link rel="canonical" href={canonicalUrl} />}
     <meta property="og:site_name" content="ErrLookup" />

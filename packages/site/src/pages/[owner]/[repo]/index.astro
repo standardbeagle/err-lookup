@@ -1,16 +1,23 @@
 ---
 import Base from "../../../layouts/Base.astro";
-import { getRepoErrors, getRepos } from "../../../data/load.js";
+import { getRepoErrors, getRepos, getPublishedRepos } from "../../../data/load.js";
 import { repoOg } from "../../../data/og.js";
 
+// Every repo gets a page (site search and the API link here), but only repos
+// the scheduled publisher has admitted are indexable — the props carry the
+// verdict because getStaticPaths is the only build-time hook this route has.
 export function getStaticPaths() {
+  const published = getPublishedRepos();
   return getRepos().map((r) => {
     const [owner, name] = r.repo.split("/");
-    return { params: { owner, repo: name }, props: { repo: r } };
+    return {
+      params: { owner, repo: name },
+      props: { repo: r, published: published === null || published.has(r.repo) },
+    };
   });
 }
 
-const { repo } = Astro.props;
+const { repo, published } = Astro.props;
 const errors = getRepoErrors(repo.repo);
 const title = `${repo.repo} — ErrLookup`;
 const SITE = "https://errors.standardbeagle.com";
@@ -24,7 +31,7 @@ const ld = JSON.stringify({
   ],
 });
 ---
-<Base ogImage={repoOg(repo.repo)} title={title} description={`Error index for ${repo.repo}: ${repo.errorCount} documented errors.`}>
+<Base ogImage={repoOg(repo.repo)} title={title} description={`Error index for ${repo.repo}: ${repo.errorCount} documented errors.`} noindex={!published}>
   <script slot="head" type="application/ld+json" set:html={ld} />
   <p class="muted"><a href="/">ErrLookup</a> › {repo.repo}</p>
   <h1>{repo.repo}</h1>

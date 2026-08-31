@@ -10,9 +10,15 @@ interface Props {
   related: ErrorEntry[];
   /** Published background article covering this error's family, if any. */
   backgroundArticle?: InfoPageIndexEntry | null;
+  /**
+   * false = serve the page but keep it out of the index (thin record,
+   * non-canonical pattern variant, or a repo the scheduled publisher has not
+   * admitted yet). See data/indexing.ts.
+   */
+  indexable?: boolean;
 }
 
-const { error: e, repoFullName, related, backgroundArticle = null } = Astro.props;
+const { error: e, repoFullName, related, backgroundArticle = null, indexable = true } = Astro.props;
 // "CODE: message" when there is a code to lead with. Falling back to a
 // truncated copy of the message printed it twice ("Expected a function, got
 // {type}: Expected a function, got {type}"), spending the part of the title
@@ -103,7 +109,7 @@ const ld = {
   ],
 };
 ---
-<Base ogImage={repoOg(repoFullName)} title={title} description={description} ogType="article">
+<Base ogImage={repoOg(repoFullName)} title={title} description={description} ogType="article" noindex={!indexable}>
   <Fragment slot="head">
     <link rel="alternate" type="application/json" href={jsonUrl} title="JSON dataset record" />
     <link rel="canonical" href={`https://errors.standardbeagle.com/${repoFullName}/${e.slug}/`} />

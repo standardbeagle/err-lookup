@@ -1,5 +1,5 @@
 import type { RepoEntry } from "@errlookup/schema";
-import { getRepos } from "./load.js";
+import { getPublishedRepoEntries } from "./load.js";
 
 /**
  * Repos per page of the analyzed-repos list. The corpus is heading for 110+
@@ -54,11 +54,13 @@ export function paginateRepos(repos: readonly RepoEntry[], page: number): RepoPa
 }
 
 export function getRepoPage(page: number): RepoPage {
-  return paginateRepos(getRepos(), page);
+  // Listing = crawl surface: only repos the scheduled publisher has admitted.
+  // Unadmitted repos stay reachable through search and direct links.
+  return paginateRepos(getPublishedRepoEntries(), page);
 }
 
 /** Every repo-list page href, for the sitemap. */
 export function allRepoPageHrefs(): string[] {
-  const total = totalRepoPages(getRepos().length);
+  const total = totalRepoPages(getPublishedRepoEntries().length);
   return Array.from({ length: total }, (_, i) => repoPageHref(i + 1));
 }
