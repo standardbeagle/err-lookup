@@ -141,6 +141,16 @@ export class AcpProvider implements LlmProvider {
     env.XDG_CACHE_HOME = env.XDG_CACHE_HOME ?? join(realHome, ".cache");
     env.XDG_STATE_HOME = env.XDG_STATE_HOME ?? join(realHome, ".local", "state");
     env.HOME = isolatedConfigHome();
+    // Session history goes nowhere: opencode persists every session's
+    // messages/parts/events into $XDG_DATA_HOME/opencode/opencode.db, and at
+    // production drain rates that DB grew ~1GB/day (34GB found on beagle-ab
+    // 2026-08-31, 4-5k sessions/day, 99.8% of 6.78M event rows from these
+    // calls). Nothing ever reads those rows — the provider collects the
+    // transcript in-process (agentText + salvage) and errors carry the stderr
+    // tail — so an in-memory DB is retention-by-construction: one process per
+    // invocation, state dies with it. ERRLOOKUP_ACP_DB overrides with a file
+    // path when a debugging run wants inspectable transcripts.
+    env.OPENCODE_DB = process.env.ERRLOOKUP_ACP_DB ?? ":memory:";
     // model is "providerId/modelId"; modelOptions pin per-model settings
     // (reasoning effort, thinking toggles) the same way the user's static
     // opencode.json pins them — OPENCODE_CONFIG_CONTENT merges over it.
@@ -153,6 +163,11 @@ export class AcpProvider implements LlmProvider {
       ...(providerId && modelId && this.cfg.modelOptions
         ? { provider: { [providerId]: { models: { [modelId]: { options: this.cfg.modelOptions } } } } }
         : {}),
+      // No revert snapshots: opencode git-snapshots the session's worktree
+      // into $XDG_DATA_HOME/opencode/snapshot per prompt — wasted IO on a
+      // scratch clone that is deleted after the call, and 2.6GB of dead
+      // objects had accumulated on beagle-ab by 2026-08-31.
+      snapshot: false,
       // The one MCP the extraction flow keeps: lci code search over the clone.
       mcp: { lci: { type: "local", command: ["lci", "mcp"], enabled: true } },
       agent: { build: { tools: toolPolicy() } },

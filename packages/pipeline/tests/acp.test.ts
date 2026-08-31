@@ -124,7 +124,8 @@ describe("AcpProvider", () => {
         xdgConfigHome: string | null;
         home: string | null;
         xdgDataHome: string | null;
-        opencodeConfig: { mcp?: Record<string, unknown>; agent: { build: { tools: Record<string, boolean> } } };
+        opencodeDb: string | null;
+        opencodeConfig: { snapshot?: boolean; mcp?: Record<string, unknown>; agent: { build: { tools: Record<string, boolean> } } };
       };
       expect(seen.xdgConfigHome).toContain("errlookup-acp-home");
       expect(seen.xdgConfigHome).not.toBe(process.env.XDG_CONFIG_HOME ?? null);
@@ -134,6 +135,12 @@ describe("AcpProvider", () => {
       expect(seen.home).toContain("errlookup-acp-home");
       expect(seen.xdgDataHome).not.toContain("errlookup-acp-home");
       expect(seen.xdgDataHome).toBeTruthy();
+      // Session persistence is off: without this, every call writes its
+      // messages/parts/events into the shared opencode.db under XDG_DATA_HOME
+      // (~1GB/day at drain rates — 34GB on beagle-ab by 2026-08-31), and
+      // per-prompt worktree snapshots pile up beside it.
+      expect(seen.opencodeDb).toBe(":memory:");
+      expect(seen.opencodeConfig.snapshot).toBe(false);
       expect(Object.keys(seen.opencodeConfig.mcp ?? {})).toEqual(["lci"]);
       const tools = seen.opencodeConfig.agent.build.tools;
       // No "*" wildcard: probed 2026-08-26, it silently disables write even
@@ -150,6 +157,23 @@ describe("AcpProvider", () => {
       expect(tools.patch).toBeUndefined();
     } finally {
       delete process.env.FAKE_ACP_ECHO_ENV;
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 20000);
+
+  it("ERRLOOKUP_ACP_DB routes session history to a file for debugging runs", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "acp-db-"));
+    process.env.FAKE_ACP_ECHO_ENV = "1";
+    process.env.ERRLOOKUP_ACP_DB = "/tmp/errlookup-acp-debug.db";
+    try {
+      const p = new AcpProvider("opencode", acpCfg());
+      const r = await p.invoke("echo env", { cwd });
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect((r.parsed as { opencodeDb: string | null }).opencodeDb).toBe("/tmp/errlookup-acp-debug.db");
+    } finally {
+      delete process.env.FAKE_ACP_ECHO_ENV;
+      delete process.env.ERRLOOKUP_ACP_DB;
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 20000);
