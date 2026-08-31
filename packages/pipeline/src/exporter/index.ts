@@ -10,7 +10,7 @@ import {
 import { join, dirname, resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { repositories, errors, infoPages } from "../db/schema.js";
+import { repositories, errors, infoPages, publishedRepos } from "../db/schema.js";
 import {
   CURRENT_SCHEMA_VERSION,
   INFO_PAGE_SCHEMA_VERSION,
@@ -132,6 +132,53 @@ interface FileOut {
   content: string | Buffer;
 }
 
+/** New repos admitted to the crawlable site per UTC day (0 freezes admission). */
+function dailyAdmissionBudget(): number {
+  const n = Number(process.env.ERRLOOKUP_PUBLISH_NEW_REPOS_PER_DAY ?? 25);
+  return Number.isFinite(n) && n >= 0 ? n : 25;
+}
+
+/**
+ * Scheduled publishing: decide which repos the crawlable site advertises.
+ * The dataset itself always ships whole — search, /api, and the MCP get every
+ * analyzed repo immediately — but sitemaps and page indexability follow this
+ * set, so Google meets new sections at a rate its admission systems accept
+ * instead of the August bulk drops it refused wholesale.
+ *
+ * Admission is a one-way ledger: up to the daily budget of not-yet-published
+ * repos joins per UTC day, highest stars first (the strongest content leads).
+ * An empty ledger bootstraps by grandfathering every analyzed repo — those
+ * pages are already live and indexed; yanking them into noindex on feature
+ * arrival would be a mass self-deindexing.
+ */
+export function admitReposForSite(db: Db, analyzed: RepoEntry[], now = new Date()): Set<string> {
+  const rows = db.select().from(publishedRepos).all();
+  const nowIso = now.toISOString();
+  if (rows.length === 0) {
+    if (analyzed.length > 0) {
+      db.insert(publishedRepos)
+        .values(analyzed.map((r) => ({ repo: r.repo, firstPublishedAt: nowIso })))
+        .onConflictDoNothing()
+        .run();
+    }
+    return new Set(analyzed.map((r) => r.repo));
+  }
+  const published = new Set(rows.map((r) => r.repo));
+  const today = nowIso.slice(0, 10);
+  const admittedToday = rows.filter((r) => r.firstPublishedAt.slice(0, 10) === today).length;
+  let budget = Math.max(0, dailyAdmissionBudget() - admittedToday);
+  const candidates = analyzed
+    .filter((r) => !published.has(r.repo))
+    .sort((a, b) => b.stars - a.stars || a.repo.localeCompare(b.repo));
+  for (const c of candidates) {
+    if (budget <= 0) break;
+    budget--;
+    db.insert(publishedRepos).values({ repo: c.repo, firstPublishedAt: nowIso }).onConflictDoNothing().run();
+    published.add(c.repo);
+  }
+  return published;
+}
+
 /**
  * Build the full static dataset (§5). Validates every record against the zod
  * schema; invalid records are dropped (and counted in `rejected`) rather than
@@ -155,6 +202,14 @@ export function buildDataset(
     if (v.ok) validRepos.push(v.value);
     else rejected++;
   }
+
+  // Scheduled publishing: published.json names the repos the crawlable site
+  // advertises (sitemaps + indexable pages). Everything below still ships
+  // every repo — this file gates crawl exposure, not data availability.
+  const sitePublished = admitReposForSite(db, validRepos);
+  const publishedJson = JSON.stringify(
+    validRepos.map((r) => r.repo).filter((repo) => sitePublished.has(repo)).sort()
+  );
 
   // No per-error files: Cloudflare Pages caps a deployment at 20k files and
   // one file per error blew past it at ~12k errors. Single records are served
@@ -236,6 +291,7 @@ export function buildDataset(
   const files: FileOut[] = [
     { relPath: "index.json.gz", content: indexGz },
     { relPath: "repos.json", content: reposStr },
+    { relPath: "published.json", content: publishedJson },
     ...repoFiles,
     ...searchFiles,
     ...infoFiles,
@@ -252,6 +308,7 @@ export function buildDataset(
       rawSha256: sha256(indexStr),
     },
     repos: { path: "/data/repos.json", bytes: Buffer.byteLength(reposStr), sha256: sha256(reposStr) },
+    published: { path: "/data/published.json", bytes: Buffer.byteLength(publishedJson), sha256: sha256(publishedJson) },
     searchSummary: {
       path: "/data/search/summary.json",
       bytes: Buffer.byteLength(summaryStr),
@@ -262,7 +319,12 @@ export function buildDataset(
   const manifest = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     datasetVersion,
-    counts: { repos: validRepos.length, errors: allErrors.length, infoPages: validInfoPages.length },
+    counts: {
+      repos: validRepos.length,
+      errors: allErrors.length,
+      infoPages: validInfoPages.length,
+      sitePublishedRepos: sitePublished.size,
+    },
     files: inventory,
   };
   files.unshift({ relPath: "manifest.json", content: JSON.stringify(manifest) });

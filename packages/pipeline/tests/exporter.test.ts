@@ -4,7 +4,7 @@ import { existsSync, readFileSync, rmSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { openDb } from "../src/db/client.js";
 import { repositories, errors } from "../src/db/schema.js";
-import { publishDataset, buildDataset } from "../src/exporter/index.js";
+import { publishDataset, buildDataset, admitReposForSite } from "../src/exporter/index.js";
 import { validateErrorEntry, validateRepoEntry } from "@errlookup/schema";
 import { tmpDbPath } from "./setup.js";
 
@@ -84,7 +84,10 @@ describe("exporter", () => {
     // manifest shape
     const m = JSON.parse(readFileSync(resolve(outDir, "manifest.json"), "utf8"));
     expect(m.schemaVersion).toBe(2);
-    expect(m.counts).toEqual({ repos: 1, errors: 1, infoPages: 0 });
+    expect(m.counts).toEqual({ repos: 1, errors: 1, infoPages: 0, sitePublishedRepos: 1 });
+    // Scheduled publishing: the crawl-surface admission list ships with the data.
+    const published = JSON.parse(readFileSync(resolve(outDir, "published.json"), "utf8"));
+    expect(published).toEqual(["axios/axios"]);
     expect(m.files.index.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect((manifest as { datasetVersion: string }).datasetVersion).toBeTruthy();
 
@@ -142,6 +145,76 @@ describe("exporter", () => {
     expect(counts.errors).toBe(0);
 
     raw.close();
+  });
+});
+
+describe("scheduled publishing (crawl-surface admission)", () => {
+  function repoRow(repo: string, stars: number) {
+    return {
+      repo,
+      description: null,
+      language: "Go",
+      stars,
+      defaultBranch: "main",
+      analyzedSha: "b".repeat(40),
+      analyzedAt: "2026-08-30T00:00:00Z",
+      errorCount: 0,
+      status: "analyzed" as const,
+    };
+  }
+
+  it("bootstraps by grandfathering every analyzed repo, then drips by daily budget", () => {
+    const dbPath = tmpDbPath("export-admission");
+    const { db, raw } = openDb(dbPath);
+    seed(db);
+    db.insert(repositories).values([repoRow("c/low", 1), repoRow("b/mid", 50), repoRow("a/high", 999)]).run();
+
+    process.env.ERRLOOKUP_PUBLISH_NEW_REPOS_PER_DAY = "1";
+    try {
+      // First export ever: everything already analyzed is grandfathered — those
+      // pages are live and indexed; noindexing them would be self-deindexing.
+      const first = buildDataset(db);
+      const firstPublished = JSON.parse(
+        first.files.find((f) => f.relPath === "published.json")!.content as string
+      );
+      expect(firstPublished).toEqual(["a/high", "axios/axios", "b/mid", "c/low"]);
+
+      // Bootstrap day spends the whole budget (the grandfathered rows carry
+      // today's date), so newcomers analyzed the same day wait. On the next
+      // day, 1/day admits only the starriest newcomer; a same-day re-run
+      // admits no second one.
+      db.insert(repositories).values([repoRow("d/new-big", 500), repoRow("e/new-small", 5)]).run();
+      const sameDay = buildDataset(db);
+      const sameDayPublished = JSON.parse(
+        sameDay.files.find((f) => f.relPath === "published.json")!.content as string
+      );
+      expect(sameDayPublished).not.toContain("d/new-big");
+
+      const newcomers = [
+        { repo: "d/new-big", stars: 500 },
+        { repo: "e/new-small", stars: 5 },
+      ] as Parameters<typeof admitReposForSite>[1];
+      const nextDay = new Date(Date.now() + 86_400_000);
+      const admitted = admitReposForSite(db, newcomers, nextDay);
+      expect(admitted.has("d/new-big")).toBe(true);
+      expect(admitted.has("e/new-small")).toBe(false);
+      const rerun = admitReposForSite(db, newcomers, nextDay);
+      expect(rerun.has("e/new-small")).toBe(false);
+
+      // The full dataset still ships every repo — admission gates crawl
+      // exposure, never data availability.
+      const after = buildDataset(db);
+      const afterPublished = JSON.parse(
+        after.files.find((f) => f.relPath === "published.json")!.content as string
+      );
+      expect(afterPublished).toContain("d/new-big");
+      expect(afterPublished).not.toContain("e/new-small");
+      const repos = JSON.parse(after.files.find((f) => f.relPath === "repos.json")!.content as string);
+      expect(repos.map((r: { repo: string }) => r.repo)).toContain("e/new-small");
+    } finally {
+      delete process.env.ERRLOOKUP_PUBLISH_NEW_REPOS_PER_DAY;
+      raw.close();
+    }
   });
 });
 

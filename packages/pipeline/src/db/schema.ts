@@ -179,6 +179,21 @@ export const phaseBatches = sqliteTable(
   (table) => [primaryKey({ columns: [table.repo, table.sha, table.phase, table.batchKey] })]
 );
 
+/**
+ * Crawl-surface admission ledger (scheduled publishing). The dataset always
+ * ships whole — search shards, /api, and the MCP see every analyzed repo the
+ * moment it lands — but the crawlable site (sitemaps, indexable pages, repo
+ * listings) admits new repos on a daily budget. Bulk-publishing ~100k pages in
+ * one August week is what made Google refuse admission of whole repo blocks
+ * (GSC "Crawled - currently not indexed" 3.5k→11.3k on 2026-08-17) and then
+ * withdraw its crawl. A row here means the repo is advertised to crawlers;
+ * absence means its pages render noindex and stay out of the sitemaps.
+ */
+export const publishedRepos = sqliteTable("published_repos", {
+  repo: text("repo").primaryKey(),
+  firstPublishedAt: text("first_published_at").notNull(),
+});
+
 export type RepositoryRow = typeof repositories.$inferSelect;
 export type NewRepositoryRow = typeof repositories.$inferInsert;
 export type ErrorRow = typeof errors.$inferSelect;
