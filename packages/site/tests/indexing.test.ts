@@ -54,7 +54,7 @@ describe("crawl-surface predicates (data/indexing.ts)", () => {
     expect(LONG_DOC.length).toBeGreaterThanOrEqual(THIN_DOC_CHARS); // fixture stays valid
   });
 
-  it("one canonical per message pattern: solutions beat doc length, ties break on slug", () => {
+  it("one canonical per duplicate group: solutions beat doc length, ties break on slug", () => {
     const all = [
       rec({ slug: "v-nosol", messagePattern: "p1", solutions: [], documentation: LONG_DOC + LONG_DOC }),
       rec({ slug: "v-rich", messagePattern: "p1", solutions: ["fix"], documentation: LONG_DOC }),
@@ -64,6 +64,24 @@ describe("crawl-surface predicates (data/indexing.ts)", () => {
     ];
     const canon = canonicalSlugs(all);
     expect(canon).toEqual(new Set(["v-rich", "a-tie", "solo"]));
+  });
+
+  it("distinct error codes sharing one message template stay distinct pages", () => {
+    // serverless: FUNCTION_MSK_ and FUNCTION_KAFKA_STARTING_POSITION_TIMESTAMP_
+    // INVALID share their template verbatim; the pattern-only rule noindexed
+    // the MSK page — the very page a live Google result was showing.
+    const all = [
+      rec({ slug: "msk", errorCode: "MSK_TS_INVALID", messagePattern: "shared" }),
+      rec({ slug: "kafka", errorCode: "KAFKA_TS_INVALID", messagePattern: "shared", documentation: LONG_DOC + "x" }),
+      rec({ slug: "same-code-a", errorCode: "DUP", messagePattern: "other-1" }),
+      rec({ slug: "same-code-b", errorCode: "DUP", messagePattern: "other-2", documentation: LONG_DOC + "y" }),
+    ];
+    const canon = canonicalSlugs(all);
+    expect(canon.has("msk")).toBe(true);
+    expect(canon.has("kafka")).toBe(true);
+    // ...while the same CODE thrown twice still collapses to its richest page.
+    expect(canon.has("same-code-b")).toBe(true);
+    expect(canon.has("same-code-a")).toBe(false);
   });
 
   it("indexable = canonical and not thin; variants and stubs render but earn no sitemap line", () => {

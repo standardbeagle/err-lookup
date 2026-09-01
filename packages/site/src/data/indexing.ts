@@ -26,19 +26,25 @@ export function isThinRecord(e: Pick<ErrorEntry, "documentation" | "solutions">)
 }
 
 /**
- * One canonical page per message pattern per repo: 40,433 corpus pages
- * (16.2%) shared their pattern with a same-repo sibling — near-duplicates to
- * a crawler. The richest record carries the pattern (has solutions, then the
- * longest documentation); ties break on slug so the choice is stable across
- * builds. Variants still render and remain searchable, they just don't
- * compete with their canonical sibling in the index.
+ * One canonical page per duplicate group per repo — near-duplicates to a
+ * crawler, 16.2% of the 2026-08-31 corpus. The group key is the error CODE
+ * when the record has one, else the message pattern: two codes sharing one
+ * message template are DIFFERENT errors deserving different pages
+ * (FUNCTION_MSK_/FUNCTION_KAFKA_STARTING_POSITION_TIMESTAMP_INVALID in
+ * serverless share a template verbatim, and the pattern-only rule noindexed
+ * the MSK page — the very page a live Google result was showing). The richest
+ * record carries the group (has solutions, then the longest documentation);
+ * ties break on slug so the choice is stable across builds. Variants still
+ * render and remain searchable, they just don't compete with their canonical
+ * sibling in the index.
  */
 export function canonicalSlugs(all: readonly ErrorEntry[]): Set<string> {
   const best = new Map<string, ErrorEntry>();
   for (const e of all) {
-    const cur = best.get(e.messagePattern);
+    const key = e.errorCode ? `c:${e.errorCode}` : `p:${e.messagePattern}`;
+    const cur = best.get(key);
     if (!cur || richness(e) > richness(cur) || (richness(e) === richness(cur) && e.slug < cur.slug)) {
-      best.set(e.messagePattern, e);
+      best.set(key, e);
     }
   }
   return new Set([...best.values()].map((e) => e.slug));
