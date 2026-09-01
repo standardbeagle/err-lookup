@@ -248,6 +248,12 @@ export function analysisPrompt(
         ? `\n${f.role === "declared-as" ? "DECLARED AS" : "RAISED IN"}: ${f.symbol}${f.exported ? " (public)" : ""}` +
           (f.reachedBy.length
             ? ` — ${f.role === "declared-as" ? "returned by" : "called by"}: ${f.reachedBy.join(", ")}`
+            : "") +
+          // The use-site code, not just its function's name: for a declared
+          // sentinel the guard around the use is what documentation and
+          // triggerScenarios are actually about.
+          (f.usageSnippets?.length
+            ? f.usageSnippets.map((s) => `\nUSED AT ${s.loc}:\n${s.text}`).join("")
             : "")
         : "";
       const src = sources?.[i];

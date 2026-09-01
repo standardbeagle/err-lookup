@@ -147,6 +147,25 @@ describe("verify prompt content", () => {
     expect(p.prompt).toContain("never a restatement of the message");
   });
 
+  it("renders lci use-site snippets for a declared sentinel's gaps", async () => {
+    const p = new PromptCapture("p");
+    const facts = new Map([
+      [
+        "src/a.js:1",
+        {
+          symbol: "errEmptyKey",
+          exported: false,
+          role: "declared-as" as const,
+          reachedBy: ["Get"],
+          usageSnippets: [{ loc: "store/kv.go:41", text: 'if key == "" {\n\treturn errEmptyKey\n}' }],
+        },
+      ],
+    ]);
+    await runVerify("/tmp/x", [record({ documentation: "" })], { p }, cfg, undefined, "verify", facts);
+    expect(p.prompt).toContain("USED AT store/kv.go:41:");
+    expect(p.prompt).toContain("return errEmptyKey");
+  });
+
   it("omits the source block when only defense fields are missing", async () => {
     const p = new PromptCapture("p");
     await runVerify(

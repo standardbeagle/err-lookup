@@ -4,6 +4,7 @@ import { runProvider, watchdogBudgetMs, isQuotaShapedError } from "../provider/r
 import { withTimeout } from "../util/watchdog.js";
 import { mapPool, chunk } from "../util/pool.js";
 import { verifyPrompt, type VerifyPatchJson } from "./prompts.js";
+import type { CallFacts } from "./callgraph.js";
 import { validateErrorEntry, type ErrorEntry } from "@errlookup/schema";
 
 export interface VerifyResult {
@@ -55,7 +56,15 @@ export async function runVerify(
   cfg: ErrlookupConfig,
   onLog?: (msg: string) => void,
   /** "verify-escalate" routes the same gap-fill call to the escalation provider. */
-  phase: "verify" | "verify-escalate" = "verify"
+  phase: "verify" | "verify-escalate" = "verify",
+  /**
+   * lci call facts keyed "file:line" (see callgraph.ts), collected by the
+   * caller so tests and lci-less runs cost nothing. For a declared sentinel
+   * they carry the use-site code — the only thing that lets documentation say
+   * "generic validation guard, key argument must not be empty" instead of
+   * paraphrasing the message.
+   */
+  facts?: Map<string, CallFacts>
 ): Promise<VerifyResult> {
   const started = Date.now();
   const compact = records.map((r) => ({
@@ -91,14 +100,25 @@ export async function runVerify(
       // Meaning/handling gaps get the stored throwing region: without it the
       // model can only paraphrase the message ("Error 'key must not be empty'
       // thrown in tailscale/tailscale" was a real published documentation).
+      // lci facts stack on top: enclosing symbol + callers for a raised
+      // error, actual use-site code for a declared sentinel.
       const wantsSource = needs.includes("documentation") || needs.includes("solutions");
+      let source = wantsSource && r.hasSource ? bySourceId.get(r.id)?.slice(0, 600) ?? null : null;
+      const fact = wantsSource ? facts?.get(`${r.file}:${r.line}`) : undefined;
+      if (fact) {
+        const extra =
+          fact.role === "declared-as"
+            ? (fact.usageSnippets ?? []).map((s) => `USED AT ${s.loc}:\n${s.text}`).join("\n")
+            : `RAISED IN ${fact.symbol}${fact.reachedBy.length ? ` — called by: ${fact.reachedBy.join(", ")}` : ""}`;
+        if (extra) source = [source, extra].filter(Boolean).join("\n").slice(0, 1400);
+      }
       return {
         id: r.id,
         message: r.message,
         file: r.file,
         line: r.line,
         needs,
-        source: wantsSource && r.hasSource ? bySourceId.get(r.id)?.slice(0, 600) ?? null : null,
+        source,
       };
     })
     .filter((r) => r.needs.length > 0);

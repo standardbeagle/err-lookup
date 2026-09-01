@@ -51,7 +51,19 @@ export interface CallFacts {
   role: "raised-in" | "declared-as";
   /** Functions that reach the site. Capped — a long list is noise. */
   reachedBy: string[];
+  /**
+   * For a declared error value: the code around its first uses. Caller NAMES
+   * alone cannot document a sentinel — "returned by: Get, Set" says nothing
+   * about which argument is checked, while three lines of the use site show
+   * the guard itself (tailscale's errEmptyKey published as "Error 'key must
+   * not be empty' thrown in tailscale/tailscale" for exactly this reason).
+   */
+  usageSnippets?: { loc: string; text: string }[];
 }
+
+/** Use sites carried per declared error, and lines of code around each. */
+const MAX_USAGE_SNIPPETS = 2;
+const USAGE_SNIPPET_RADIUS = 2;
 
 interface LciSymbol {
   name: string;
@@ -136,6 +148,7 @@ export async function collectCallFacts(
   const symbolsByFile = new Map<string, LciSymbol[]>();
   const linesByFile = new Map<string, string[]>();
   const reachedBySymbol = new Map<string, string[]>();
+  const declaredBySymbol = new Map<string, { names: string[]; snippets: { loc: string; text: string }[] }>();
   let failures = 0;
 
   const symbolsIn = (file: string): LciSymbol[] => {
@@ -178,9 +191,23 @@ export async function collectCallFacts(
       // method is the entry point a caller actually reaches.
       .sort((a, b) => a.end_line! - a.line - (b.end_line! - b.line))[0];
 
-  /** Functions that mention `name` — where a declared error value is returned. */
-  const returnedBy = (name: string, declaredIn: string, declaredAt: number): string[] => {
-    let out: string[] = [];
+  /** Lines around a use site, from the same file cache lineText fills. */
+  const snippetAt = (file: string, line: number): string => {
+    lineText(file, line); // warm the cache
+    const lines = linesByFile.get(file) ?? [];
+    return lines
+      .slice(Math.max(0, line - 1 - USAGE_SNIPPET_RADIUS), line + USAGE_SNIPPET_RADIUS)
+      .join("\n");
+  };
+
+  /** Functions that mention `name` — where a declared error value is returned —
+   *  plus the code around its first uses. */
+  const returnedBy = (
+    name: string,
+    declaredIn: string,
+    declaredAt: number
+  ): { names: string[]; snippets: { loc: string; text: string }[] } => {
+    const out: { names: string[]; snippets: { loc: string; text: string }[] } = { names: [], snippets: [] };
     try {
       const stdout = execFileSync("lci", ["-r", repoPath, "refs", name, "--terse"], {
         encoding: "utf8",
@@ -198,8 +225,12 @@ export async function collectCallFacts(
       for (const ref of refs) {
         const fn = functionAt(ref.file, ref.line);
         if (fn) names.add(fn.name);
+        if (out.snippets.length < MAX_USAGE_SNIPPETS) {
+          const text = snippetAt(ref.file, ref.line);
+          if (text.trim()) out.snippets.push({ loc: `${ref.file}:${ref.line}`, text });
+        }
       }
-      out = [...names].slice(0, MAX_REACHED_BY);
+      out.names = [...names].slice(0, MAX_REACHED_BY);
     } catch {
       /* the symbol is not in the index — the site keeps its source alone */
     }
@@ -237,17 +268,18 @@ export async function collectCallFacts(
     const name = declared?.name ?? DECLARED_NAME.exec(lineText(site.file, site.line))?.[1];
     if (!name) continue;
     const key = `${site.file}:${name}`;
-    let refs = reachedBySymbol.get(key);
-    if (!refs) {
-      refs = returnedBy(name, site.file, site.line);
-      reachedBySymbol.set(key, refs);
+    let resolved = declaredBySymbol.get(key);
+    if (!resolved) {
+      resolved = returnedBy(name, site.file, site.line);
+      declaredBySymbol.set(key, resolved);
     }
     facts.set(`${site.file}:${site.line}`, {
       symbol: name,
       // Go and Java say it with a capital, JS/Python by not being underscored.
       exported: declared?.is_exported ?? /^[A-Z]/.test(name),
       role: "declared-as",
-      reachedBy: refs,
+      reachedBy: resolved.names,
+      usageSnippets: resolved.snippets,
     });
   }
 

@@ -73,6 +73,11 @@ describe("collectCallFacts", () => {
       expect(site?.symbol).toBe("ErrNoPath");
       expect(site?.role).toBe("declared-as");
       expect(site?.reachedBy).toContain("LoadConfig");
+      // The use-site code rides along: caller names alone cannot document a
+      // sentinel — the guard around the use is what the documentation is about.
+      expect(site?.usageSnippets?.length).toBeGreaterThanOrEqual(1);
+      expect(site?.usageSnippets?.map((s) => s.text).join("\n")).toContain("return ErrNoPath");
+      expect(site?.usageSnippets?.[0]?.loc).toMatch(/^errs\.go:\d+$/);
     }
     disposeRepo(dir);
   });

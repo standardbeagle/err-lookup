@@ -23,6 +23,7 @@ import { runScope } from "./scope.js";
 import type { ScanScope } from "./candidates.js";
 import { runAnalysis } from "./analysis.js";
 import { runVerify, applyPatches, missingCore } from "./verify.js";
+import { collectCallFacts } from "./callgraph.js";
 import { assemble } from "./assembler.js";
 import type { DiscoveredErrorJson, EnrichedErrorJson, DefenseStrategyJson } from "./prompts.js";
 
@@ -461,12 +462,24 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
     } else {
       const started = Date.now();
       let records = assembled.records;
+      // lci context for the records verify will actually write prose for:
+      // collected once here (the index is warm from analysis; a verify-only
+      // run pays its own readiness gate) and reused by every round and the
+      // escalation. Facts are optional by contract — no lci, no facts, and
+      // the prompt carries the stored source alone.
+      const coreSites = records
+        .filter((r) => missingCore(r).length > 0 && r.lineNumber != null)
+        .map((r) => ({ file: r.filePath, line: r.lineNumber! }));
+      const verifyFacts =
+        coreSites.length > 0
+          ? await collectCallFacts(repoPath, coreSites, (m) => log(`phase verify: ${m}`))
+          : undefined;
       // Round 1 sees every record; round 2 only the ones round 1 patched, to
       // confirm the patches closed their gaps. A record the model declined to
       // patch would be re-asked the identical question — pure token spend.
       let candidates = records;
       for (let round = 0; round < 2; round++) {
-        const v = await runVerify(repoPath, candidates, providers, cfg, (m) => log(`phase verify: ${m}`));
+        const v = await runVerify(repoPath, candidates, providers, cfg, (m) => log(`phase verify: ${m}`), "verify", verifyFacts);
         if (v.patches.length === 0) break;
         const patchedIds = new Set(v.patches.map((p) => p.id));
         // applyPatches validates per patch and reverts the bad ones — records
@@ -497,7 +510,8 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           providers,
           cfg,
           (m) => log(`phase verify-escalate: ${m}`),
-          "verify-escalate"
+          "verify-escalate",
+          verifyFacts
         );
         if (v.patches.length > 0) {
           const { records: patched, applied, rejected } = applyPatches(records, v.patches);
