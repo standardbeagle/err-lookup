@@ -22,7 +22,7 @@ import { runDiscovery } from "./discovery.js";
 import { runScope } from "./scope.js";
 import type { ScanScope } from "./candidates.js";
 import { runAnalysis } from "./analysis.js";
-import { runVerify, applyPatches } from "./verify.js";
+import { runVerify, applyPatches, missingCore } from "./verify.js";
 import { assemble } from "./assembler.js";
 import type { DiscoveredErrorJson, EnrichedErrorJson, DefenseStrategyJson } from "./prompts.js";
 
@@ -478,6 +478,41 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         records = revalidated;
         candidates = records.filter((r) => patchedIds.has(r.id));
         log(`phase verify: round ${round + 1} applied ${applied} patches → ${records.length} valid records`);
+      }
+      // A record still missing the two answers its page exists to give — what
+      // the error means and how to handle it — gets one pass on a second
+      // model (phase-providers verify-escalate) before we accept the gap. If
+      // that model cannot answer either, the record is raised as a data bug:
+      // a loud log line the drain's ntfy summary counts, while the site keeps
+      // the page noindexed until something real fills it.
+      let unresolved = records.filter((r) => missingCore(r).length > 0);
+      const verifyProvider = cfg.phaseProviders?.verify ?? cfg.defaults.primary;
+      const escalateProvider = cfg.phaseProviders?.["verify-escalate"];
+      if (unresolved.length > 0 && escalateProvider && escalateProvider !== verifyProvider) {
+        log(`phase verify: escalating ${unresolved.length} unanswered records to ${escalateProvider}`);
+        const v = await runVerify(
+          repoPath,
+          unresolved,
+          providers,
+          cfg,
+          (m) => log(`phase verify-escalate: ${m}`),
+          "verify-escalate"
+        );
+        if (v.patches.length > 0) {
+          const { records: patched, applied } = applyPatches(records, v.patches);
+          records = patched
+            .map((r) => validateErrorEntry(r))
+            .filter((r): r is { ok: true; value: ErrorEntry } => r.ok)
+            .map((r) => r.value);
+          log(`phase verify-escalate: applied ${applied} patches`);
+        }
+        unresolved = records.filter((r) => missingCore(r).length > 0);
+      }
+      if (unresolved.length > 0) {
+        log(
+          `phase verify: ${unresolved.length} records UNRESOLVED — no model could say what they mean or how to handle them` +
+            ` (e.g. ${unresolved.slice(0, 3).map((r) => r.slug).join(", ")}); raised as data bugs`
+        );
       }
       assembled.records = records;
       recordPhase(db, {

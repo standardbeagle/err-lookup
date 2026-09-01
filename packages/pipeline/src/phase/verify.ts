@@ -25,6 +25,20 @@ export interface VerifyResult {
  */
 const MIN_DOC_CHARS = 200;
 
+/**
+ * The two answers an error page exists to give: what the error means
+ * (documentation) and how to handle it (solutions). A record still missing
+ * either after the verify rounds is escalated to the verify-escalate provider,
+ * and if that model cannot answer either, the record is raised as a data bug
+ * instead of shipping as a hollow page (see the runner's verify section).
+ */
+export function missingCore(r: Pick<ErrorEntry, "documentation" | "solutions">): string[] {
+  return [
+    ...(r.documentation.trim().length >= MIN_DOC_CHARS ? [] : ["documentation"]),
+    ...(r.solutions.length > 0 ? [] : ["solutions"]),
+  ];
+}
+
 /** Records per verify call (ERRLOOKUP_VERIFY_BATCH, default 200). One call
  *  over the whole record set blew up on exactly the biggest repos — the
  *  1,352-record elasticsearch prompt failed every provider it was sent to. */
@@ -39,7 +53,9 @@ export async function runVerify(
   records: ErrorEntry[],
   providers: Record<string, LlmProvider>,
   cfg: ErrlookupConfig,
-  onLog?: (msg: string) => void
+  onLog?: (msg: string) => void,
+  /** "verify-escalate" routes the same gap-fill call to the escalation provider. */
+  phase: "verify" | "verify-escalate" = "verify"
 ): Promise<VerifyResult> {
   const started = Date.now();
   const compact = records.map((r) => ({
@@ -84,7 +100,7 @@ export async function runVerify(
   }
   // Budget keyed to the verify-phase provider (it used to read the default
   // primary's timeout while routing the call to the verify provider).
-  const budget = watchdogBudgetMs(cfg, "verify");
+  const budget = watchdogBudgetMs(cfg, phase);
   let providerUsed = "n/a";
   let failedBatches = 0;
   let failedRecords = 0;
@@ -96,7 +112,7 @@ export async function runVerify(
   const verifyBatch = async (batch: typeof gapped): Promise<VerifyPatchJson[]> => {
     try {
       const result = await withTimeout(
-        runProvider(verifyPrompt(batch), { cwd: repoPath }, providers, cfg, "verify"),
+        runProvider(verifyPrompt(batch), { cwd: repoPath }, providers, cfg, phase),
         budget
       );
       providerUsed = result.providerUsed;

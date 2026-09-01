@@ -78,10 +78,13 @@ fi
 # sentence a hundred times and the count is the interesting part.
 summarize_failures() { # $1 = run log
   local log="$1"
-  local failed reasons hold summary
+  local failed reasons hold summary unresolved
   failed=$(grep -c "FAILED" "$log" 2>/dev/null || echo 0)
   hold=$(grep -o "provider window quota is spent until [0-9TZ:.-]*" "$log" 2>/dev/null | tail -1)
-  [ "${failed:-0}" -gt 0 ] || [ -n "$hold" ] || return 0
+  # Data bugs: records neither the verify provider nor the escalation model
+  # could document — they ship noindexed, and this count is how they surface.
+  unresolved=$(grep -oE "[0-9]+ records UNRESOLVED" "$log" 2>/dev/null | awk '{s+=$1} END {print s+0}')
+  [ "${failed:-0}" -gt 0 ] || [ -n "$hold" ] || [ "${unresolved:-0}" -gt 0 ] || return 0
 
   # "[repo] phase X: FAILED — <reason>" → the reason, counted. The stderr tail
   # is dropped (it is the same JSON fragment every time), timestamps and SHAs
@@ -95,6 +98,8 @@ summarize_failures() { # $1 = run log
   summary="$(hostname): $(grep -c "^\[.*\] → " "$log" 2>/dev/null || echo 0) repos done, ${failed} failures"
   [ -n "$hold" ] && summary="$summary
 $hold"
+  [ "${unresolved:-0}" -gt 0 ] && summary="$summary
+${unresolved} records unresolved after model escalation (data bugs — see UNRESOLVED lines)"
   [ -n "$reasons" ] && summary="$summary
 
 top reasons:

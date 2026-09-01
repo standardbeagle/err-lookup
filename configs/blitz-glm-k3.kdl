@@ -86,6 +86,10 @@ defaults {
 }
 phase-providers {
     review "flash-review"
+    // Second opinion for records flash left without documentation or
+    // solutions after the verify rounds: full glm-5.3 gets one pass before
+    // the record is raised as a data bug (runner verify section).
+    verify-escalate "glm53"
 }
 phase-fallbacks {
     verify "glm53"

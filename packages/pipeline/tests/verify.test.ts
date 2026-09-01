@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runVerify } from "../src/phase/verify.js";
+import { runVerify, missingCore } from "../src/phase/verify.js";
 import { clearProviderDownMarks } from "../src/provider/run.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
@@ -83,6 +83,33 @@ describe("runVerify gap gate", () => {
     const p = new CountingProvider("p");
     await runVerify("/tmp/x", [record({ documentation: "It booms." })], { p }, cfg);
     expect(p.calls).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("verify escalation plumbing", () => {
+  it("missingCore names exactly the unanswered questions", () => {
+    expect(missingCore(record())).toEqual([]);
+    expect(missingCore(record({ documentation: "stub" }))).toEqual(["documentation"]);
+    expect(missingCore(record({ solutions: [] }))).toEqual(["solutions"]);
+    expect(missingCore(record({ documentation: "", solutions: [] }))).toEqual(["documentation", "solutions"]);
+  });
+
+  it('phase "verify-escalate" routes the call to the escalation provider', async () => {
+    const escalateCfg = mapConfig(
+      parseKdl(
+        [
+          'provider "p" { command "p" }',
+          'provider "e" { command "e" }',
+          'defaults { primary "p" }',
+          'phase-providers { verify-escalate "e" }',
+        ].join("\n")
+      )
+    );
+    const p = new CountingProvider("p");
+    const e = new CountingProvider("e");
+    await runVerify("/tmp/x", [record({ solutions: [] })], { p, e }, escalateCfg, undefined, "verify-escalate");
+    expect(e.calls).toBeGreaterThanOrEqual(1);
+    expect(p.calls).toBe(0);
   });
 });
 
