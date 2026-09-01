@@ -469,15 +469,16 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         const v = await runVerify(repoPath, candidates, providers, cfg, (m) => log(`phase verify: ${m}`));
         if (v.patches.length === 0) break;
         const patchedIds = new Set(v.patches.map((p) => p.id));
-        const { records: patched, applied } = applyPatches(records, v.patches);
-        // re-validate every patched record; keep only valid
-        const revalidated = patched
-          .map((r) => validateErrorEntry(r))
-          .filter((r): r is { ok: true; value: ErrorEntry } => r.ok)
-          .map((r) => r.value);
-        records = revalidated;
+        // applyPatches validates per patch and reverts the bad ones — records
+        // are never dropped and never re-filtered here (record-level filtering
+        // is what threw away tensorflow/models' whole patch set on 2026-09-01).
+        const { records: patched, applied, rejected } = applyPatches(records, v.patches);
+        records = patched;
         candidates = records.filter((r) => patchedIds.has(r.id));
-        log(`phase verify: round ${round + 1} applied ${applied} patches → ${records.length} valid records`);
+        log(
+          `phase verify: round ${round + 1} applied ${applied} patches` +
+            (rejected > 0 ? ` (${rejected} invalid patches reverted)` : "")
+        );
       }
       // A record still missing the two answers its page exists to give — what
       // the error means and how to handle it — gets one pass on a second
@@ -499,12 +500,12 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           "verify-escalate"
         );
         if (v.patches.length > 0) {
-          const { records: patched, applied } = applyPatches(records, v.patches);
-          records = patched
-            .map((r) => validateErrorEntry(r))
-            .filter((r): r is { ok: true; value: ErrorEntry } => r.ok)
-            .map((r) => r.value);
-          log(`phase verify-escalate: applied ${applied} patches`);
+          const { records: patched, applied, rejected } = applyPatches(records, v.patches);
+          records = patched;
+          log(
+            `phase verify-escalate: applied ${applied} patches` +
+              (rejected > 0 ? ` (${rejected} invalid patches reverted)` : "")
+          );
         }
         unresolved = records.filter((r) => missingCore(r).length > 0);
       }

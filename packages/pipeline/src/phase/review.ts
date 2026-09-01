@@ -18,7 +18,7 @@ import { runProvider, watchdogBudgetMs } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
 import { reviewPrompt, type ReviewResultJson, type VerifyPatchJson } from "./prompts.js";
 import { applyPatches } from "./verify.js";
-import { validateErrorEntry, type ErrorEntry } from "@errlookup/schema";
+import type { ErrorEntry } from "@errlookup/schema";
 
 export interface ReviewOutcome {
   quality: ReviewResultJson["quality"];
@@ -84,12 +84,17 @@ export async function runReviewOne(
     return { quality, notes, patches, entry, providerUsed: result.providerUsed, durationMs: Date.now() - started };
   }
 
-  const { records } = applyPatches([entry], patches);
-  const v = validateErrorEntry(records[0]);
-  if (!v.ok) {
-    // Invalid model output must not degrade a live record — reject the whole
-    // patch set loudly rather than shipping a half-valid page.
-    onLog?.(`review: patches for ${entry.repo}/${entry.slug} failed re-validation — rejected`);
+  // applyPatches validates per patch: invalid values are reverted individually
+  // (an invalid model output must not degrade a live record), valid ones land.
+  const { records, applied, rejected } = applyPatches([entry], patches);
+  const patched = records[0]!;
+  const keptPatches = patches.filter(
+    (p) => JSON.stringify((patched as Record<string, unknown>)[p.field]) === JSON.stringify(p.value)
+  );
+  if (rejected > 0) {
+    onLog?.(`review: ${rejected} patches for ${entry.repo}/${entry.slug} failed re-validation — rejected`);
+  }
+  if (applied === 0) {
     return {
       quality: "good",
       notes: `patches rejected (re-validation failed): ${notes}`,
@@ -99,5 +104,5 @@ export async function runReviewOne(
       durationMs: Date.now() - started,
     };
   }
-  return { quality, notes, patches, entry: v.value, providerUsed: result.providerUsed, durationMs: Date.now() - started };
+  return { quality, notes, patches: keptPatches, entry: patched, providerUsed: result.providerUsed, durationMs: Date.now() - started };
 }

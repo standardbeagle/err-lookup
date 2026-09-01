@@ -318,9 +318,18 @@ OUTPUT: return ONLY a JSON object, no prose, no markdown fences:
 }
 
 /** Phase 5 — Verify (§4.2.5): review assembled records for gaps, emit patches. */
-export function verifyPrompt(compact: { id: string; message: string; file: string; line: number | null; needs: string[] }[]): string {
+export function verifyPrompt(
+  compact: { id: string; message: string; file: string; line: number | null; needs: string[]; source?: string | null }[]
+): string {
   const list = compact
-    .map((c) => `id=${c.id} file=${c.file}:${c.line ?? "?"} message=${JSON.stringify(c.message)} needs=${c.needs.join(",")}`)
+    .map((c) => {
+      const head = `id=${c.id} file=${c.file}:${c.line ?? "?"} message=${JSON.stringify(c.message)} needs=${c.needs.join(",")}`;
+      // The stored throwing region rides along for meaning/handling gaps: a
+      // sentinel like tailscale's errEmptyKey cannot be documented from its
+      // message alone ("key must not be empty") — the source is what shows it
+      // is a generic validation guard and which argument is at fault.
+      return c.source ? `${head}\nSOURCE:\n${c.source}\n---` : head;
+    })
     .join("\n");
   return DIRECT_MODE + `Fill the missing fields of these error records. Each line names its record and exactly the fields it needs — every other field is already complete: do not re-check it, do not patch it.
 
@@ -328,9 +337,12 @@ RECORDS:
 ${list}
 
 Value shapes:
-- documentation, triggerScenarios, commonSituations, exampleFix, handlingStrategy: string
+- documentation, triggerScenarios, commonSituations, exampleFix: string
+- handlingStrategy: EXACTLY one of "try-catch"|"type-guard"|"validation"|"retry"|"fallback" — any other value is rejected
 - solutions, preventionTips: array of strings
-- sourceCode: string — the real throwing region, ≤40 lines, read from the file. This is the ONLY need that justifies opening a file; write every other field from the message, path, and your own knowledge without reading anything.
+- sourceCode: string — the real throwing region, ≤40 lines, read from the file. This is the ONLY need that justifies opening a file; write every other field from the message, path, SOURCE block, and your own knowledge without reading anything.
+
+documentation must say what the error MEANS at its throw site and why it fires — never a restatement of the message. When the SOURCE shows a generic guard (a sentinel error, a validation helper), say so and name the input at fault.
 
 One patch per needed field. Do NOT invent ids.
 

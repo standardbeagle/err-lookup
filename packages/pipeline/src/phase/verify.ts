@@ -4,7 +4,7 @@ import { runProvider, watchdogBudgetMs, isQuotaShapedError } from "../provider/r
 import { withTimeout } from "../util/watchdog.js";
 import { mapPool, chunk } from "../util/pool.js";
 import { verifyPrompt, type VerifyPatchJson } from "./prompts.js";
-import type { ErrorEntry } from "@errlookup/schema";
+import { validateErrorEntry, type ErrorEntry } from "@errlookup/schema";
 
 export interface VerifyResult {
   patches: VerifyPatchJson[];
@@ -79,19 +79,28 @@ export async function runVerify(
   // handlingStrategy covers the defense gap: the old patchable-field list never
   // offered a defense field, so defense-only records were re-sent every round
   // with no way to ever satisfy them.
+  const bySourceId = new Map(records.map((r) => [r.id, r.sourceCode]));
   const gapped = compact
-    .map((r) => ({
-      id: r.id,
-      message: r.message,
-      file: r.file,
-      line: r.line,
-      needs: [
+    .map((r) => {
+      const needs = [
         ...(r.hasDoc ? [] : ["documentation"]),
         ...(r.hasSolutions ? [] : ["solutions"]),
         ...(r.hasSource ? [] : ["sourceCode"]),
         ...(r.hasDefense ? [] : ["handlingStrategy"]),
-      ],
-    }))
+      ];
+      // Meaning/handling gaps get the stored throwing region: without it the
+      // model can only paraphrase the message ("Error 'key must not be empty'
+      // thrown in tailscale/tailscale" was a real published documentation).
+      const wantsSource = needs.includes("documentation") || needs.includes("solutions");
+      return {
+        id: r.id,
+        message: r.message,
+        file: r.file,
+        line: r.line,
+        needs,
+        source: wantsSource && r.hasSource ? bySourceId.get(r.id)?.slice(0, 600) ?? null : null,
+      };
+    })
     .filter((r) => r.needs.length > 0);
   const withGaps = chunk(gapped, verifyBatchSize());
   if (withGaps.length === 0) {
@@ -145,14 +154,21 @@ export async function runVerify(
 }
 
 /**
- * Apply verify patches to records. Only patches with a known id + field are
- * applied; the result is re-validated, invalid patches are dropped (not silent).
+ * Apply verify patches to records, one patch at a time, validating after each:
+ * an invalid patch is reverted and counted rejected, the record and its other
+ * patches survive. The old contract ("the result is re-validated, invalid
+ * patches are dropped") was implemented as record-level filtering in the
+ * runner, so ONE bad value discarded a record's whole patch set — the
+ * 2026-09-01 sweep lost 3,371 of tensorflow/models' patches to free-text
+ * handlingStrategy values, and only the never-delete integration kept it an
+ * efficiency bug instead of data loss. Records are NEVER dropped here: verify
+ * exists to patch, not to gatekeep.
  */
 export function applyPatches(
   records: ErrorEntry[],
   patches: VerifyPatchJson[]
 ): { records: ErrorEntry[]; applied: number; rejected: number } {
-  const byId = new Map(records.map((r) => [r.id, { ...r, ...r }]));
+  const byId = new Map(records.map((r) => [r.id, { ...r }]));
   let applied = 0;
   let rejected = 0;
   for (const p of patches) {
@@ -161,8 +177,16 @@ export function applyPatches(
       rejected++;
       continue;
     }
+    const prev = (rec as Record<string, unknown>)[p.field];
     (rec as Record<string, unknown>)[p.field] = p.value;
-    applied++;
+    const v = validateErrorEntry(rec);
+    if (v.ok) {
+      byId.set(p.id, v.value);
+      applied++;
+    } else {
+      (rec as Record<string, unknown>)[p.field] = prev;
+      rejected++;
+    }
   }
   return { records: Array.from(byId.values()), applied, rejected };
 }

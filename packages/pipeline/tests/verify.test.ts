@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { runVerify, missingCore } from "../src/phase/verify.js";
+import { runVerify, missingCore, applyPatches } from "../src/phase/verify.js";
 import { clearProviderDownMarks } from "../src/provider/run.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
@@ -40,7 +40,9 @@ function record(overrides: Partial<ErrorEntry> = {}): ErrorEntry {
     tryCatchPattern: null,
     preventionTips: [],
     tags: [],
-    analyzedSha: "deadbeef",
+    // 40 hex chars: applyPatches now validates the whole record per patch, so
+    // the fixture itself must clear the schema (GitSha regex).
+    analyzedSha: "deadbeef".repeat(5),
     analyzedAt: new Date().toISOString(),
     schemaVersion: 2,
     ...overrides,
@@ -83,6 +85,77 @@ describe("runVerify gap gate", () => {
     const p = new CountingProvider("p");
     await runVerify("/tmp/x", [record({ documentation: "It booms." })], { p }, cfg);
     expect(p.calls).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("applyPatches (per-patch validation)", () => {
+  it("reverts an invalid patch, keeps the record and its other good patches", () => {
+    // The 2026-09-01 sweep: glm53 wrote free-text handlingStrategy values, and
+    // record-level revalidation threw away every patch on the record with it —
+    // tensorflow/models kept 5 of 3,375. A bad value must cost one patch.
+    const r = runVerify; void r; // (import anchor)
+    const rec = record({ documentation: "" });
+    const { records, applied, rejected } = applyPatches(
+      [rec],
+      [
+        { id: rec.id, field: "documentation", value: "A genuinely useful explanation of the failure." },
+        { id: rec.id, field: "handlingStrategy", value: "wrap it in a try/except block" as never },
+      ]
+    );
+    expect(records).toHaveLength(1);
+    expect(applied).toBe(1);
+    expect(rejected).toBe(1);
+    expect(records[0]!.documentation).toBe("A genuinely useful explanation of the failure.");
+    expect(records[0]!.handlingStrategy).toBe(rec.handlingStrategy); // reverted, not clobbered
+  });
+
+  it("never drops a record, even when every patch on it is invalid", () => {
+    const rec = record();
+    const { records, rejected } = applyPatches(
+      [rec],
+      [{ id: rec.id, field: "solutions", value: "not an array" as never }]
+    );
+    expect(records).toHaveLength(1);
+    expect(rejected).toBe(1);
+    expect(records[0]!.solutions).toEqual(rec.solutions);
+  });
+});
+
+describe("verify prompt content", () => {
+  class PromptCapture implements LlmProvider {
+    prompt = "";
+    constructor(readonly name: string) {}
+    async invoke(prompt: string, _o: InvokeOptions): Promise<ProviderResult> {
+      this.prompt = prompt;
+      return { raw: '{"patches":[]}', parsed: { patches: [] }, providerUsed: this.name };
+    }
+  }
+
+  it("ships the stored throwing region for meaning/handling gaps and names the enum", async () => {
+    const p = new PromptCapture("p");
+    await runVerify(
+      "/tmp/x",
+      [record({ documentation: "", sourceCode: "var errEmptyKey = errors.New(\"key must not be empty\")" })],
+      { p },
+      cfg
+    );
+    // A sentinel like errEmptyKey cannot be documented from its message alone
+    // — the source is what shows it is a generic validation guard.
+    expect(p.prompt).toContain("SOURCE:");
+    expect(p.prompt).toContain("errEmptyKey");
+    expect(p.prompt).toContain('"try-catch"|"type-guard"|"validation"|"retry"|"fallback"');
+    expect(p.prompt).toContain("never a restatement of the message");
+  });
+
+  it("omits the source block when only defense fields are missing", async () => {
+    const p = new PromptCapture("p");
+    await runVerify(
+      "/tmp/x",
+      [record({ handlingStrategy: null, preventionTips: [] })],
+      { p },
+      cfg
+    );
+    expect(p.prompt).not.toContain("SOURCE:");
   });
 });
 
