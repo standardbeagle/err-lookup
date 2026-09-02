@@ -51,10 +51,11 @@ dir_in_use() {
 for d in /tmp/errlookup-*; do
   [ -e "$d" ] || continue
   case "$d" in
-    # Persistent, never swept: the shared agent-runtime cache, and the
-    # mkdir-based large-repo mutex (absent = free — deleting a HELD lock
-    # would admit a second large repo alongside the holder).
-    */errlookup-acp-home|*/errlookup-large-repo.lock) continue ;;
+    # Persistent, never swept: the shared agent-runtime cache, the
+    # mkdir-based large-repo mutex, and the machine-wide provider gate
+    # (absent = free — deleting a HELD lock or slot would admit a second
+    # large repo, or a phantom provider call, alongside the holder).
+    */errlookup-acp-home|*/errlookup-large-repo.lock|*/errlookup-provider-gate) continue ;;
   esac
   [ -n "$(find "$d" -maxdepth 0 -mmin -60 2>/dev/null)" ] && continue
   dir_in_use "$d" && continue

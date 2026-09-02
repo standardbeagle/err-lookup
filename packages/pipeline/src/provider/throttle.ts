@@ -1,5 +1,10 @@
 import type { LlmProvider, InvokeOptions, ProviderResult } from "./types.js";
-import { Semaphore } from "../util/pool.js";
+
+/** Anything that hands out a slot and a release — in-process Semaphore or the
+ *  machine-wide MachineGate. */
+export interface CallGate {
+  acquire(): Promise<() => void>;
+}
 
 /**
  * Caps concurrent calls across every provider sharing one gate.
@@ -13,7 +18,7 @@ import { Semaphore } from "../util/pool.js";
 export class ThrottledProvider implements LlmProvider {
   constructor(
     private readonly inner: LlmProvider,
-    private readonly gate: Semaphore
+    private readonly gate: CallGate
   ) {}
 
   get name(): string {
