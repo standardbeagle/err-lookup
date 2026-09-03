@@ -503,13 +503,18 @@ describe("header and layout contract", () => {
 describe("an error URL with no record", () => {
   const origin = "https://errors.standardbeagle.com";
 
-  it("redirects to the repo index when the repo is still published", () => {
+  it("redirects to the repo index, naming why, when the repo is still published", () => {
     // These are pages we published and search engines indexed; a later
     // re-analysis stopped rediscovering them. 404ing them is what taught
-    // crawlers to stop coming back.
+    // crawlers to stop coming back — and a bare redirect reads as a broken
+    // link, so the query string carries the reason for the repo page to show.
+    expect(missingErrorPage(true, "axios", "axios", origin, "err-gone")).toEqual({
+      kind: "redirect",
+      location: "https://errors.standardbeagle.com/axios/axios/?reason=removed&from=err-gone",
+    });
     expect(missingErrorPage(true, "axios", "axios", origin)).toEqual({
       kind: "redirect",
-      location: "https://errors.standardbeagle.com/axios/axios/",
+      location: "https://errors.standardbeagle.com/axios/axios/?reason=removed",
     });
   });
 

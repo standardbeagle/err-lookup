@@ -14,7 +14,7 @@ const repoFullName = `${owner}/${repo}`;
 const all = await fetchRepoErrors(Astro.locals, Astro.url.origin, repoFullName);
 const e = all?.find((x) => x.slug === slug);
 if (!e) {
-  const missing = missingErrorPage(all != null && all.length > 0, owner!, repo!, Astro.url.origin);
+  const missing = missingErrorPage(all != null && all.length > 0, owner!, repo!, Astro.url.origin, slug);
   // Astro.redirect, NEVER Response.redirect: the latter's headers are
   // immutable in workerd, and Astro's own render pipeline (lastNext) sets
   // headers on the returned response — so every retired-slug URL served 500

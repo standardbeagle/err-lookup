@@ -147,13 +147,22 @@ export type MissingErrorPage = { kind: "not-found" } | { kind: "redirect"; locat
  * A repo we still publish gets a permanent redirect to its index, which lists
  * whatever replaced the error. A repo we do not have is a genuine 404 — there
  * is nowhere honest to send it.
+ *
+ * The redirect carries ?reason=removed&from=<slug>: the repo page reads it
+ * client-side and tells the human WHY they did not land on the page they
+ * clicked — a bare redirect to an index reads as a broken link. The repo page
+ * is prerendered, so the explanation must ride in the query string; its
+ * canonical stays the clean URL, so crawlers consolidate correctly.
  */
 export function missingErrorPage(
   knownRepo: boolean,
   owner: string,
   repo: string,
-  origin: string
+  origin: string,
+  /** The slug that was requested, named in the notice on the repo page. */
+  slug = ""
 ): MissingErrorPage {
   if (!knownRepo) return { kind: "not-found" };
-  return { kind: "redirect", location: `${origin}/${owner}/${repo}/` };
+  const from = slug ? `&from=${encodeURIComponent(slug)}` : "";
+  return { kind: "redirect", location: `${origin}/${owner}/${repo}/?reason=removed${from}` };
 }

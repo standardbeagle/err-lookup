@@ -34,6 +34,27 @@ const ld = JSON.stringify({
 <Base ogImage={repoOg(repo.repo)} title={title} description={`Error index for ${repo.repo}: ${repo.errorCount} documented errors.`} noindex={!published}>
   <script slot="head" type="application/ld+json" set:html={ld} />
   <p class="muted"><a href="/">ErrLookup</a> › {repo.repo}</p>
+
+  {/* Retired-slug redirects land here with ?reason=...&from=<slug>. The page
+      is prerendered, so the notice renders client-side from the query string.
+      Unknown reason values stay silent; the notice is plain text (textContent)
+      so the query string cannot inject markup. */}
+  <div id="redirect-notice" hidden style="border: 1px solid var(--line); border-left: 4px solid var(--accent); background: var(--card); border-radius: 8px; padding: var(--s2); margin: var(--s2) 0; max-width: var(--measure);"></div>
+  <script>
+    const REASONS: Record<string, (from: string) => string> = {
+      removed: (from) =>
+        (from ? `The page "${from}" is no longer published. ` : "The page you followed is no longer published. ") +
+        "A newer analysis of this repository retired that record — its error may have been renamed, merged into another entry, or removed from the source. The repository's current error index is below.",
+    };
+    const params = new URLSearchParams(location.search);
+    const build = REASONS[params.get("reason") ?? ""];
+    if (build) {
+      const el = document.getElementById("redirect-notice")!;
+      el.textContent = build(params.get("from") ?? "");
+      el.hidden = false;
+    }
+  </script>
+
   <h1>{repo.repo}</h1>
   <p class="muted">{repo.description ?? ""} · {repo.language ?? "—"} · {repo.sourceFiles != null ? `${repo.sourceFiles.toLocaleString()} source files` : "source files not counted"}</p>
   <p class="muted">Analyzed at <code>{repo.analyzedSha.slice(0, 10)}</code> on {repo.analyzedAt.slice(0, 10)}. {errors.length} documented errors.</p>
