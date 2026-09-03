@@ -15,8 +15,13 @@ const all = await fetchRepoErrors(Astro.locals, Astro.url.origin, repoFullName);
 const e = all?.find((x) => x.slug === slug);
 if (!e) {
   const missing = missingErrorPage(all != null && all.length > 0, owner!, repo!, Astro.url.origin);
+  // Astro.redirect, NEVER Response.redirect: the latter's headers are
+  // immutable in workerd, and Astro's own render pipeline (lastNext) sets
+  // headers on the returned response — so every retired-slug URL served 500
+  // instead of this 301, silently, from the day the fallback shipped
+  // (found 2026-09-03 via a Google-indexed webpack URL that stopped loading).
   return missing.kind === "redirect"
-    ? Response.redirect(missing.location, 301)
+    ? Astro.redirect(missing.location, 301)
     : new Response("Not found", { status: 404, headers: { "content-type": "text/plain" } });
 }
 const related = relatedFrom(all, e.slug);

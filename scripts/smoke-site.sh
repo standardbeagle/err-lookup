@@ -25,7 +25,11 @@ expect() {
     body=$(curl -sS --max-time 20 -w "\n%{http_code}" "$url" 2>/dev/null)
     status="${body##*$'\n'}"
     body="${body%$'\n'*}"
-    if [ "$status" = "$want" ] && { [ -z "$substr" ] || printf %s "$body" | grep -qF "$substr"; }; then
+    # Herestring, not a pipe: with pipefail, grep -q matching early sends
+    # printf SIGPIPE on any body larger than the pipe buffer (~64KB) and the
+    # "match" reads as failure — the sitemap-index check false-failed exactly
+    # this way on its first production run.
+    if [ "$status" = "$want" ] && { [ -z "$substr" ] || grep -qF -- "$substr" <<<"$body"; }; then
       echo "ok   $name ($status)"
       return 0
     fi
