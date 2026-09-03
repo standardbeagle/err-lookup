@@ -40,19 +40,27 @@ const ld = JSON.stringify({
       Unknown reason values stay silent; the notice is plain text (textContent)
       so the query string cannot inject markup. */}
   <div id="redirect-notice" hidden style="border: 1px solid var(--line); border-left: 4px solid var(--accent); background: var(--card); border-radius: 8px; padding: var(--s2); margin: var(--s2) 0; max-width: var(--measure);"></div>
-  <script>
-    const REASONS: Record<string, (from: string) => string> = {
-      removed: (from) =>
-        (from ? `The page "${from}" is no longer published. ` : "The page you followed is no longer published. ") +
-        "A newer analysis of this repository retired that record — its error may have been renamed, merged into another entry, or removed from the source. The repository's current error index is below.",
-    };
-    const params = new URLSearchParams(location.search);
-    const build = REASONS[params.get("reason") ?? ""];
-    if (build) {
-      const el = document.getElementById("redirect-notice")!;
-      el.textContent = build(params.get("from") ?? "");
-      el.hidden = false;
-    }
+  {/* is:inline — plain JS outside the build graph: processed as a Vite module
+      this script shuffled Astro's chunk graph and the production build died
+      with "Unable to find the module for src/pages/info/index.astro". */}
+  <script is:inline>
+    (function () {
+      var REASONS = {
+        removed: function (from) {
+          return (
+            (from ? 'The page "' + from + '" is no longer published. ' : "The page you followed is no longer published. ") +
+            "A newer analysis of this repository retired that record — its error may have been renamed, merged into another entry, or removed from the source. The repository's current error index is below."
+          );
+        },
+      };
+      var params = new URLSearchParams(location.search);
+      var build = REASONS[params.get("reason") || ""];
+      if (build) {
+        var el = document.getElementById("redirect-notice");
+        el.textContent = build(params.get("from") || "");
+        el.hidden = false;
+      }
+    })();
   </script>
 
   <h1>{repo.repo}</h1>
