@@ -78,11 +78,11 @@ const ld = {
       url: `${SITE}/${repoFullName}/${e.slug}/`,
       mainEntityOfPage: `${SITE}/${repoFullName}/${e.slug}/`,
       // Article-family rich results want dates, author, and publisher; without
-      // them the TechArticle node is parsed but not eligible. analyzedAt is
-      // the only date the dataset carries — the record is regenerated whole on
-      // each analysis, so it is honestly both published and modified then.
-      datePublished: e.analyzedAt,
-      dateModified: e.analyzedAt,
+      // them the TechArticle node is parsed but not eligible. contentChangedAt
+      // is when the page's content actually changed (analyzedAt bumps on every
+      // re-analysis); records published before the field carry analyzedAt.
+      datePublished: e.contentChangedAt ?? e.analyzedAt,
+      dateModified: e.contentChangedAt ?? e.analyzedAt,
       author: { "@type": "Organization", name: "Standard Beagle", url: "https://standardbeagle.com" },
       publisher: {
         "@type": "Organization",

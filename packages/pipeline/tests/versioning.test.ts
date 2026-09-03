@@ -209,6 +209,44 @@ describe("version-aware analysis integration", () => {
   });
 });
 
+describe("honest lastmod (contentChangedAt)", () => {
+  it("keeps contentChangedAt across re-analyses with identical content, bumps it on change", () => {
+    const V3_SHA = "c".repeat(40);
+    const first = { ...errorRow("golang/go", V2_SHA, "stable"), analyzedAt: "2026-09-01T00:00:00.000Z" };
+    integrateAnalyzedVersion(db, "golang/go", V2_SHA, [first]);
+    const afterFirst = errorsForRepo(db, "golang/go")[0]!;
+    expect(afterFirst.contentChangedAt).toBe("2026-09-01T00:00:00.000Z");
+
+    // Same content re-analyzed at a new sha/date: analyzedAt moves, the
+    // sitemap's date must not — lastmod churn on unchanged pages is what
+    // eroded crawler trust during the Aug-17-20 requeue stall.
+    const second = { ...errorRow("golang/go", V3_SHA, "stable"), analyzedAt: "2026-09-02T00:00:00.000Z", githubUrl: first.githubUrl };
+    integrateAnalyzedVersion(db, "golang/go", V3_SHA, [second]);
+    const afterSecond = errorsForRepo(db, "golang/go")[0]!;
+    expect(afterSecond.analyzedAt).toBe("2026-09-02T00:00:00.000Z");
+    expect(afterSecond.contentChangedAt).toBe("2026-09-01T00:00:00.000Z");
+
+    // A real content change moves the date.
+    const third = { ...second, analyzedAt: "2026-09-03T00:00:00.000Z", documentation: "rewritten, longer, better" };
+    integrateAnalyzedVersion(db, "golang/go", V2_SHA, [third]);
+    expect(errorsForRepo(db, "golang/go")[0]!.contentChangedAt).toBe("2026-09-03T00:00:00.000Z");
+  });
+
+  it("moved code is not changed content: location fields stay out of the hash", () => {
+    const first = { ...errorRow("golang/go", V2_SHA, "moving"), analyzedAt: "2026-09-01T00:00:00.000Z" };
+    integrateAnalyzedVersion(db, "golang/go", V2_SHA, [first]);
+    const moved = {
+      ...first,
+      analyzedAt: "2026-09-02T00:00:00.000Z",
+      filePath: "b.js",
+      lineNumber: 99,
+      githubUrl: first.githubUrl.replace("a.js#L1", "b.js#L99"),
+    };
+    integrateAnalyzedVersion(db, "golang/go", V2_SHA, [moved]);
+    expect(errorsForRepo(db, "golang/go")[0]!.contentChangedAt).toBe("2026-09-01T00:00:00.000Z");
+  });
+});
+
 describe("verify-only re-run", () => {
   it("patches the published records instead of republishing an empty version", async () => {
     const { analyzeRepo } = await import("../src/pipeline.js");

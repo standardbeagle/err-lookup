@@ -71,6 +71,7 @@ export function rowToErrorEntry(r: typeof errors.$inferSelect): ErrorEntry {
     backgroundTag: r.backgroundTag ?? null,
     analyzedSha: r.analyzedSha,
     analyzedAt: r.analyzedAt,
+    contentChangedAt: r.contentChangedAt ?? null,
     schemaVersion: CURRENT_SCHEMA_VERSION,
   };
 }

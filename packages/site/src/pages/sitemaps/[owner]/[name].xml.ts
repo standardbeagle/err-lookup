@@ -28,7 +28,10 @@ export const GET: APIRoute = ({ props }) => {
     { loc: `${base}/`, lastmod: repoLastmod },
     ...errors
       .filter((e) => indexable.has(e.slug))
-      .map((e) => ({ loc: `${base}/${e.slug}/`, lastmod: e.analyzedAt ?? repoLastmod })),
+      // contentChangedAt over analyzedAt: analyzedAt bumps on every
+      // re-analysis even when the page is byte-identical, and lastmod churn
+      // is what teaches a crawler to distrust the sitemap.
+      .map((e) => ({ loc: `${base}/${e.slug}/`, lastmod: e.contentChangedAt ?? e.analyzedAt ?? repoLastmod })),
   ];
   const body = [
     '<?xml version="1.0" encoding="UTF-8"?>',

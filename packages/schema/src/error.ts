@@ -133,6 +133,12 @@ export const ErrorEntry = z
     backgroundTag: Tag.nullable().default(null),
     analyzedSha: GitSha,
     analyzedAt: IsoUtc,
+    /** When the user-facing content of this record last actually changed.
+     *  Sitemap lastmod and JSON-LD dates come from here: analyzedAt bumps on
+     *  every re-analysis even when nothing changed, and lastmod churn erodes
+     *  crawler trust in the sitemap. Defaulted so records published before
+     *  the field existed keep validating (readers fall back to analyzedAt). */
+    contentChangedAt: IsoUtc.nullable().default(null),
     schemaVersion: z.literal(CURRENT_SCHEMA_VERSION),
   })
   .strict()

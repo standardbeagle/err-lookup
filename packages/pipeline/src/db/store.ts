@@ -1,8 +1,29 @@
+import { createHash } from "node:crypto";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { tx, type Db } from "./client.js";
 import { chunk } from "../util/pool.js";
-import { repositories, errors, jobHistory, type ErrorRow, type RepositoryRow } from "./schema.js";
+import { repositories, errors, jobHistory, type ErrorRow, type NewErrorRow, type RepositoryRow } from "./schema.js";
 import type { PhaseName } from "@errlookup/schema";
+
+/**
+ * Hash of everything a reader can see on the page. Location fields (filePath,
+ * lineNumber, analyzedSha, githubUrl) are deliberately absent: a throw that
+ * moved two lines in a refactor is the same content, and the sitemap must not
+ * claim otherwise — lastmod churn on unchanged pages is what eroded crawler
+ * trust during the Aug-17-20 requeue stall.
+ */
+export function contentHashOf(r: Pick<NewErrorRow, "errorCode" | "errorMessage" | "severity" | "sourceCode" | "documentation" | "triggerScenarios" | "commonSituations" | "solutions" | "exampleFix" | "handlingStrategy" | "validationCode" | "typeGuard" | "tryCatchPattern" | "preventionTips" | "tags" | "backgroundTag">): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        r.errorCode, r.errorMessage, r.severity, r.sourceCode,
+        r.documentation, r.triggerScenarios, r.commonSituations, r.solutions, r.exampleFix,
+        r.handlingStrategy, r.validationCode, r.typeGuard, r.tryCatchPattern, r.preventionTips,
+        r.tags, r.backgroundTag,
+      ])
+    )
+    .digest("hex");
+}
 
 export function getRepo(db: Db, repo: string): RepositoryRow | undefined {
   return db.select().from(repositories).where(eq(repositories.repo, repo)).get();
@@ -165,8 +186,19 @@ export function errorBySlug(db: Db, repo: string, slug: string): ErrorRow | unde
 
 /** Targeted field update for one error row (review patches). */
 export function updateErrorFields(db: Db, id: string, fields: Partial<Omit<ErrorRow, "id">>): void {
+  // Review patches change page content in place, so the honest-lastmod columns
+  // move with them — same contract as integrateAnalyzedVersion.
+  const existing = db.select().from(errors).where(eq(errors.id, id)).get();
+  let stamp: Partial<ErrorRow> = {};
+  if (existing) {
+    const merged = { ...existing, ...fields };
+    const hash = contentHashOf(merged);
+    if ((existing.contentHash ?? contentHashOf(existing)) !== hash) {
+      stamp = { contentHash: hash, contentChangedAt: new Date().toISOString() };
+    }
+  }
   db.update(errors)
-    .set({ ...fields, updatedAt: Date.now() })
+    .set({ ...fields, ...stamp, updatedAt: Date.now() })
     .where(eq(errors.id, id))
     .run();
 }
@@ -186,19 +218,32 @@ export function integrateAnalyzedVersion(
 ): void {
   tx(db, () => {
     const incoming = new Set(rows.map((r) => r.id));
-    const surviving = db
-      .select({ id: errors.id, missedRuns: errors.missedRuns })
-      .from(errors)
-      .where(eq(errors.repo, repo))
-      .all()
-      .filter((row) => !incoming.has(row.id));
+    const existingRows = db.select().from(errors).where(eq(errors.repo, repo)).all();
+    const surviving = existingRows.filter((row) => !incoming.has(row.id));
+
+    // Honest lastmod: a re-published record whose user-facing content is
+    // byte-identical keeps its contentChangedAt (falling back to the previous
+    // analyzedAt for rows from before the column existed — hashed on the fly
+    // so the migration causes no one-time churn); changed or new content is
+    // stamped with this version's analyzedAt.
+    const prior = new Map(existingRows.map((r) => [r.id, r]));
+    const stamped = rows.map((r) => {
+      const hash = contentHashOf(r);
+      const prev = prior.get(r.id);
+      const unchanged = prev !== undefined && (prev.contentHash ?? contentHashOf(prev)) === hash;
+      return {
+        ...r,
+        contentHash: hash,
+        contentChangedAt: unchanged ? prev.contentChangedAt ?? prev.analyzedAt : r.analyzedAt,
+      };
+    });
 
     // Only the records this run is republishing are deleted, and only so the
     // fresh copies can take their place. Everything else stays exactly where
     // it is: its page keeps answering, and its miss count records how far
     // behind the repo's current version it has fallen.
     db.delete(errors).where(and(eq(errors.repo, repo), inArray(errors.id, [...incoming]))).run();
-    insertErrorRows(db, rows);
+    insertErrorRows(db, stamped);
     for (const row of surviving) {
       db.update(errors)
         .set({ missedRuns: row.missedRuns + 1, updatedAt: Date.now() })

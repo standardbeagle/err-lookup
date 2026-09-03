@@ -70,6 +70,16 @@ export const errors = sqliteTable(
     backgroundTag: text("background_tag"),
     analyzedSha: text("analyzed_sha").notNull(),
     analyzedAt: text("analyzed_at").notNull(),
+    /**
+     * Honest lastmod: sha256 of the user-facing fields, and when they last
+     * actually changed. analyzedAt bumps on every re-analysis; sitemap lastmod
+     * must not (the Aug-17-20 requeue stall re-analyzed the same repos daily
+     * and churned lastmod on unchanged pages). Set by integrateAnalyzedVersion;
+     * null on rows from before the columns existed (readers fall back to
+     * analyzedAt).
+     */
+    contentHash: text("content_hash"),
+    contentChangedAt: text("content_changed_at"),
     schemaVersion: integer("schema_version").notNull().default(2),
     /**
      * Consecutive re-analyses that did not rediscover this record; reset to 0
