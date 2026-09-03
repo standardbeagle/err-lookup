@@ -93,3 +93,29 @@ describe("assemble slug uniqueness", () => {
     expect(out.rejects[0]!.error).toMatch(/duplicate/i);
   });
 });
+
+describe("assemble: slugs owned by surviving published records", () => {
+  it("suffixes a slug a surviving record owns; keeps it when the owner is this identity", () => {
+    // integrate never deletes survivors, so a fresh record deriving an
+    // un-rediscovered survivor's slug would hit the unique (repo, slug)
+    // index and fail the whole integration.
+    const d = discovered("ERR_TAKEN", "boom happens", "src/a.ts");
+    const base = {
+      repo: "acme/lib",
+      sha: "a".repeat(40),
+      repoPath: "/nonexistent",
+      discovered: [d],
+      enriched: new Map(),
+    };
+    const free = assemble({ ...base });
+    const id = free.records[0]!.id;
+    expect(free.records[0]!.slug).toBe("err-taken");
+
+    const takenByOther = assemble({ ...base, existingSlugOwners: new Map([["err-taken", "f".repeat(16)]]) });
+    expect(takenByOther.records[0]!.slug).toBe(`err-taken-${id.slice(0, 6)}`);
+
+    // The same identity re-published keeps its own slug — no churn.
+    const takenBySelf = assemble({ ...base, existingSlugOwners: new Map([["err-taken", id]]) });
+    expect(takenBySelf.records[0]!.slug).toBe("err-taken");
+  });
+});

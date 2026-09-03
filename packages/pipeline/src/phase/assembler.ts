@@ -40,6 +40,14 @@ export interface AssembleInput {
    *  is a duplicate, exactly as within a single discovery. */
   reservedIds?: Set<string>;
   reservedSlugs?: Set<string>;
+  /**
+   * slug → id for EVERY record currently published for this repo. Surviving
+   * records are never deleted by integrate, so a fresh record deriving the
+   * same slug as an un-rediscovered survivor would hit the unique
+   * (repo, slug) index and fail the whole integration. A slug is free only
+   * when unclaimed or claimed by this same identity.
+   */
+  existingSlugOwners?: Map<string, string>;
 }
 
 export interface AssembleOutput {
@@ -89,7 +97,8 @@ export function assemble(input: AssembleInput): AssembleOutput {
     // same errorCode is thrown from multiple files, so disambiguate with a
     // stable id fragment — deterministic across runs.
     let slug = deriveSlug(code, d.message);
-    if (usedSlugs.has(slug)) slug = `${slug}-${id.slice(0, 6)}`;
+    const ownedByOther = input.existingSlugOwners?.get(slug) !== undefined && input.existingSlugOwners.get(slug) !== id;
+    if (usedSlugs.has(slug) || ownedByOther) slug = `${slug}-${id.slice(0, 6)}`;
     usedSlugs.add(slug);
 
     const record = {
