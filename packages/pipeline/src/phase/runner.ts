@@ -446,6 +446,10 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         defense: defenseMap,
         reservedIds: new Set(kept.map((r) => r.id)),
         reservedSlugs: new Set(kept.map((r) => r.slug)),
+        // Every slug currently published for the repo: integrate never deletes
+        // survivors, so a fresh record deriving a survivor's slug would hit
+        // the unique (repo, slug) index and fail the whole integration.
+        existingSlugOwners: new Map(errorsForRepo(db, repo).map((r) => [r.slug, r.id])),
       });
 
 
@@ -470,8 +474,11 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
       const coreSites = records
         .filter((r) => missingCore(r).length > 0 && r.lineNumber != null)
         .map((r) => ({ file: r.filePath, line: r.lineNumber! }));
+      // Same config flag as analysis: with call-facts off there is no lci
+      // index to consult, and paying its readiness gate here anyway is what
+      // pushed every fixture-provider scan past its test timeout.
       const verifyFacts =
-        coreSites.length > 0
+        cfg.defaults.callFacts && coreSites.length > 0
           ? await collectCallFacts(repoPath, coreSites, (m) => log(`phase verify: ${m}`))
           : undefined;
       // Round 1 sees every record; round 2 only the ones round 1 patched, to

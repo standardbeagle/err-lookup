@@ -340,7 +340,10 @@ describe("runtime budget", () => {
     expect(summary.stoppedForRestart).toBe(false);
     expect(summary.leftQueued).toBe(0);
     close();
-  });
+    // 15s, not vitest's 5s default: a full fixture scan (clone, analysis,
+    // integrate) runs ~3.5s alone but 6-7s while e2e.test.ts saturates the
+    // box — the default flaked three suite runs in a row on 2026-09-03.
+  }, 15_000);
 
   it("runs to the end of the queue when the budget is disabled", async () => {
     const summary = await runScan({
@@ -385,7 +388,8 @@ describe("re-entrant scan", () => {
     expect(second.failed).toBe(0);
     expect(queueByStatus(db, "skipped")).toHaveLength(1);
     close();
-  });
+    // 15s: same suite-load margin as the runtime-budget test above.
+  }, 15_000);
 
   it("dampens zero-yield repos: HEAD moves, but no ls-remote or re-analysis is spent", async () => {
     // A published zero-error analysis (docs-shaped repo) inside the damping
