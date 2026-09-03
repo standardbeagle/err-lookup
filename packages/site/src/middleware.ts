@@ -67,7 +67,14 @@ export const onRequest = defineMiddleware(async (context, next) => {
     if (waitUntil) waitUntil(put);
     else await put;
   }
-  res.headers.set("x-errlookup-cache", "miss");
-  recordTraffic(traffic, url, ua, res.status, "miss");
-  return res;
+  // A route may return Response.redirect(), whose headers are IMMUTABLE in
+  // workerd: setting on it throws, the worker 500s, and — because the
+  // analytics write sits below — the failure never even reached the traffic
+  // dataset. Every retired-slug URL served 500 instead of its 301 this way
+  // (found 2026-09-03 via a Google-indexed webpack URL). Rewrap to a mutable
+  // response before touching headers.
+  const out = new Response(res.body, res);
+  out.headers.set("x-errlookup-cache", "miss");
+  recordTraffic(traffic, url, ua, out.status, "miss");
+  return out;
 });

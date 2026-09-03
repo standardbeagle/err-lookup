@@ -30,3 +30,10 @@ npx --yes wrangler@4 pages deploy dist \
   --project-name "${ERRLOOKUP_PAGES_PROJECT:-errlookup}" \
   --branch main \
   --commit-dirty=true
+
+# Post-deploy smoke: a deploy that serves 500s is worse than no deploy, and
+# the failure class this catches (immutable-headers 500 on the retired-slug
+# redirect) was invisible to the analytics. Failure fails the deploy step and
+# alerts; the previous deployment stays live only in the sense that the CDN
+# still has it cached — the fix is a follow-up deploy, loudly demanded.
+"$REPO_ROOT/scripts/smoke-site.sh" "${ERRLOOKUP_SMOKE_BASE:-https://errors.standardbeagle.com}"
