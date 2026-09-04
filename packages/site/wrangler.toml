@@ -16,11 +16,12 @@ compatibility_flags = ["nodejs_compat"]
 binding = "TRAFFIC"
 dataset = "errlookup_traffic"
 
-# Platform-persisted invocation logs (Workers Logs): captures console output
-# AND uncaught exceptions at the runtime level — the layer no in-worker code
-# can miss. The retired-slug 500s hid for a month because the only logging was
-# a middleware line that sat below its own crash; this hook exists so that
-# class of failure is recorded by the platform even when our code never runs.
-[observability]
-enabled = true
-head_sampling_rate = 1
+# Platform-persisted invocation logs (Workers Logs): NOT configurable for
+# Pages projects from here — wrangler rejects an [observability] block in
+# Pages configs (checked through 4.129), the Pages project API silently drops
+# the key, and the pages-worker script is not addressable via the Workers
+# script-settings API (all probed 2026-09-03). Robust 5xx visibility is
+# provided in-code instead: the middleware records failures to the TRAFFIC
+# dataset BEFORE rethrowing (middleware.ts), and scripts/alert-5xx.sh queries
+# that dataset hourly and alerts. If Cloudflare ships Pages observability
+# config or the site migrates to Workers, prefer the platform hook.
