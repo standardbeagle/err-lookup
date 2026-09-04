@@ -3,12 +3,16 @@ provider "claude" {
     args "-p" "--output-format" "json" "--max-turns" "30" "--permission-mode" "acceptEdits"
     timeout-ms 600000
 }
+// Bare-run default. Pinned to the model production actually runs
+// (configs/blitz-glm-k3.kdl); the Kimi For Coding plan this used to name has
+// been off every path since 2026-08-28 and its billing cycle is spent.
 provider "opencode" {
     command "opencode"
     args "acp" "--pure"
     type "acp"
-    model "kimi-for-coding/kimi-for-coding"
+    model "zai-coding-plan/glm-5.3-flash"
     timeout-ms 600000
+    idle-timeout-ms 180000
 }
 defaults {
     primary "claude"
