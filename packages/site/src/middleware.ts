@@ -44,37 +44,52 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const traffic = (context.locals as WaitUntilLocals).runtime?.env?.TRAFFIC;
   const ua = context.request.headers.get("user-agent");
 
-  const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default;
-  if (!cache || context.request.method !== "GET") {
+  // Robust-logging contract: whatever escapes this middleware still gets an
+  // AE row and a console.error (platform observability persists console +
+  // the exception itself), THEN rethrows so the platform serves its 500. The
+  // retired-slug 500s hid for a month precisely because the traffic write sat
+  // below the crash — the failure path must log FIRST and fail second.
+  try {
+    const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default;
+    if (!cache || context.request.method !== "GET") {
+      const res = await next();
+      recordTraffic(traffic, url, ua, res.status, "-");
+      return res;
+    }
+
+    const key = context.request.url;
+    const hit = await cache.match(key);
+    if (hit) {
+      const res = new Response(hit.body, hit);
+      res.headers.set("x-errlookup-cache", "hit");
+      recordTraffic(traffic, url, ua, res.status, "hit");
+      return res;
+    }
+
     const res = await next();
-    recordTraffic(traffic, url, ua, res.status, "-");
-    return res;
+    // The edge cache is an optimization: a broken clone/put must never turn a
+    // good response into a 500. Log and serve.
+    try {
+      if (ttlOf(res) > 0) {
+        const put = cache.put(key, res.clone());
+        const waitUntil = (context.locals as WaitUntilLocals).runtime?.ctx?.waitUntil;
+        if (waitUntil) waitUntil(put);
+        else await put;
+      }
+    } catch (e) {
+      console.error("edge-cache put failed:", url.pathname, e);
+    }
+    // A route may return Response.redirect(), whose headers are IMMUTABLE in
+    // workerd — rewrap to a mutable response before touching headers (the
+    // 2026-09-03 retired-slug incident; Astro's own pipeline has the same
+    // constraint, so routes must also use Astro.redirect()).
+    const out = new Response(res.body, res);
+    out.headers.set("x-errlookup-cache", "miss");
+    recordTraffic(traffic, url, ua, out.status, "miss");
+    return out;
+  } catch (e) {
+    recordTraffic(traffic, url, ua, 500, "-");
+    console.error("middleware failure:", url.pathname, e);
+    throw e;
   }
-
-  const key = context.request.url;
-  const hit = await cache.match(key);
-  if (hit) {
-    const res = new Response(hit.body, hit);
-    res.headers.set("x-errlookup-cache", "hit");
-    recordTraffic(traffic, url, ua, res.status, "hit");
-    return res;
-  }
-
-  const res = await next();
-  if (ttlOf(res) > 0) {
-    const put = cache.put(key, res.clone());
-    const waitUntil = (context.locals as WaitUntilLocals).runtime?.ctx?.waitUntil;
-    if (waitUntil) waitUntil(put);
-    else await put;
-  }
-  // A route may return Response.redirect(), whose headers are IMMUTABLE in
-  // workerd: setting on it throws, the worker 500s, and — because the
-  // analytics write sits below — the failure never even reached the traffic
-  // dataset. Every retired-slug URL served 500 instead of its 301 this way
-  // (found 2026-09-03 via a Google-indexed webpack URL). Rewrap to a mutable
-  // response before touching headers.
-  const out = new Response(res.body, res);
-  out.headers.set("x-errlookup-cache", "miss");
-  recordTraffic(traffic, url, ua, out.status, "miss");
-  return out;
 });
