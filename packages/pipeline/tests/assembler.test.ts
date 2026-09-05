@@ -1,19 +1,63 @@
 import { describe, it, expect } from "vitest";
-import { assemble, normalizeBackgroundTag } from "../src/phase/assembler.js";
+import { assemble } from "../src/phase/assembler.js";
+import { buildTagIndex } from "@errlookup/schema";
 
-describe("normalizeBackgroundTag", () => {
-  it("passes a valid kebab tag through", () => {
-    expect(normalizeBackgroundTag("connection-refused")).toBe("connection-refused");
+function enrichedWithTag(tag: unknown) {
+  return new Map([
+    [
+      0,
+      {
+        errorIndex: 0,
+        documentation: "d",
+        triggerScenarios: "t",
+        commonSituations: "c",
+        solutions: ["s"],
+        exampleFix: null,
+        severity: "error",
+        tags: [],
+        backgroundTag: tag,
+      } as never,
+    ],
+  ]);
+}
+
+function assembleWithTag(tag: unknown, index = new Map<string, string>()) {
+  const out = assemble({
+    repo: "acme/lib",
+    sha: "a".repeat(40),
+    repoPath: "/nonexistent",
+    discovered: [discovered(null, "connection refused by peer", "src/net.ts")],
+    enriched: enrichedWithTag(tag),
+    tagIndex: index,
   });
+  return out.records[0]?.backgroundTag ?? null;
+}
+
+describe("assemble: backgroundTag reaches the record as a family name", () => {
   it("sanitizes case, spaces, and stray punctuation", () => {
-    expect(normalizeBackgroundTag(" JWT Token Expired! ")).toBe("jwt-token-expired");
+    expect(assembleWithTag(" JWT Token Expired! ")).toBe("jwt-token-expired");
   });
+
   it("nulls generic families and garbage — auxiliary field, never a record reject", () => {
-    expect(normalizeBackgroundTag("error")).toBeNull();
-    expect(normalizeBackgroundTag("Exception")).toBeNull();
-    expect(normalizeBackgroundTag("---")).toBeNull();
-    expect(normalizeBackgroundTag(null)).toBeNull();
-    expect(normalizeBackgroundTag(undefined)).toBeNull();
+    for (const bad of ["error", "Exception", "---", null, undefined]) {
+      expect(assembleWithTag(bad)).toBeNull();
+    }
+  });
+
+  it("folds a coined name onto the established family", () => {
+    // The prompt asks the model to reuse a family; this is what makes the
+    // stored record honour it when the model phrases it its own way.
+    const index = buildTagIndex([
+      { tag: "missing-env-var", errorCount: 945, repoCount: 40, infoSlug: "missing-env-var" },
+    ]);
+    expect(assembleWithTag("environment-variable-missing", index)).toBe("missing-env-var");
+  });
+
+  it("keeps a family the corpus has never seen", () => {
+    const index = buildTagIndex([
+      { tag: "missing-env-var", errorCount: 945, repoCount: 40, infoSlug: null },
+    ]);
+    expect(assembleWithTag("bgp-session-flapping", index)).toBe("bgp-session-flapping");
   });
 });
 

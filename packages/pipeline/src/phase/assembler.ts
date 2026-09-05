@@ -1,5 +1,6 @@
 import {
   validateErrorEntry,
+  resolveTag,
   type ErrorEntry,
   CURRENT_SCHEMA_VERSION,
 } from "@errlookup/schema";
@@ -8,24 +9,6 @@ import { computeErrorId, deriveSlug, normalizeErrorCode, normalizeErrorType } fr
 import { extractSourceRegion, githubPermalink } from "../util/source.js";
 import { deriveMessagePattern } from "../util/pattern.js";
 
-/** Kebab-case tag shape (mirrors schema's Tag). */
-const TAG_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
-/** Family names too generic to write a background article about. */
-const GENERIC_FAMILIES = new Set(["error", "errors", "exception", "exceptions", "failure", "failures", "unknown"]);
-
-/**
- * Normalize the model's backgroundTag to a valid, non-generic kebab tag. The
- * field is auxiliary — a malformed or generic value becomes null rather than
- * rejecting the whole record.
- */
-export function normalizeBackgroundTag(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const tag = raw
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return TAG_RE.test(tag) && !GENERIC_FAMILIES.has(tag) ? tag : null;
-}
 
 export interface AssembleInput {
   repo: string;
@@ -48,6 +31,12 @@ export interface AssembleInput {
    * when unclaimed or claimed by this same identity.
    */
   existingSlugOwners?: Map<string, string>;
+  /**
+   * Established background families, keyed for resolution. A coined name that
+   * spells an existing family differently is folded onto it here — the prompt
+   * asks for reuse, this is what makes reuse true of the stored record.
+   */
+  tagIndex?: Map<string, string>;
 }
 
 export interface AssembleOutput {
@@ -60,6 +49,8 @@ export interface AssembleOutput {
  * validated ErrorEntry records (§3.1). GitHub permalinks pinned to the analyzed
  * SHA (never branch-relative — fixes v1 bug). messagePattern derived per §4.3.
  */
+const EMPTY_TAG_INDEX = new Map<string, string>();
+
 export function assemble(input: AssembleInput): AssembleOutput {
   const { repo, sha, repoPath, discovered, enriched, defense } = input;
   const analyzedAt = new Date().toISOString();
@@ -135,7 +126,7 @@ export function assemble(input: AssembleInput): AssembleOutput {
       tryCatchPattern: def?.tryCatchPattern ?? null,
       preventionTips: def?.preventionTips ?? [],
       tags: (e?.tags ?? []).map((t) => t.toLowerCase()),
-      backgroundTag: normalizeBackgroundTag(e?.backgroundTag),
+      backgroundTag: resolveTag(e?.backgroundTag, input.tagIndex ?? EMPTY_TAG_INDEX),
       analyzedSha: sha,
       analyzedAt,
       schemaVersion: CURRENT_SCHEMA_VERSION,

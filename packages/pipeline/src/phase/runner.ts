@@ -24,6 +24,7 @@ import type { ScanScope } from "./candidates.js";
 import { runAnalysis } from "./analysis.js";
 import { runVerify, applyPatches, missingCore } from "./verify.js";
 import { collectCallFacts } from "./callgraph.js";
+import { promptFamilies, tagIndexFor } from "./tag-vocabulary.js";
 import { assemble } from "./assembler.js";
 import type { DiscoveredErrorJson, EnrichedErrorJson, DefenseStrategyJson } from "./prompts.js";
 
@@ -370,7 +371,8 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         need,
         (d, t) => log(`phase analysis: ${d}/${t} batches`),
         (m) => log(`phase analysis: ${m}`),
-        phaseBatchCheckpoint(db, repo, sha, "analysis")
+        phaseBatchCheckpoint(db, repo, sha, "analysis"),
+        promptFamilies(db)
       );
       // Analysis indexed the `fresh` sub-list; assembly indexes `discovered`.
       const toDiscoveredIndex = <T>(m: Map<number, T>): Map<number, T> =>
@@ -450,6 +452,9 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         // survivors, so a fresh record deriving a survivor's slug would hit
         // the unique (repo, slug) index and fail the whole integration.
         existingSlugOwners: new Map(errorsForRepo(db, repo).map((r) => [r.slug, r.id])),
+        // Fold a coined family name onto the established spelling at the
+        // write boundary — the prompt asks for reuse, this is what enforces it.
+        tagIndex: tagIndexFor(db),
       });
 
 

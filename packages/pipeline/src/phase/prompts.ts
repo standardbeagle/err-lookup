@@ -209,6 +209,23 @@ const ENRICHMENT_FIELDS = `- documentation: what this error means and why this l
   that a background article could cover the family; NEVER a generic word like "error",
   "exception", or "failure". null only when no family fits.`;
 
+/**
+ * The established families, offered so the model reuses a name instead of
+ * coining one. Reuse is the whole point of the field: a family with one record
+ * cannot carry an article, and the corpus reached 55,568 distinct tags — two
+ * thirds of them used once — while this list was absent from the prompt.
+ */
+function familiesBlock(families: readonly string[]): string {
+  if (families.length === 0) return "";
+  return `
+
+ESTABLISHED backgroundTag FAMILIES (${families.length}, most used first). Reuse the exact
+string when one of them names this error's family — even when you would have phrased it
+differently. Coin a new tag only when no family here fits; a new tag is a claim that this
+error family is genuinely absent from the corpus so far.
+${families.join(", ")}`;
+}
+
 const DEFENSE_FIELDS = `- handlingStrategy: exactly one of try-catch|type-guard|validation|retry|fallback.
 - validationCode: code the caller can run BEFORE the API to avoid the error (null if not applicable).
 - typeGuard: a language-appropriate type guard / narrowing function (null if not applicable).
@@ -236,7 +253,9 @@ export function analysisPrompt(
   /** Per-error throwing region, extracted procedurally; aligned with `batch`. */
   sources?: (string | null)[],
   /** Per-error enclosing function and callers, from lci; aligned with `batch`. */
-  facts?: (CallFacts | null)[]
+  facts?: (CallFacts | null)[],
+  /** Established background families to reuse, largest first. */
+  families: readonly string[] = []
 ): string {
   const list = batch
     .map((e, i) => {
@@ -264,7 +283,7 @@ export function analysisPrompt(
   const sections: string[] = [];
   const shapes: string[] = [];
   if (need.enrichment) {
-    sections.push(`EXPLAIN the error (for a developer who hit it):\n${ENRICHMENT_FIELDS}`);
+    sections.push(`EXPLAIN the error (for a developer who hit it):\n${ENRICHMENT_FIELDS}${familiesBlock(families)}`);
     shapes.push(ENRICHED_SHAPE);
   }
   if (need.defense) {

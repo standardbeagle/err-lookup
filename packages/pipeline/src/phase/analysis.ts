@@ -93,7 +93,9 @@ export async function runAnalysis(
   need: AnalysisNeed,
   onProgress?: (done: number, total: number) => void,
   onLog?: (msg: string) => void,
-  checkpoint?: BatchCheckpoint
+  checkpoint?: BatchCheckpoint,
+  /** Established background families offered to the enrichment pass for reuse. */
+  families: readonly string[] = []
 ): Promise<AnalysisResult> {
   const started = Date.now();
   const enrichedByIndex = new Map<number, EnrichedErrorJson>();
@@ -191,7 +193,7 @@ export async function runAnalysis(
       const budget = watchdogBudgetMs(cfg, routingPhase);
       const result = await withTimeout(
         runProvider(
-          analysisPrompt(unit.batch, unit.startIndex, unit.pass, unit.sources, unit.facts),
+          analysisPrompt(unit.batch, unit.startIndex, unit.pass, unit.sources, unit.facts, families),
           { cwd: repoPath },
           providers,
           cfg,
