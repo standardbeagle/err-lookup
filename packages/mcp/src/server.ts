@@ -51,20 +51,27 @@ const TOOLS = [
   },
   {
     name: "refresh_dataset",
-    description: "Force a freshness check against the ErrLookup CDN. Returns the current dataset version.",
-    inputSchema: { type: "object", properties: {} },
+    description:
+      "Force a freshness check against the ErrLookup CDN. Returns the current dataset version. " +
+      "Pass full=true to also download the whole dataset for offline use.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        full: { type: "boolean", description: "Download every shard so later lookups work offline." },
+      },
+    },
   },
 ];
 
 export function createContext(): ToolContext {
   const cfg = defaultCacheConfig();
   const store = new CacheStore(cfg);
-  return { store, lastSyncAt: 0, ttlSeconds: cfg.ttlSeconds };
+  return { store, ttlSeconds: cfg.ttlSeconds };
 }
 
 export async function runServer(ctx: ToolContext = createContext()): Promise<void> {
   const server = new Server(
-    { name: "errlookup", version: "0.1.0" },
+    { name: "errlookup", version: "0.1.3" },
     { capabilities: { tools: {} } }
   );
 
@@ -87,7 +94,7 @@ export async function runServer(ctx: ToolContext = createContext()): Promise<voi
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         case "refresh_dataset": {
-          const r = await toolRefreshDataset(ctx);
+          const r = await toolRefreshDataset(ctx, (args ?? {}) as { full?: boolean });
           return { content: [{ type: "text", text: JSON.stringify(r) }] };
         }
         default:
