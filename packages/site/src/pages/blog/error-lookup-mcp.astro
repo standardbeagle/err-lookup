@@ -68,10 +68,13 @@ const jsonLd = JSON.stringify({
 }`}</code></pre>
   <p>
     It exposes <code>search_error</code>, <code>get_error</code>, <code>list_repos</code> and
-    <code>refresh_dataset</code>. On first use it downloads a versioned copy of the dataset
-    and caches it under <code>~/.cache/errlookup/</code>; after that every lookup is served
-    from disk. Error strings pulled from your production logs stay on the machine, and
-    <code>ERRLOOKUP_OFFLINE=1</code> pins that behavior for good.
+    <code>refresh_dataset</code>. A lookup pulls only the slice of the published index it
+    touches and caches it under <code>~/.cache/errlookup/</code>, so the first answer costs
+    about a second and a repeated one is served from memory with no network at all. Error
+    strings pulled from your production logs stay on the machine;
+    <code>ERRLOOKUP_OFFLINE=1</code> pins that behavior, and
+    <code>refresh_dataset</code> with <code>full: true</code> puts the whole dataset on disk
+    for a machine that will be offline.
   </p>
   <p>
     If you prefer HTTP, the same data is behind <code>/api/search?q=</code>,
@@ -83,9 +86,7 @@ const jsonLd = JSON.stringify({
   <p>
     Roughly 4% of records have no solution attached yet and roughly 10% carry a short
     explanation. Most of those date from a stretch in mid-August when a model provider's
-    quota kept collapsing mid-run; they heal as repositories are rescanned. The first MCP
-    sync pulls 18.6 MB compressed, which is heavy for an <code>npx</code> invocation and is
-    next on the list to shard.
+    quota kept collapsing mid-run; they heal as repositories are rescanned.
   </p>
   <p>
     Coverage follows the corpus, which is weighted toward widely used libraries. For code
