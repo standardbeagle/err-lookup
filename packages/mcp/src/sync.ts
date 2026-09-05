@@ -55,8 +55,15 @@ export async function syncDataset(store: CacheStore, force: boolean): Promise<Sy
 async function pollManifest(store: CacheStore, pointer: CachePointer | null): Promise<SyncResult> {
   let res: Response;
   try {
+    // Ask intermediaries to revalidate rather than answer from their own copy:
+    // a publish that a cache hides is a publish this client never sees. A 304
+    // is still the cheap answer, which is why this is no-cache and not
+    // no-store.
     res = await fetch(`${store.baseUrl}/data/manifest.json`, {
-      headers: pointer?.etag ? { "if-none-match": pointer.etag } : undefined,
+      headers: {
+        "cache-control": "no-cache",
+        ...(pointer?.etag ? { "if-none-match": pointer.etag } : {}),
+      },
     });
   } catch {
     return fromPointer(store, pointer, true);

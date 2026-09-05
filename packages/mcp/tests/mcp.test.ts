@@ -42,8 +42,9 @@ function etagOf(buf: Buffer | string): string {
 function startStaticServer(root: string): Promise<{ server: Server; port: number }> {
   return new Promise((res) => {
     const server = createServer((req: IncomingMessage, res2: ServerResponse) => {
-      const url = (req.url ?? "").split("?")[0]!;
-      served.push(url);
+      const raw = req.url ?? "";
+      const url = raw.split("?")[0]!;
+      served.push(raw);
       let rel = url;
       if (rel.startsWith("/data/")) rel = "/" + rel.slice("/data/".length);
       if (failPaths.has(rel)) {
@@ -131,7 +132,7 @@ describe("sync", () => {
     await syncDataset(ctx.store, false);
     served = [];
     const r = await syncDataset(ctx.store, true);
-    expect(served).toContain("/data/manifest.json");
+    expect(served.map((u) => u.split("?")[0])).toContain("/data/manifest.json");
     expect(r.updated).toBe(false);
     expect(r.stale).toBe(false);
   });
@@ -242,15 +243,34 @@ describe("tools", () => {
     expect(r.matches.every((m) => m.repo === "sindresorhus/is")).toBe(true);
   });
 
+  it("pins the dataset version into every payload URL", async () => {
+    // Dataset files are served max-age=86400 with a week of
+    // stale-while-revalidate, so a shared path can hand back a shard from a
+    // previous publish long after the manifest moved on.
+    const ctx = makeCtx();
+    await syncDataset(ctx.store, false);
+    const version = ctx.store.readPointer()!.datasetVersion;
+    served = [];
+    await toolSearchError(ctx, { message: "Request failed with status code 503" });
+    const payloads = served.filter((u) => u !== "/data/manifest.json");
+    expect(payloads.length).toBeGreaterThan(0);
+    for (const u of payloads) {
+      expect(u, u).toContain(`?v=${encodeURIComponent(version)}`);
+    }
+    // The manifest itself cannot carry the version — it is what reveals it.
+    expect(served.every((u) => !u.startsWith("/data/manifest.json?"))).toBe(true);
+  });
+
   it("a search downloads only the shards it needs", async () => {
     const ctx = makeCtx();
     await syncDataset(ctx.store, false);
     served = [];
     await toolSearchError(ctx, { message: "Request failed with status code 503" });
-    const metaFetches = served.filter((u) => u.startsWith("/data/search/meta/"));
-    const tokenFetches = served.filter((u) => u.startsWith("/data/search/tokens/"));
-    expect(served).not.toContain("/data/index.json.gz");
-    expect(served).not.toContain("/data/index.json");
+    const paths = served.map((u) => u.split("?")[0]);
+    const metaFetches = paths.filter((u) => u!.startsWith("/data/search/meta/"));
+    const tokenFetches = paths.filter((u) => u!.startsWith("/data/search/tokens/"));
+    expect(paths).not.toContain("/data/index.json.gz");
+    expect(paths).not.toContain("/data/index.json");
     expect(tokenFetches.length).toBeGreaterThan(0);
     expect(tokenFetches.length).toBeLessThan(20);
     expect(metaFetches.length).toBeLessThan(20);

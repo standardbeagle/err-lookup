@@ -174,7 +174,14 @@ export class CacheStore {
 
     let raw: Buffer;
     try {
-      const res = await fetch(`${this.cfg.baseUrl}/data/${relPath}`);
+      // Version-pinned URL. Dataset files are served with max-age=86400 and
+      // stale-while-revalidate=604800, so the same path can hand back a shard
+      // from a previous publish for days — long enough to pair a fresh
+      // manifest with stale metadata and resolve entry indexes against the
+      // wrong rows. A new dataset version is a new URL, which no cache in the
+      // path can answer from what it already holds.
+      const url = `${this.cfg.baseUrl}/data/${relPath}?v=${encodeURIComponent(datasetVersion)}`;
+      const res = await fetch(url);
       if (!res.ok) return null;
       raw = Buffer.from(await res.arrayBuffer());
     } catch {

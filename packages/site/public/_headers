@@ -1,11 +1,31 @@
 /manifest.json
   Cache-Control: public, max-age=300
+/data/*
+  Access-Control-Allow-Origin: *
+# The manifest is the freshness beacon for every other dataset file, so it must
+# not inherit their long life. Pages APPENDS the headers of every matching rule
+# rather than letting the most specific one win, so a `/data/*` Cache-Control
+# would land on manifest.json as a second, conflicting max-age — it did, and a
+# client could pair a 5-minute manifest with day-old shards. The long cache is
+# therefore declared on the payload paths, none of which match the manifest.
 /data/manifest.json
   Cache-Control: public, max-age=300
-  Access-Control-Allow-Origin: *
-/data/*
+/data/index.json.gz
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800
-  Access-Control-Allow-Origin: *
+/data/repos.json
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/data/published.json
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/data/tags.json
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/data/search/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/data/repos/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/data/info/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+/data/errors/*
+  Cache-Control: public, max-age=86400, stale-while-revalidate=604800
 /schema.json
   Access-Control-Allow-Origin: *
 /llms.txt
