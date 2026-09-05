@@ -45,7 +45,15 @@ export function normalizeForFuzzy(s: string): string {
 // ---------------------------------------------------------------------------
 
 export const TOKEN_SHARDS = 256;
-export const META_CHUNK = 2000;
+/**
+ * Entries per `search/meta/<k>.json`. This is the granularity of a random
+ * metadata read: a query that returns five hits pays for five whole chunks,
+ * so an oversized chunk is pure amplification (at 2000 it was ~790 KB per
+ * chunk to deliver five ~400-byte rows). Readers take the value from
+ * `summary.metaChunk`, so changing it here re-chunks on the next publish
+ * without breaking a client pinned to an older dataset.
+ */
+export const META_CHUNK = 250;
 /** idf weights and norms ship as integers: round(value * WEIGHT_SCALE). */
 export const WEIGHT_SCALE = 100;
 export const FUZZY_THRESHOLD = 0.4;
@@ -269,6 +277,19 @@ export async function shardedSearch(
       })
       .filter((c) => c.score >= FUZZY_THRESHOLD && !taken.has(c.idx))
       .sort((a, b) => b.score - a.score);
+
+    // Warm the chunks the top candidates live in before walking them: fetched
+    // one at a time, five hits in five chunks cost five sequential round trips.
+    // Only the first `limit` candidates are warmed — widening the window would
+    // trade those round trips for chunks the walk never reads.
+    const window = ranked.slice(0, limit);
+    await Promise.all(
+      [...new Set(window.map((c) => Math.floor(c.idx / summary.metaChunk)))].map(async (k) => {
+        if (!metaCache.has(k)) {
+          metaCache.set(k, (await fetchJson<IndexError[]>(`search/meta/${k}.json`)) ?? []);
+        }
+      })
+    );
 
     for (const c of ranked) {
       if (hits.length >= limit) break;
