@@ -19,6 +19,15 @@ export interface TagMerge {
   errorCount: number;
 }
 
+/** An article whose cluster key names a family that is being folded away. */
+export interface InfoPageMove {
+  slug: string;
+  from: string;
+  to: string;
+  /** Set when another article already covers the destination family. */
+  conflictsWith?: string;
+}
+
 export interface BackfillPlan {
   merges: TagMerge[];
   /** Records that would change tag. */
@@ -26,6 +35,14 @@ export interface BackfillPlan {
   /** Families before and after, so the shape of the change is visible. */
   familiesBefore: number;
   familiesAfter: number;
+  /**
+   * Articles that must follow their family. Folding the records alone
+   * strands them: the article keeps rendering while its cluster key names a
+   * family with no records left, no error page links to it any more, and
+   * findNewClusters stops recognising the destination as covered — which
+   * earns it a second, duplicate article on the next collector run.
+   */
+  infoPageMoves: InfoPageMove[];
 }
 
 /**
@@ -51,27 +68,71 @@ export function planTagBackfill(db: Db, vocabulary: TagFamily[] = tagVocabulary(
   }
 
   merges.sort((a, b) => b.errorCount - a.errorCount || a.from.localeCompare(b.from));
+
+  const pages = db.all<{ slug: string; cluster_key: string }>(sql`
+    SELECT slug, cluster_key FROM info_pages WHERE cluster_key LIKE 'tag:%'
+  `);
+  const coveredBy = new Map(pages.map((p) => [p.cluster_key, p.slug]));
+  const mergeByFrom = new Map(merges.map((m) => [m.from, m.to]));
+  const infoPageMoves: InfoPageMove[] = [];
+  for (const p of pages) {
+    const to = mergeByFrom.get(p.cluster_key.slice(4));
+    if (!to) continue;
+    const destination = `tag:${to}`;
+    const holder = coveredBy.get(destination);
+    infoPageMoves.push({
+      slug: p.slug,
+      from: p.cluster_key,
+      to: destination,
+      ...(holder && holder !== p.slug ? { conflictsWith: holder } : {}),
+    });
+  }
+
   return {
     merges,
     recordsAffected,
     familiesBefore: vocabulary.length,
     familiesAfter: after.size,
+    infoPageMoves,
   };
 }
 
 /**
  * Apply a plan. Returns the number of rows rewritten.
  *
- * `content_hash` deliberately moves with the tag: backgroundTag is part of
- * what a reader sees, and the exporter's lastmod is driven by that hash. A
- * silent tag change with a frozen hash would leave the sitemap claiming the
- * page never changed.
+ * `content_hash` is deliberately NOT recomputed, even though backgroundTag
+ * feeds it. The error's own explanation, solutions and source are untouched;
+ * what changes is which family article the page links to. Moving lastmod on
+ * thousands of pages for that, while the host's crawl budget is still
+ * suppressed, is the churn that cost trust in the first place — the link
+ * appears on the next publish either way, and the sitemap keeps its word.
  */
-export function applyTagBackfill(db: Db, plan: BackfillPlan): number {
-  let rewritten = 0;
+export interface BackfillResult {
+  recordsRewritten: number;
+  pagesMoved: number;
+  /** Articles left alone because another article already covers the family. */
+  conflicts: InfoPageMove[];
+}
+
+export function applyTagBackfill(db: Db, plan: BackfillPlan): BackfillResult {
+  let recordsRewritten = 0;
   for (const m of plan.merges) {
     const res = db.run(sql`UPDATE errors SET background_tag = ${m.to} WHERE background_tag = ${m.from}`);
-    rewritten += Number(res.changes ?? 0);
+    recordsRewritten += Number(res.changes ?? 0);
   }
-  return rewritten;
+
+  let pagesMoved = 0;
+  const conflicts: InfoPageMove[] = [];
+  for (const move of plan.infoPageMoves) {
+    if (move.conflictsWith) {
+      // Two articles now describe one family. Which one survives is an
+      // editorial call about their content, not something a rename should
+      // decide, so the loser keeps its old key and is reported.
+      conflicts.push(move);
+      continue;
+    }
+    db.run(sql`UPDATE info_pages SET cluster_key = ${move.to} WHERE slug = ${move.slug}`);
+    pagesMoved++;
+  }
+  return { recordsRewritten, pagesMoved, conflicts };
 }

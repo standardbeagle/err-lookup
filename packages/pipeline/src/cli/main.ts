@@ -161,9 +161,18 @@ async function main(): Promise<void> {
         console.log(`  ${m.errorCount.toString().padStart(6)}  ${m.from} → ${m.to}`);
       }
       if (plan.merges.length > limit) console.log(`  … ${plan.merges.length - limit} more`);
+      if (plan.infoPageMoves.length > 0) {
+        console.log(`articles following their family: ${plan.infoPageMoves.length}`);
+        for (const m of plan.infoPageMoves) {
+          console.log(`  /info/${m.slug}/  ${m.from} → ${m.to}${m.conflictsWith ? `  (conflict: ${m.conflictsWith} already covers it)` : ""}`);
+        }
+      }
       if (values.apply) {
-        const rewritten = applyTagBackfill(db, plan);
-        console.log(`applied: ${rewritten} records rewritten`);
+        const res = applyTagBackfill(db, plan);
+        console.log(`applied: ${res.recordsRewritten} records rewritten, ${res.pagesMoved} articles re-keyed`);
+        for (const c of res.conflicts) {
+          console.log(`  unresolved: /info/${c.slug}/ and /info/${c.conflictsWith}/ now describe ${c.to} — retire one by hand`);
+        }
       } else if (plan.merges.length > 0) {
         console.log("dry run — pass --apply to rewrite");
       }

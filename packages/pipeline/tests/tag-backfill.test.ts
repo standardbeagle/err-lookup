@@ -141,12 +141,80 @@ describe("tag backfill", () => {
   it("applying it moves the records onto the covered family", () => {
     const { db, raw } = fixture();
     try {
-      const rewritten = applyTagBackfill(db, planTagBackfill(db));
-      expect(rewritten).toBe(10);
+      const res = applyTagBackfill(db, planTagBackfill(db));
+      expect(res.recordsRewritten).toBe(10);
       const v = tagVocabulary(db);
       expect(v.map((f) => f.tag).sort()).toEqual(["bgp-session-flapping", "missing-env-var"]);
       expect(v.find((f) => f.tag === "missing-env-var")!.errorCount).toBe(50);
       expect(v.find((f) => f.tag === "missing-env-var")!.repoCount).toBe(3);
+    } finally {
+      raw.close();
+    }
+  });
+
+  it("carries an article onto the family its records moved to", () => {
+    const { db, raw } = openDb(tmpDbPath());
+    try {
+      seed(db, "a/one", "missing-env-var", 30);
+      seed(db, "a/one", "environment-variable-missing", 6);
+      db.insert(infoPages)
+        .values({
+          slug: "environment-variable-missing",
+          clusterKey: "tag:environment-variable-missing",
+          title: "t",
+          summary: "s",
+          background: "b",
+          commonCauses: [],
+          fixes: [],
+          guideSlugs: [],
+          errorIds: [],
+          errorCount: 6,
+          repoCount: 1,
+          generatedAt: "2026-09-05T00:00:00Z",
+        })
+        .run();
+
+      const plan = planTagBackfill(db);
+      expect(plan.infoPageMoves).toEqual([
+        { slug: "environment-variable-missing", from: "tag:environment-variable-missing", to: "tag:missing-env-var" },
+      ]);
+      const res = applyTagBackfill(db, plan);
+      expect(res.pagesMoved).toBe(1);
+      expect(res.conflicts).toEqual([]);
+      // The article is now reachable from every record of the merged family.
+      expect(tagVocabulary(db)[0]!.infoSlug).toBe("environment-variable-missing");
+    } finally {
+      raw.close();
+    }
+  });
+
+  it("leaves both articles alone when two now describe one family", () => {
+    const { db, raw } = fixture(); // already carries an article on missing-env-var
+    try {
+      db.insert(infoPages)
+        .values({
+          slug: "environment-variable-missing",
+          clusterKey: "tag:environment-variable-missing",
+          title: "t",
+          summary: "s",
+          background: "b",
+          commonCauses: [],
+          fixes: [],
+          guideSlugs: [],
+          errorIds: [],
+          errorCount: 6,
+          repoCount: 1,
+          generatedAt: "2026-09-05T00:00:00Z",
+        })
+        .run();
+
+      const res = applyTagBackfill(db, planTagBackfill(db));
+      expect(res.pagesMoved).toBe(0);
+      expect(res.conflicts.map((c) => [c.slug, c.conflictsWith])).toEqual([
+        ["environment-variable-missing", "missing-env-var"],
+      ]);
+      // Nothing was deleted: which article survives is an editorial call.
+      expect(db.select().from(infoPages).all()).toHaveLength(2);
     } finally {
       raw.close();
     }
@@ -159,7 +227,7 @@ describe("tag backfill", () => {
       const second = planTagBackfill(db);
       expect(second.merges).toEqual([]);
       expect(second.recordsAffected).toBe(0);
-      expect(applyTagBackfill(db, second)).toBe(0);
+      expect(applyTagBackfill(db, second).recordsRewritten).toBe(0);
     } finally {
       raw.close();
     }
