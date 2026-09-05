@@ -1,0 +1,55 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.standardbeagle/errlookup",
+  "title": "ErrLookup",
+  "description": "Explains open-source library error messages and gives cited, ordered fixes, offline from cache.",
+  "version": "0.1.3",
+  "websiteUrl": "https://errors.standardbeagle.com",
+  "repository": {
+    "url": "https://github.com/standardbeagle/err-lookup",
+    "source": "github",
+    "subfolder": "packages/mcp"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@standardbeagle/errlookup-mcp",
+      "version": "0.1.3",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "ERRLOOKUP_BASE_URL",
+          "description": "Dataset origin. Point this at a self-hosted publish of the dataset.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string",
+          "default": "https://errors.standardbeagle.com"
+        },
+        {
+          "name": "ERRLOOKUP_CACHE_DIR",
+          "description": "Where the downloaded dataset is cached. Defaults to $XDG_CACHE_HOME/errlookup.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "ERRLOOKUP_TTL_SECONDS",
+          "description": "How often the published manifest is polled for a newer dataset version.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string",
+          "default": "300"
+        },
+        {
+          "name": "ERRLOOKUP_OFFLINE",
+          "description": "Set to 1 to serve only from the local cache and never fetch.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
