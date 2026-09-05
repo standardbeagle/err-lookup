@@ -67,6 +67,37 @@ describe("candidateDiscoveryPrompt source regions", () => {
   });
 });
 
+describe("analysisPrompt background families", () => {
+  const errors = [{ message: "config missing", type: "exception", file: "src/a.go", line: 12 }];
+  const need = { enrichment: true, defense: true };
+
+  it("offers the established families and asks for the exact string", () => {
+    const prompt = analysisPrompt(errors, 0, need, ["src"], [null], [
+      "missing-env-var",
+      "schema-validation-failed",
+    ]);
+    expect(prompt).toContain("ESTABLISHED backgroundTag FAMILIES (2");
+    expect(prompt).toContain("missing-env-var, schema-validation-failed");
+    expect(prompt).toContain("Reuse the exact");
+  });
+
+  it("says nothing about families on an empty corpus", () => {
+    // The first repo ever analyzed has no vocabulary to reuse; an empty list
+    // would read as "no family fits" and teach the model to coin every time.
+    const prompt = analysisPrompt(errors, 0, need, ["src"], [null], []);
+    expect(prompt).not.toContain("ESTABLISHED backgroundTag FAMILIES");
+  });
+
+  it("keeps the families out of a defense-only call", () => {
+    const prompt = analysisPrompt(errors, 0, need2(), ["src"], [null], ["missing-env-var"]);
+    expect(prompt).not.toContain("ESTABLISHED backgroundTag FAMILIES");
+  });
+});
+
+function need2() {
+  return { enrichment: false, defense: true };
+}
+
 describe("analysisPrompt call facts", () => {
   const errors = [
     { message: "config missing", type: "exception", file: "src/a.go", line: 12 },
