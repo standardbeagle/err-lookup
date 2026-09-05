@@ -14,6 +14,13 @@ export interface BlogPost {
 
 export const posts: BlogPost[] = [
   {
+    slug: "error-lookup-mcp",
+    title: "Error lookup for your coding agent",
+    description:
+      "309,555 library error records, each pinned to the source line that raised it, available to agents over MCP with no API key and no network after the first sync.",
+    date: "2026-09-05",
+  },
+  {
     slug: "how-the-scanner-works",
     title: "How the ErrLookup scanner works",
     description:

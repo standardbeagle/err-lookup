@@ -1,0 +1,96 @@
+---
+import Base from "../../layouts/Base.astro";
+import { blogOg } from "../../data/og.js";
+const meta = {
+  title: "Error lookup for your coding agent",
+  description:
+    "309,555 library error records, each pinned to the source line that raised it, available to agents over MCP with no API key and no network after the first sync.",
+  date: "2026-09-05",
+};
+const jsonLd = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  headline: meta.title,
+  description: meta.description,
+  datePublished: meta.date,
+  author: { "@type": "Organization", name: "Standard Beagle Studio", url: "https://standardbeagle.com" },
+});
+---
+<Base ogImage={blogOg("error-lookup-mcp")} title={`${meta.title} — ErrLookup`} description={meta.description}>
+  <script slot="head" type="application/ld+json" set:html={jsonLd} />
+  <p class="muted"><a href="/blog/">Blog</a> · {meta.date}</p>
+  <h1>{meta.title}</h1>
+  <p class="lead">
+    An agent that hits an unfamiliar error string from a dependency has two options: guess
+    from the wording, or go read the code that raised it. ErrLookup does the second one
+    ahead of time, for 1,530 libraries, and hands the answer back with the commit-pinned
+    permalink attached.
+  </p>
+
+  <h2>What a lookup returns</h2>
+  <p>Ask the public API for a message you have never seen before:</p>
+  <pre><code>curl -s "https://errors.standardbeagle.com/api/search?q=maximum%20call%20stack%20size%20exceeded&amp;limit=1"</code></pre>
+  <p>
+    The top match is Hugo's template recursion guard, and the record behind it explains the
+    mechanism —
+    a hard nesting threshold of 999 enforced in <code>ExecuteWithContextAndKey</code> — then
+    lists the fixes in order, starting with tracing the include chain of the template named
+    in the message. The <code>githubUrl</code> field points at the analyzed line range in the
+    exact commit the explanation was written from.
+  </p>
+
+  <h2>The dataset today</h2>
+  <table>
+    <tbody>
+      <tr><td>Repositories analyzed</td><td>1,530</td></tr>
+      <tr><td>Error records</td><td>309,555</td></tr>
+      <tr><td>Records with a source permalink at the analyzed commit</td><td>100%</td></tr>
+      <tr><td>Records with at least one solution</td><td>96.2%</td></tr>
+      <tr><td>Records with 200+ characters of explanation</td><td>90.2%</td></tr>
+    </tbody>
+  </table>
+  <p>
+    The permalink column is what makes the rest usable. Analysis here is AI-assisted, so a
+    record is a hypothesis with a citation stapled to it, and the citation is what lets you
+    reject a bad one in seconds. <a href="/blog/how-the-scanner-works/">How the scanner
+    works</a> covers the extraction pipeline in detail.
+  </p>
+
+  <h2>Wiring it into an agent</h2>
+  <p>The MCP server is on npm and needs no key:</p>
+  <pre><code>{`{
+  "mcpServers": {
+    "errlookup": {
+      "command": "npx",
+      "args": ["-y", "@standardbeagle/errlookup-mcp"]
+    }
+  }
+}`}</code></pre>
+  <p>
+    It exposes <code>search_error</code>, <code>get_error</code>, <code>list_repos</code> and
+    <code>refresh_dataset</code>. On first use it downloads a versioned copy of the dataset
+    and caches it under <code>~/.cache/errlookup/</code>; after that every lookup is served
+    from disk. Error strings pulled from your production logs stay on the machine, and
+    <code>ERRLOOKUP_OFFLINE=1</code> pins that behavior for good.
+  </p>
+  <p>
+    If you prefer HTTP, the same data is behind <code>/api/search?q=</code>,
+    <code>/api/errors/&#123;id&#125;</code> and <code>/api/repos</code>. Both are documented
+    on the <a href="/api-docs/">dataset contract</a> page.
+  </p>
+
+  <h2>Where it falls short</h2>
+  <p>
+    Roughly 4% of records have no solution attached yet and roughly 10% carry a short
+    explanation. Most of those date from a stretch in mid-August when a model provider's
+    quota kept collapsing mid-run; they heal as repositories are rescanned. The first MCP
+    sync pulls 18.6 MB compressed, which is heavy for an <code>npx</code> invocation and is
+    next on the list to shard.
+  </p>
+  <p>
+    Coverage follows the corpus, which is weighted toward widely used libraries. For code
+    that will never be in it, the pipeline is a local CLI and the dataset is static files:
+    <a href="/blog/analyze-your-internal-repos/">run it against your own repositories</a> and
+    serve the output from any internal host.
+  </p>
+</Base>
