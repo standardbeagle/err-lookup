@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { openDb } from "../src/db/client.js";
 import { errors, infoPages } from "../src/db/schema.js";
 import { findNewClusters, collectInfoPages } from "../src/info/collector.js";
+import { sampleCluster, clusterEvidence } from "../src/info/research.js";
 import { buildDataset } from "../src/exporter/index.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
@@ -63,21 +64,47 @@ function seed(
   for (let i = 0; i < count; i++) db.insert(errors).values(errorRow(repo, code, cls, backgroundTag)).run();
 }
 
+/** A draft that clears the deterministic gate: real paragraphs, real causes. */
 const GOOD_DRAFT = {
-  title: "ECONNREFUSED: connection refused",
-  summary: "The peer machine actively refused the TCP connection.",
+  title: "ECONNREFUSED: the peer refused the connection",
+  summary:
+    "ECONNREFUSED is what a client sees when its TCP handshake reaches the host but nothing is listening on the port it asked for. Libraries surface it on connect or on the first read, usually as a network error carrying the address that was tried.",
   background:
-    "The OS returns ECONNREFUSED when a SYN reaches a host but nothing listens on the port.\n\nLibraries surface it as a network error on the first read or connect.",
-  commonCauses: [{ cause: "service not running", detail: "Nothing listens on the target port." }],
-  fixes: ["verify the service is up and the port matches"],
+    "The operating system returns ECONNREFUSED when a SYN arrives at a reachable host and no socket is bound to the destination port. The host is up and routable, which is what separates this from a timeout: the refusal comes back immediately, as an RST, rather than the connection attempt expiring.\n\nLibraries differ in where the refusal surfaces. Clients that connect lazily raise it on the first request, so the stack trace points at a call site far from any connection setup, while pooled clients raise it at pool warm-up and the same underlying condition looks like a startup failure instead, long before any application code runs.",
+  commonCauses: [
+    {
+      cause: "service not running",
+      detail: "Nothing is listening on the target port, so the kernel answers the handshake with a refusal.",
+    },
+    {
+      cause: "wrong port or address",
+      detail: "The process is up but bound elsewhere — a different port, or loopback only while the client dials the LAN address.",
+    },
+    {
+      cause: "container or network boundary",
+      detail: "The name resolves to a host the service does not run on, which is common when a compose service is addressed as localhost.",
+    },
+  ],
+  fixes: [
+    "Confirm something is listening on that exact address and port before treating it as a client bug.",
+    "Retry with backoff only for start-up ordering; a refusal from a steady-state service is a configuration error, not a transient one.",
+  ],
   guideSlugs: ["timeouts", "not-a-real-guide"],
 };
 
-function draftProvider(draft: unknown): LlmProvider {
+const REVIEW_ACCEPT = { verdict: "accept" };
+
+/**
+ * Answers the draft call and the review call differently — the collector now
+ * makes both, and a provider that returns a draft to the reviewer would look
+ * like a reviewer that rejected the page.
+ */
+function draftProvider(draft: unknown, review: unknown = REVIEW_ACCEPT): LlmProvider {
   return {
     name: "bulk",
-    async invoke(_p: string, _o: InvokeOptions): Promise<ProviderResult> {
-      return { ok: true, parsed: draft, raw: JSON.stringify(draft) };
+    async invoke(prompt: string, _o: InvokeOptions): Promise<ProviderResult> {
+      const answer = prompt.includes("You are reviewing a background article") ? review : draft;
+      return { ok: true, parsed: answer, raw: JSON.stringify(answer) };
     },
   };
 }
@@ -200,7 +227,93 @@ describe("collectInfoPages", () => {
       expect(res.created).toEqual([]);
       expect(res.failed).toBe(1);
       expect(db.select().from(infoPages).all()).toHaveLength(0);
-      expect(logs.some((l) => l.includes("rejected"))).toBe(true);
+      expect(logs.some((l) => l.includes("failed validation"))).toBe(true);
+      expect(logs.some((l) => l.includes("abandoned"))).toBe(true);
+    } finally {
+      raw.close();
+    }
+  });
+
+  it("refuses a draft that names a library the family does not contain", async () => {
+    const { db, raw } = openDb(tmpDbPath("info-invented"));
+    try {
+      seed(db, "a/one", "ECONNREFUSED", 3);
+      seed(db, "b/two", "ECONNREFUSED", 3);
+      const invented = {
+        ...GOOD_DRAFT,
+        background: `${GOOD_DRAFT.background} The same refusal is reported by expressjs/express and by fastify/fastify, which surface it through their own transports.`,
+      };
+      const logs: string[] = [];
+      const res = await collectInfoPages(db, { bulk: draftProvider(invented) }, cfg(), {
+        onLog: (m) => logs.push(m),
+      });
+      expect(res.created).toEqual([]);
+      expect(res.failed).toBe(1);
+      expect(logs.some((l) => l.includes("names libraries the family does not contain"))).toBe(true);
+      expect(db.select().from(infoPages).all()).toHaveLength(0);
+    } finally {
+      raw.close();
+    }
+  });
+
+  it("publishes the reviewer's revision when the reviewer rejects the draft", async () => {
+    const { db, raw } = openDb(tmpDbPath("info-revise"));
+    try {
+      seed(db, "a/one", "ECONNREFUSED", 3);
+      seed(db, "b/two", "ECONNREFUSED", 3);
+      const revision = { ...GOOD_DRAFT, title: "ECONNREFUSED: nothing is listening on that port" };
+      const logs: string[] = [];
+      const res = await collectInfoPages(
+        db,
+        { bulk: draftProvider(GOOD_DRAFT, { verdict: "revise", issues: ["the title overstates it"], revision }) },
+        cfg(),
+        { onLog: (m) => logs.push(m) }
+      );
+      expect(res.created).toEqual(["econnrefused"]);
+      expect(db.select().from(infoPages).all()[0]!.title).toBe(revision.title);
+      expect(logs.some((l) => l.includes("revised by review"))).toBe(true);
+    } finally {
+      raw.close();
+    }
+  });
+
+  it("writes nothing when the reviewer rejects without offering a revision", async () => {
+    const { db, raw } = openDb(tmpDbPath("info-review-reject"));
+    try {
+      seed(db, "a/one", "ECONNREFUSED", 3);
+      seed(db, "b/two", "ECONNREFUSED", 3);
+      const logs: string[] = [];
+      const res = await collectInfoPages(
+        db,
+        { bulk: draftProvider(GOOD_DRAFT, { verdict: "revise", issues: ["the mechanism is not in the records"] }) },
+        cfg(),
+        { onLog: (m) => logs.push(m) }
+      );
+      expect(res.created).toEqual([]);
+      expect(res.failed).toBe(1);
+      expect(db.select().from(infoPages).all()).toHaveLength(0);
+      expect(logs.some((l) => l.includes("rejected by review"))).toBe(true);
+    } finally {
+      raw.close();
+    }
+  });
+
+  it("samples across the family's libraries instead of one library's longest entries", () => {
+    const { db, raw } = openDb(tmpDbPath("info-sample"));
+    try {
+      // One repo holds most of the records; a depth-first sample would return
+      // only its rows and the article would generalize from one library.
+      seed(db, "a/loud", "ECONNREFUSED", 20);
+      seed(db, "b/quiet", "ECONNREFUSED", 2);
+      seed(db, "c/quiet", "ECONNREFUSED", 2);
+      const cluster = findNewClusters(db, { minErrors: 5, minRepos: 2, limit: 5 })[0]!;
+      const samples = sampleCluster(db, cluster, 30);
+      expect(new Set(samples.map((s) => s.repo))).toEqual(new Set(["a/loud", "b/quiet", "c/quiet"]));
+      expect(samples.filter((s) => s.repo === "a/loud").length).toBeLessThanOrEqual(4);
+
+      const evidence = clusterEvidence(db, cluster);
+      expect(evidence.repos[0]).toEqual({ repo: "a/loud", errorCount: 20 });
+      expect(evidence.codes[0]).toEqual({ value: "ECONNREFUSED", errorCount: 24 });
     } finally {
       raw.close();
     }

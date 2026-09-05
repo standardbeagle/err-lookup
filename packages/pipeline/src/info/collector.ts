@@ -18,6 +18,8 @@ import { runProvider, watchdogBudgetMs } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
 import { mapPool } from "../util/pool.js";
 import { infoPagePrompt, type InfoPageDraft, type ClusterSample } from "./prompts.js";
+import { sampleCluster, clusterEvidence } from "./research.js";
+import { validateDraft, reviewPrompt, type DraftReview } from "./review.js";
 
 /**
  * Info-page collector: turns clusters of related error records into
@@ -143,39 +145,6 @@ function rowToCandidate(c: ClusterRow): Omit<ClusterCandidate, "kind"> {
   return { key: c.key, value: c.value, errorCount: c.n, repoCount: c.r };
 }
 
-/** Best-documented records of one cluster, compacted for the prompt. */
-export function sampleCluster(db: Db, cluster: ClusterCandidate, limit = 30): ClusterSample[] {
-  const where =
-    cluster.kind === "code"
-      ? sql`error_code = ${cluster.value}`
-      : cluster.kind === "class"
-        ? sql`(error_code IS NULL OR error_code = '') AND error_class = ${cluster.value}`
-        : sql`background_tag = ${cluster.value}`;
-  const rows = db.all<{
-    id: string;
-    repo: string;
-    error_message: string;
-    documentation: string | null;
-    trigger_scenarios: string | null;
-    solutions: string | null;
-    prevention_tips: string | null;
-  }>(sql`
-    SELECT id, repo, error_message, documentation, trigger_scenarios, solutions, prevention_tips
-    FROM errors WHERE ${where}
-    ORDER BY length(coalesce(documentation, '')) DESC
-    LIMIT ${limit}
-  `);
-  return rows.map((r) => ({
-    id: r.id,
-    repo: r.repo,
-    message: r.error_message.slice(0, 300),
-    documentation: (r.documentation ?? "").slice(0, 1200),
-    triggerScenarios: (r.trigger_scenarios ?? "").slice(0, 600),
-    solutions: (JSON.parse(r.solutions ?? "[]") as string[]).slice(0, 5),
-    preventionTips: (JSON.parse(r.prevention_tips ?? "[]") as string[]).slice(0, 5),
-  }));
-}
-
 const SLUG_MAX = 60;
 
 function slugify(value: string): string {
@@ -248,11 +217,20 @@ export async function collectInfoPages(
       const cluster = batch.find((c) => c.key === key)!;
       try {
         const samples = sampleCluster(db, cluster);
-        const result = await withTimeout(
-          runProvider(infoPagePrompt(cluster, samples, GUIDES), { cwd }, providers, cfg, "enrichment"),
-          budget
-        );
-        const entry = draftToEntry(cluster, samples, result.parsed as InfoPageDraft, slugByKey.get(key)!);
+        const evidence = clusterEvidence(db, cluster);
+
+        const draft = await draftPage(cluster, samples, evidence, providers, cfg, cwd, budget, onLog);
+        if (!draft) {
+          failed++;
+          return;
+        }
+        const reviewed = await reviewPage(cluster, samples, draft, providers, cfg, cwd, budget, onLog);
+        if (!reviewed) {
+          failed++;
+          return;
+        }
+
+        const entry = draftToEntry(cluster, samples, reviewed, slugByKey.get(key)!);
         const v = validateInfoPageEntry(entry);
         if (!v.ok) {
           failed++;
@@ -288,6 +266,77 @@ export async function collectInfoPages(
   }
 
   return { created, remaining: clusters.length - batch.length + failed, failed };
+}
+
+/**
+ * Draft the article, then hold it to the deterministic checks. One repair
+ * round: the issues are named in the retry prompt, because a model that is
+ * told "background must be at least 2 paragraphs" fixes it, and a model told
+ * "try again" rewrites the parts that were fine.
+ */
+async function draftPage(
+  cluster: ClusterCandidate,
+  samples: ClusterSample[],
+  evidence: ReturnType<typeof clusterEvidence>,
+  providers: Record<string, LlmProvider>,
+  cfg: ErrlookupConfig,
+  cwd: string,
+  budget: number,
+  onLog?: (msg: string) => void
+): Promise<InfoPageDraft | null> {
+  let issues: string[] = [];
+  for (let round = 0; round < 2; round++) {
+    const result = await withTimeout(
+      runProvider(infoPagePrompt(cluster, samples, GUIDES, evidence, issues), { cwd }, providers, cfg, "enrichment"),
+      budget
+    );
+    const draft = result.parsed as InfoPageDraft;
+    issues = validateDraft(draft, cluster, samples);
+    if (issues.length === 0) return draft;
+    onLog?.(
+      `info-collect: ${cluster.key} draft round ${round + 1} failed validation — ${issues.slice(0, 3).join("; ")}`
+    );
+  }
+  onLog?.(`info-collect: ${cluster.key} abandoned — validation still failing after a repair round`);
+  return null;
+}
+
+/**
+ * Adversarial second opinion, routed to the review provider. An accepted
+ * draft ships; a revision must clear the same deterministic checks before it
+ * does, so the reviewer cannot introduce the shape problems it was fixing.
+ */
+async function reviewPage(
+  cluster: ClusterCandidate,
+  samples: ClusterSample[],
+  draft: InfoPageDraft,
+  providers: Record<string, LlmProvider>,
+  cfg: ErrlookupConfig,
+  cwd: string,
+  budget: number,
+  onLog?: (msg: string) => void
+): Promise<InfoPageDraft | null> {
+  const result = await withTimeout(
+    runProvider(reviewPrompt(cluster, samples, draft), { cwd }, providers, cfg, "review"),
+    budget
+  );
+  const review = result.parsed as DraftReview;
+  if (review?.verdict === "accept") return draft;
+
+  const issues = (review?.issues ?? []).map(String);
+  if (!review?.revision) {
+    onLog?.(
+      `info-collect: ${cluster.key} rejected by review, no revision offered — ${issues.slice(0, 3).join("; ") || "no reason given"}`
+    );
+    return null;
+  }
+  const remaining = validateDraft(review.revision, cluster, samples);
+  if (remaining.length > 0) {
+    onLog?.(`info-collect: ${cluster.key} revision failed validation — ${remaining.slice(0, 3).join("; ")}`);
+    return null;
+  }
+  onLog?.(`info-collect: ${cluster.key} revised by review — ${issues.slice(0, 2).join("; ")}`);
+  return review.revision;
 }
 
 const MAX_ERROR_IDS = 50;
