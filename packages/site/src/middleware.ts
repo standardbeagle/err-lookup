@@ -31,6 +31,12 @@ function ttlOf(res: Response): number {
 }
 
 export const onRequest = defineMiddleware(async (context, next) => {
+  // Prerendering runs this middleware too, with a synthetic request. There is
+  // no visitor to log, no edge cache to consult, and reading the headers of
+  // that request emits an Astro warning on every page — ~1,500 lines of noise
+  // per build, which is how a warning that matters gets missed.
+  if (context.isPrerendered) return next();
+
   // Canonical host: crawlers reached the production mirror via errlookup.pages.dev
   // links and burned duplicate renders there. Exact-host match keeps preview
   // deployments (<hash>.errlookup.pages.dev) reachable; static-excluded paths
