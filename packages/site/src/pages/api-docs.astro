@@ -21,6 +21,7 @@ const examples = [
       <tr><td><code>GET /api/search?q=&lt;message&gt;</code></td><td>Scored matches for a raw error message. Optional <code>repo=owner/name</code>, <code>limit</code> (max 25).</td></tr>
       <tr><td><code>GET /api/errors/&#123;id&#125;</code></td><td>Full ErrorEntry record by id.</td></tr>
       <tr><td><code>GET /api/repos</code></td><td>Analyzed repositories with error counts.</td></tr>
+      <tr><td><code>GET /api/tags</code></td><td>Background error families with record and repo counts, and the article covering each. <code>?uncovered=1</code> returns only the families with no article yet, largest first; <code>?minErrors=n</code> and <code>?limit=n</code> narrow the list.</td></tr>
     </tbody>
   </table>
   <pre>curl "https://errors.standardbeagle.com/api/search?q=Request+failed+with+status+code+404"</pre>

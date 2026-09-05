@@ -41,6 +41,28 @@ describe("Pages Functions API", () => {
     expect(body.record.documentation.length).toBeGreaterThan(10);
   });
 
+  it("tags returns the family vocabulary, and can return only the uncovered families", async () => {
+    const res = await call("/api/tags");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      tags: { tag: string; errorCount: number; infoSlug: string | null; infoUrl: string | null }[];
+      total: number;
+      covered: number;
+    };
+    expect(body.total).toBe(2);
+    expect(body.covered).toBe(1);
+    // Largest family first, and a covered family carries a usable link.
+    expect(body.tags[0]!.tag).toBe("http-status-rejected");
+    expect(body.tags[0]!.infoUrl).toContain("/info/err-bad-response/");
+    expect(body.tags[1]!.infoUrl).toBeNull();
+
+    const gap = (await (await call("/api/tags?uncovered=1")).json()) as { tags: { tag: string }[] };
+    expect(gap.tags.map((t) => t.tag)).toEqual(["type-assertion-failed"]);
+
+    const big = (await (await call("/api/tags?minErrors=2")).json()) as { tags: { tag: string }[] };
+    expect(big.tags.map((t) => t.tag)).toEqual(["http-status-rejected"]);
+  });
+
   it("repos lists repositories; bad input 400s; unknown 404s; OPTIONS preflights", async () => {
     const repos = (await (await call("/api/repos")).json()) as { repos: unknown[] };
     expect(repos.repos.length).toBeGreaterThan(0);

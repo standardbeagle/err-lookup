@@ -23,6 +23,7 @@ import {
   type IndexError,
   type InfoPageEntry,
   type InfoPageIndexEntry,
+  type TagFamily,
 } from "@errlookup/schema";
 
 export interface ExportOptions {
@@ -277,6 +278,13 @@ export function buildDataset(
     ...validInfoPages.map((p) => ({ relPath: `info/${p.slug}.json`, content: JSON.stringify(p) })),
   ];
 
+  // tags.json — the published background-family vocabulary. Both a read API
+  // (/api/tags) and the thing that makes cross-linking auditable: a family
+  // with records and no infoSlug is a background article the corpus is asking
+  // for, and the number of them is the coverage gap in one line.
+  const tagsJson = buildTagsJson(allErrors, validInfoPages);
+  const tagsStr = JSON.stringify(tagsJson);
+
   // manifest.json — MCP freshness poll target (§5.1)
   const indexStr = JSON.stringify(indexJson);
   // Gzipped: the raw index crossed Cloudflare Pages' 25 MiB per-file cap at
@@ -294,6 +302,7 @@ export function buildDataset(
     { relPath: "index.json.gz", content: indexGz },
     { relPath: "repos.json", content: reposStr },
     { relPath: "published.json", content: publishedJson },
+    { relPath: "tags.json", content: tagsStr },
     ...repoFiles,
     ...searchFiles,
     ...infoFiles,
@@ -311,6 +320,7 @@ export function buildDataset(
     },
     repos: { path: "/data/repos.json", bytes: Buffer.byteLength(reposStr), sha256: sha256(reposStr) },
     published: { path: "/data/published.json", bytes: Buffer.byteLength(publishedJson), sha256: sha256(publishedJson) },
+    tags: { path: "/data/tags.json", bytes: Buffer.byteLength(tagsStr), sha256: sha256(tagsStr) },
     searchSummary: {
       path: "/data/search/summary.json",
       bytes: Buffer.byteLength(summaryStr),
@@ -384,3 +394,36 @@ function defaultOutDir(): string {
 
 // re-export for tests / CLI
 export { defaultOutDir as resolveDefaultOutDir };
+
+/**
+ * The background-family vocabulary as published: every family with its record
+ * and repo counts, and the article covering it when one exists.
+ *
+ * Sorted by record count so the biggest uncovered family is the first row
+ * without an infoSlug — the collector's backlog, readable without a database.
+ */
+export function buildTagsJson(
+  errors: readonly ErrorEntry[],
+  infoPages: readonly InfoPageEntry[]
+): TagFamily[] {
+  const slugByTag = new Map<string, string>();
+  for (const p of infoPages) {
+    if (p.clusterKey.startsWith("tag:")) slugByTag.set(p.clusterKey.slice(4), p.slug);
+  }
+  const counts = new Map<string, { errorCount: number; repos: Set<string> }>();
+  for (const e of errors) {
+    if (!e.backgroundTag) continue;
+    const cur = counts.get(e.backgroundTag) ?? { errorCount: 0, repos: new Set<string>() };
+    cur.errorCount++;
+    cur.repos.add(e.repo);
+    counts.set(e.backgroundTag, cur);
+  }
+  return [...counts.entries()]
+    .map(([tag, c]): TagFamily => ({
+      tag,
+      errorCount: c.errorCount,
+      repoCount: c.repos.size,
+      infoSlug: slugByTag.get(tag) ?? null,
+    }))
+    .sort((a, b) => b.errorCount - a.errorCount || a.tag.localeCompare(b.tag));
+}

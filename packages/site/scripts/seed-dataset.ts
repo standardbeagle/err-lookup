@@ -234,6 +234,14 @@ write("info/index.json", [
 ]);
 write(`info/${infoPage.slug}.json`, infoPage);
 
+// The published background-family vocabulary (/api/tags). One covered family
+// and one uncovered one, so the endpoint's `uncovered` filter has both cases.
+const tagsJson = [
+  { tag: "http-status-rejected", errorCount: 2, repoCount: 1, infoSlug: infoPage.slug },
+  { tag: "type-assertion-failed", errorCount: 1, repoCount: 1, infoSlug: null },
+];
+write("tags.json", JSON.stringify(tagsJson));
+
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 const manifest = {
   schemaVersion: 2,
@@ -249,6 +257,11 @@ const manifest = {
       rawSha256: sha(indexJson),
     },
     repos: { path: "/data/repos.json", bytes: Buffer.byteLength(reposJson), sha256: sha(reposJson) },
+    tags: {
+      path: "/data/tags.json",
+      bytes: Buffer.byteLength(JSON.stringify(tagsJson)),
+      sha256: sha(JSON.stringify(tagsJson)),
+    },
   },
 };
 write("manifest.json", manifest);

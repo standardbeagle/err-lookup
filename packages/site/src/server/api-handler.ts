@@ -11,9 +11,11 @@
  *   GET /api/search?q=<message>[&repo=owner/name][&limit=n]
  *   GET /api/errors/<id>
  *   GET /api/repos
+ *   GET /api/tags[?uncovered=1][&minErrors=n][&limit=n]
  */
 import { shardedSearch, lookupById, type ShardJsonFetcher } from "../../../schema/src/search-core";
-import { siteErrorUrl } from "../../../mcp/src/base-url";
+import type { TagFamily } from "../../../schema/src/tags";
+import { siteErrorUrl, siteBaseUrl } from "../../../mcp/src/base-url";
 
 interface Env {
   ASSETS: { fetch: (req: Request | string) => Promise<Response> };
@@ -107,10 +109,35 @@ export const onRequest = async (ctx: { request: Request; env: Env }): Promise<Re
     return json({ error: undefined, record: full, datasetVersion: manifest.datasetVersion }, 200, 3600);
   }
 
+  if (path === "/api/tags") {
+    // The background-family vocabulary. `uncovered=1` returns only families
+    // with no article yet, largest first — the collector's backlog, and the
+    // list an outside contributor would need to write one.
+    const all = (await assetJson<TagFamily[]>(env, url.origin, "/data/tags.json")) ?? [];
+    const minErrors = Math.max(0, Number.parseInt(url.searchParams.get("minErrors") ?? "0", 10) || 0);
+    const uncovered = url.searchParams.get("uncovered") === "1";
+    const limit = Math.min(Number.parseInt(url.searchParams.get("limit") ?? "200", 10) || 200, 2000);
+    const tags = all
+      .filter((t) => t.errorCount >= minErrors && (!uncovered || t.infoSlug === null))
+      .slice(0, limit)
+      .map((t) => ({
+        ...t,
+        infoUrl: t.infoSlug ? `${siteBaseUrl()}/info/${t.infoSlug}/` : null,
+      }));
+    return json(
+      { tags, total: all.length, covered: all.filter((t) => t.infoSlug !== null).length, datasetVersion: manifest.datasetVersion },
+      200,
+      3600
+    );
+  }
+
   if (path === "/api/repos") {
     const repos = await assetJson<unknown[]>(env, url.origin, "/data/repos.json");
     return json({ repos: repos ?? [], datasetVersion: manifest.datasetVersion }, 200, 300);
   }
 
-  return json({ error: "unknown endpoint", endpoints: ["/api/search?q=", "/api/errors/:id", "/api/repos"] }, 404);
+  return json(
+    { error: "unknown endpoint", endpoints: ["/api/search?q=", "/api/errors/:id", "/api/repos", "/api/tags"] },
+    404
+  );
 };
