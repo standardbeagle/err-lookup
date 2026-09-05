@@ -220,6 +220,40 @@ describe("tag backfill", () => {
     }
   });
 
+  it("repairs an article stranded by an earlier fold", () => {
+    const { db, raw } = openDb(tmpDbPath());
+    try {
+      // The records already moved in a previous pass; the article did not.
+      seed(db, "a/one", "missing-env-var", 30);
+      db.insert(infoPages)
+        .values({
+          slug: "environment-variable-missing",
+          clusterKey: "tag:environment-variable-missing",
+          title: "t",
+          summary: "s",
+          background: "b",
+          commonCauses: [],
+          fixes: [],
+          guideSlugs: [],
+          errorIds: [],
+          errorCount: 6,
+          repoCount: 1,
+          generatedAt: "2026-09-05T00:00:00Z",
+        })
+        .run();
+
+      const plan = planTagBackfill(db);
+      expect(plan.merges).toEqual([]);
+      expect(plan.infoPageMoves).toHaveLength(1);
+      const res = applyTagBackfill(db, plan);
+      expect(res.recordsRewritten).toBe(0);
+      expect(res.pagesMoved).toBe(1);
+      expect(tagVocabulary(db)[0]!.infoSlug).toBe("environment-variable-missing");
+    } finally {
+      raw.close();
+    }
+  });
+
   it("is idempotent — a second pass finds nothing to do", () => {
     const { db, raw } = fixture();
     try {

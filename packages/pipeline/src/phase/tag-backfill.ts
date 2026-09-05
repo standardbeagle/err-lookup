@@ -73,11 +73,15 @@ export function planTagBackfill(db: Db, vocabulary: TagFamily[] = tagVocabulary(
     SELECT slug, cluster_key FROM info_pages WHERE cluster_key LIKE 'tag:%'
   `);
   const coveredBy = new Map(pages.map((p) => [p.cluster_key, p.slug]));
-  const mergeByFrom = new Map(merges.map((m) => [m.from, m.to]));
   const infoPageMoves: InfoPageMove[] = [];
   for (const p of pages) {
-    const to = mergeByFrom.get(p.cluster_key.slice(4));
-    if (!to) continue;
+    // Resolved, not read off the merge list: an article stranded by an
+    // earlier fold has no merge left to point at it, because its family no
+    // longer has the records that would put it in the vocabulary. Asking the
+    // resolver where its name belongs repairs that state as well as creating
+    // it correctly.
+    const to = resolveTag(p.cluster_key.slice(4), index);
+    if (!to || to === p.cluster_key.slice(4)) continue;
     const destination = `tag:${to}`;
     const holder = coveredBy.get(destination);
     infoPageMoves.push({
