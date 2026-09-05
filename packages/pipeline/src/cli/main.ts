@@ -13,6 +13,8 @@ import { publishDataset, rowToErrorEntry } from "../exporter/index.js";
 import { resetRepo, reposByStatus, purgeOrphanedJobs, errorBySlug, updateErrorFields, recordPhase } from "../db/store.js";
 import { runReviewOne, parseReviewTarget } from "../phase/review.js";
 import { collectInfoPages } from "../info/collector.js";
+import { tagVocabulary } from "../phase/tag-vocabulary.js";
+import { planTagBackfill, applyTagBackfill } from "../phase/tag-backfill.js";
 import { printStatus } from "./status.js";
 
 function dbPath(): string {
@@ -130,6 +132,41 @@ async function main(): Promise<void> {
           (result.remaining > 0 ? `, ~${result.remaining} clusters still unpaged` : "")
       );
       if (result.failed > 0) process.exit(1);
+    } finally {
+      raw.close();
+    }
+    return;
+  }
+
+  if (cmd === "tags") {
+    const { values } = parseArgs({
+      options: {
+        apply: { type: "boolean", default: false },
+        limit: { type: "string", default: "40" },
+      },
+      allowPositionals: true,
+      args: rest,
+    });
+    const { db, raw } = openDb(dbPath());
+    try {
+      const vocabulary = tagVocabulary(db);
+      const covered = vocabulary.filter((f) => f.infoSlug !== null).length;
+      const plan = planTagBackfill(db, vocabulary);
+      console.log(
+        `families: ${plan.familiesBefore} (${covered} with an article) → ${plan.familiesAfter} after folding`
+      );
+      console.log(`records that would change family: ${plan.recordsAffected}`);
+      const limit = Number.parseInt(String(values.limit), 10);
+      for (const m of plan.merges.slice(0, limit)) {
+        console.log(`  ${m.errorCount.toString().padStart(6)}  ${m.from} → ${m.to}`);
+      }
+      if (plan.merges.length > limit) console.log(`  … ${plan.merges.length - limit} more`);
+      if (values.apply) {
+        const rewritten = applyTagBackfill(db, plan);
+        console.log(`applied: ${rewritten} records rewritten`);
+      } else if (plan.merges.length > 0) {
+        console.log("dry run — pass --apply to rewrite");
+      }
     } finally {
       raw.close();
     }
@@ -436,13 +473,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.error("err-lookup pipeline. commands: analyze, scan, collect-info, review, reset, export, status");
+  console.error("err-lookup pipeline. commands: analyze, scan, collect-info, tags, review, reset, export, status");
   console.error("  errlookup analyze <owner/repo> [--phases 1,2,3,4,5] [--force]");
   console.error("  errlookup review [--dry-run] <page-url | owner/repo/slug>...");
   console.error("  errlookup scan <file.txt> [--phases 1,2,3,5] [--force] [--seed-only]");
   console.error("  errlookup reverify <owner/repo>...   # verify pass over published records");
   console.error("  errlookup ping [--provider <name>]    # does the provider answer right now?");
   console.error("  errlookup collect-info [--max-pages 5] [--min-errors 5] [--min-repos 2]");
+  console.error("  errlookup tags [--apply] [--limit 40]   report or fold the background-family vocabulary");
   console.error("  errlookup reset [--failed] [--dry-run] [owner/repo ...]");
   console.error("  errlookup export [--out-dir <path>]");
   console.error("  errlookup status");
