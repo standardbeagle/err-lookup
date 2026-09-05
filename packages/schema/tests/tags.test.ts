@@ -31,6 +31,14 @@ describe("normalizeTag", () => {
     expect(normalizeTag("Invalid Argument Type")).toBe("invalid-argument-value");
   });
 
+  it("every alias target is a spelling the corpus actually uses", () => {
+    // A target nobody writes means the merge renames every member onto a new
+    // name and orphans whatever article the old names had.
+    for (const target of new Set(Object.values(TAG_ALIASES))) {
+      expect(TAG_ALIASES[target], `${target} is itself aliased`).toBeUndefined();
+    }
+  });
+
   it("every alias target is itself a usable tag, and no alias chains", () => {
     for (const [alias, target] of Object.entries(TAG_ALIASES)) {
       expect(normalizeTag(target), `${target} must normalize to itself`).toBe(target);
@@ -54,6 +62,16 @@ describe("tagKey", () => {
 
   it("is empty when the name is only filler", () => {
     expect(tagKey("the-error")).toBe("");
+  });
+
+  it("carries an alias's own spelling variants to the target", () => {
+    // The variants are the point: aliasing only the exact string would leave
+    // "required-field-missing" behind with its own family and its own article.
+    const target = tagKey("missing-required-argument");
+    expect(tagKey("missing-required-field")).toBe(target);
+    expect(tagKey("required-field-missing")).toBe(target);
+    expect(tagKey("missing-required-fields")).toBe(target);
+    expect(tagKey("missing-required-param")).toBe(target);
   });
 });
 
@@ -88,6 +106,14 @@ describe("buildTagIndex", () => {
   it("makes the largest family the canonical spelling", () => {
     const index = buildTagIndex(vocab(["env-var-missing", 12], ["missing-env-var", 945]));
     expect(resolveTag("missing-environment-variable", index)).toBe("missing-env-var");
+  });
+
+  it("a hand-written alias outranks the record count", () => {
+    // missing-required-field is the bigger family here, and still loses: the
+    // count is why the group exists, the alias is the decision about its name.
+    const index = buildTagIndex(vocab(["missing-required-field", 9000], ["missing-required-argument", 3]));
+    expect(resolveTag("missing-required-field", index)).toBe("missing-required-argument");
+    expect(resolveTag("required-field-missing", index)).toBe("missing-required-argument");
   });
 
   it("breaks count ties on the name so builds are reproducible", () => {

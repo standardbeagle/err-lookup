@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { buildTagIndex, tagKey, type TagFamily } from "@errlookup/schema";
+import { buildTagIndex, resolveTag, type TagFamily } from "@errlookup/schema";
 import type { Db } from "../db/client.js";
 import { tagVocabulary } from "./tag-vocabulary.js";
 
@@ -40,8 +40,9 @@ export function planTagBackfill(db: Db, vocabulary: TagFamily[] = tagVocabulary(
   const after = new Set<string>();
 
   for (const f of vocabulary) {
-    const key = tagKey(f.tag);
-    const canonical = key ? (index.get(key) ?? f.tag) : f.tag;
+    // Same function the write path calls, so a plan can never propose
+    // something a fresh analysis would not have written.
+    const canonical = resolveTag(f.tag, index) ?? f.tag;
     after.add(canonical);
     if (canonical !== f.tag) {
       merges.push({ from: f.tag, to: canonical, errorCount: f.errorCount });

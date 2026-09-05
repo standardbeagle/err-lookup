@@ -124,9 +124,9 @@ export const TAG_ALIASES: Record<string, string> = {
   "invalid-parameter-value": "invalid-argument-value",
   "invalid-field-value": "invalid-argument-value",
   "wrong-argument-type": "invalid-argument-value",
-  "config-validation-failed": "invalid-configuration-value",
-  "invalid-config-value": "invalid-configuration-value",
-  "configuration-validation-failed": "invalid-configuration-value",
+  "config-validation-failed": "invalid-config-value",
+  "configuration-validation-failed": "invalid-config-value",
+  "invalid-configuration-value": "invalid-config-value",
   "missing-environment-variable": "missing-env-var",
   "environment-variable-missing": "missing-env-var",
   "unset-environment-variable": "missing-env-var",
@@ -170,18 +170,42 @@ export function normalizeTag(raw: string | null | undefined): string | null {
   return TAG_ALIASES[tag] ?? tag;
 }
 
-/**
- * Spelling-independent identity of a family name. Two tags with the same key
- * name the same family however they were written; an empty key means the tag
- * carried nothing but filler.
- */
-export function tagKey(tag: string): string {
+/** Spelling identity before any hand-maintained merge is considered. */
+function spellingKey(tag: string): string {
   const tokens = tag
     .split("-")
     .map((t) => EXPANSIONS[t] ?? t)
     .map(singular)
     .filter((t) => t.length > 0 && !FILLER.has(t));
   return [...new Set(tokens)].sort().join(" ");
+}
+
+/**
+ * Alias groups live at the key level, not the string level.
+ *
+ * Writing the alias only against the exact spelling would leave its own
+ * variants behind: "missing-required-field" would merge into
+ * "missing-required-argument" while "required-field-missing" — the same words
+ * in a different order — kept its own family and its own article. Mapping the
+ * alias's key to the target's key makes every spelling of the alias follow it.
+ */
+const ALIAS_KEYS = new Map<string, string>(
+  Object.entries(TAG_ALIASES).map(([alias, target]) => [spellingKey(alias), spellingKey(target)])
+);
+
+/**
+ * Spelling-independent identity of a family name. Two tags with the same key
+ * name the same family however they were written; an empty key means the tag
+ * carried nothing but filler.
+ */
+export function tagKey(tag: string): string {
+  const key = spellingKey(tag);
+  return ALIAS_KEYS.get(key) ?? key;
+}
+
+/** The name a tag settles on before any vocabulary is consulted. */
+export function canonicalName(tag: string): string {
+  return TAG_ALIASES[tag] ?? tag;
 }
 
 /** A family in the published vocabulary, with the article that covers it. */
@@ -208,7 +232,11 @@ export function buildTagIndex(vocabulary: readonly TagFamily[]): Map<string, str
       best.set(key, f);
     }
   }
-  return new Map([...best].map(([key, f]) => [key, f.tag]));
+  // The winner's canonical name, not its raw spelling: when the largest member
+  // of a group is itself an alias, the alias target is what everything folds
+  // onto. A hand-written merge outranks a record count on purpose — the count
+  // is why the group exists, the alias is the decision about what to call it.
+  return new Map([...best].map(([key, f]) => [key, canonicalName(f.tag)]));
 }
 
 /**
@@ -225,5 +253,5 @@ export function resolveTag(raw: string | null | undefined, index: Map<string, st
   if (!tag) return null;
   const key = tagKey(tag);
   if (!key) return null;
-  return index.get(key) ?? tag;
+  return index.get(key) ?? canonicalName(tag);
 }
