@@ -1,11 +1,14 @@
-provider "claude" {
-    command "claude"
-    args "-p" "--output-format" "json" "--max-turns" "30" "--permission-mode" "acceptEdits"
-    timeout-ms 600000
-}
 // Bare-run default. Pinned to the model production actually runs
 // (configs/blitz-glm-k3.kdl); the Kimi For Coding plan this used to name has
 // been off every path since 2026-08-28 and its billing cycle is spent.
+//
+// The `claude` provider that used to sit above this one, and be the default
+// primary, was removed on 2026-09-07. No production path had routed to it
+// since 2026-08-28 — all four ops scripts pin ERRLOOKUP_CONFIG to
+// configs/blitz-glm-k3.kdl, which never declared it — and it pinned no model,
+// so a bare run inherited whatever the CLI defaulted to plus the developer's
+// own ~/.claude settings. That made the one code path without an explicit
+// config the only one whose result could not be reproduced.
 provider "opencode" {
     command "opencode"
     args "acp" "--pure"
@@ -15,7 +18,7 @@ provider "opencode" {
     idle-timeout-ms 180000
 }
 defaults {
-    primary "claude"
+    primary "opencode"
     max-concurrent 1
     delay-between-phases-ms 5000
 }

@@ -91,22 +91,31 @@ export interface ErrlookupConfig {
   phaseFallbacks?: Partial<Record<"scope" | "discovery" | "enrichment" | "defense" | "verify" | "verify-escalate" | "review", string>>;
 }
 
+/**
+ * The bare-run default. It pins a model on purpose: the previous default
+ * shelled out to `claude` with `model: null`, so a run with no
+ * ERRLOOKUP_CONFIG used whatever that CLI happened to default to plus the
+ * developer's own ~/.claude settings — a result nobody could reproduce, on a
+ * provider no production path has routed to since 2026-08-28. Production
+ * routing lives in configs/blitz-glm-k3.kdl; this only has to be honest about
+ * what it runs.
+ */
 export const DEFAULT_CONFIG: ErrlookupConfig = {
   providers: {
-    claude: {
-      command: "claude",
-      args: ["-p", "--output-format", "json", "--permission-mode", "acceptEdits"],
+    opencode: {
+      command: "opencode",
+      args: ["acp", "--pure"],
       timeoutMs: 600_000,
       promptMode: "stdin",
-      type: "spawn",
+      type: "acp",
       idleTimeoutMs: 180_000,
-      model: null,
+      model: "zai-coding-plan/glm-5.3-flash",
       modelOptions: null,
       promptDirective: null,
     },
   },
   defaults: {
-    primary: "claude",
+    primary: "opencode",
     fallback: undefined,
     maxConcurrent: 1,
     batchConcurrency: 1,

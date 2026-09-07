@@ -136,7 +136,14 @@ describe("loadConfig", () => {
     // none of the conventional locations exist (vitest cwd is packages/pipeline)
     delete process.env.ERRLOOKUP_CONFIG;
     const cfg = loadConfig();
-    expect(cfg.providers.claude?.command ?? "claude").toBe("claude");
+    // Asserted on the resolved primary rather than a provider name, and
+    // without a `??` default: the previous form ("claude" or else "claude")
+    // passed whether or not the provider it named still existed.
+    expect(cfg.providers[cfg.defaults.primary]).toBeDefined();
+    // A bare run must pin its model. The `claude` default it replaced pinned
+    // none, so its results depended on the CLI's default and the developer's
+    // own settings, and could not be reproduced.
+    expect(cfg.providers[cfg.defaults.primary]!.model).toBeTruthy();
     expect(cfg.defaults.maxConcurrent).toBeGreaterThanOrEqual(1);
   });
 });
