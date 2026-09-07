@@ -36,11 +36,17 @@ MemoryMax=512M
 TasksMax=64
 # Hardening. It talks to one upstream over TLS and writes one snapshot file,
 # so it needs no privileges and nothing else on the filesystem.
+#
+# /tmp is the only writable path because that is where the snapshot goes by
+# default. ProtectSystem=strict does not exempt /tmp, and PrivateTmp stays
+# false so the drain beside it reads the same file. A config that moves
+# `proxy.snapshot` somewhere else must add that path here, or the proxy will
+# fail to start (226/NAMESPACE) rather than silently record nothing.
 NoNewPrivileges=true
 PrivateTmp=false
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/tmp @REPO_ROOT@/data
+ReadWritePaths=/tmp
 
 [Install]
 WantedBy=multi-user.target
