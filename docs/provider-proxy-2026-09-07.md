@@ -56,8 +56,37 @@ the proxy is the only place it is visible.
 
 ## Next step, unchanged in shape
 
-Run a full drain with `proxy.enabled true` and read `statuses` afterwards. A
-429 share near zero says the gate is sized correctly; the 50% seen in one idle
+Run a full drain with the proxy routed and read `statuses` afterwards. A 429
+share near zero says the gate is sized correctly; the 50% seen in one idle
 ping says it is not, but one ping is not a measurement of a drain.
 
 Do not wire anything to depend on these numbers until that run exists.
+
+## How the measurement run is wired on beagle-ab
+
+The production config keeps `proxy.enabled false`, so the deployed file never
+routes anything. The measurement run is switched on with a systemd drop-in
+instead:
+
+```
+/etc/systemd/system/errlookup-scan.service.d/proxy-measure.conf
+  [Service]
+  Environment=ERRLOOKUP_PROXY_ENABLED=1
+```
+
+The drain runs under its usual unit — same caps, same watchdog, same timer —
+and stays supervised. **This file is temporary.** Remove it and restart
+`errlookup-scan.service` to put the drain back on a direct connection.
+
+Two things were tried first and rejected:
+
+- *Waiting for the scan lock to free.* The queue does not empty on a horizon
+  worth waiting for, and `errlookup-scan.service` restarts itself into the
+  lock, so a manual routed drain loses the race and silently exits 0.
+- *Masking the unit* to stop it restarting. That halts production drains for
+  the length of the experiment, and leaves them halted if the session running
+  it dies. The drop-in fails safe in the other direction: worst case the
+  drain keeps running through a proxy that is up and has `Restart=always`.
+
+`errlookup-proxy.service` must be enabled and active before the drop-in goes
+in. A routed call to a dead proxy fails outright.
