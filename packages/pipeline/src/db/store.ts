@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import { eq, desc, and, inArray } from "drizzle-orm";
 import { tx, type Db } from "./client.js";
 import { chunk } from "../util/pool.js";
-import { repositories, errors, jobHistory, type ErrorRow, type NewErrorRow, type RepositoryRow } from "./schema.js";
+// NewErrorRow is NOT imported: this file declares its own below (a row as a
+// phase produces it, without the store's bookkeeping columns), and the
+// schema's $inferInsert alias of the same name shadowed it into a TS2440.
+import { repositories, errors, jobHistory, type ErrorRow, type RepositoryRow } from "./schema.js";
 import type { PhaseName } from "@errlookup/schema";
 
 /**
@@ -141,6 +144,15 @@ const INSERT_CHUNK_ROWS = 500;
 export type NewErrorRow = Omit<ErrorRow, "updatedAt" | "missedRuns">;
 
 /**
+ * What a phase can actually hand to integrateAnalyzedVersion. The honest-
+ * lastmod columns are absent because that function DERIVES them — it compares
+ * each row's content hash against the published one to decide whether
+ * contentChangedAt moves. A caller that supplied them would have its values
+ * overwritten, so the type refuses them.
+ */
+export type AnalyzedErrorRow = Omit<NewErrorRow, "contentHash" | "contentChangedAt">;
+
+/**
  * A published page is never withdrawn because an analysis stopped finding its
  * error. Discovery is an LLM pass over a moving repo, so "not found this time"
  * carries no information about whether the error is real; the only thing it
@@ -214,7 +226,7 @@ export function integrateAnalyzedVersion(
   db: Db,
   repo: string,
   sha: string,
-  rows: NewErrorRow[]
+  rows: AnalyzedErrorRow[]
 ): void {
   tx(db, () => {
     const incoming = new Set(rows.map((r) => r.id));
