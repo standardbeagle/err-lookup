@@ -22,7 +22,7 @@ diff_only=0; [ "${1:-}" = "--diff" ] && diff_only=1
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 changed=()
-for unit in errlookup-scan.service errlookup-scan.timer; do
+for unit in errlookup-scan.service errlookup-scan.timer errlookup-proxy.service; do
   sed -e "s|@REPO_ROOT@|$REPO_ROOT|g" -e "s|@USER@|$RUN_USER|g" -e "s|@PATH@|$RUN_PATH|g" \
     "$SRC/$unit" >"$tmp/$unit"
   grep -q '@[A-Z_]*@' "$tmp/$unit" && { echo "unsubstituted placeholder in $unit" >&2; exit 1; }
@@ -44,4 +44,8 @@ for unit in "${changed[@]}"; do
 done
 sudo systemctl daemon-reload || exit 1
 sudo systemctl enable --now errlookup-scan.timer || exit 1
+# The proxy is installed but NOT enabled here. Starting it is harmless, but
+# routing to it is a config change (proxy.enabled), and enabling a listener
+# nobody asked for on every host is not this script's call:
+#   sudo systemctl enable --now errlookup-proxy
 systemctl list-timers errlookup-scan.timer --no-pager

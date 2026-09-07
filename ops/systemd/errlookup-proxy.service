@@ -1,0 +1,46 @@
+# Rendered by scripts/install-systemd.sh — @REPO_ROOT@, @USER@ and @PATH@
+# are substituted at install time. Edit here, then re-run the installer;
+# the copy in /etc/systemd/system is not the source of truth.
+[Unit]
+Description=err-lookup recording provider proxy (rate-limit headers)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# A daemon, unlike the scan unit: it holds the loopback listener the drain's
+# provider calls go through, so a restart between drains is not enough — it
+# must be up before one starts and stay up across all of them.
+Type=simple
+User=@USER@
+WorkingDirectory=@REPO_ROOT@
+Environment=PATH=@PATH@
+# Same invocation style as the drain (scripts/scan-and-export.sh): pnpm
+# resolves the workspace and `dev` runs the CLI under tsx, so a deploy needs no
+# build step for this unit to pick it up.
+ExecStart=/usr/bin/env pnpm --filter @errlookup/pipeline dev proxy
+# Always restart. While proxy.enabled is true in the config, every provider
+# call routes through this process — a dead proxy is a dead drain, and the
+# read-only recorder has no state to lose across a restart beyond the current
+# snapshot counters.
+Restart=always
+RestartSec=5
+# In-flight completions are already paid for; SIGTERM lets them drain rather
+# than throwing away the tokens they cost.
+KillSignal=SIGTERM
+TimeoutStopSec=120
+
+# It forwards, it does not think: one node process holding sockets. The cap is
+# well above the ~64 connections the listener admits, and low enough that a
+# leak here cannot crowd out the drain beside it.
+MemoryMax=512M
+TasksMax=64
+# Hardening. It talks to one upstream over TLS and writes one snapshot file,
+# so it needs no privileges and nothing else on the filesystem.
+NoNewPrivileges=true
+PrivateTmp=false
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/tmp @REPO_ROOT@/data
+
+[Install]
+WantedBy=multi-user.target
