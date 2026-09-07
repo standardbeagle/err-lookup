@@ -16,6 +16,7 @@ import { collectInfoPages } from "../info/collector.js";
 import { tagVocabulary } from "../phase/tag-vocabulary.js";
 import { planTagBackfill, applyTagBackfill } from "../phase/tag-backfill.js";
 import { printStatus } from "./status.js";
+import { runProxy } from "./proxy.js";
 
 function dbPath(): string {
   return process.env.ERRLOOKUP_DB ?? resolve(process.cwd(), "data", "errlookup.db");
@@ -482,7 +483,12 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.error("err-lookup pipeline. commands: analyze, scan, collect-info, tags, review, reset, export, status");
+  if (cmd === "proxy") {
+    await runProxy(rest);
+    return;
+  }
+
+  console.error("err-lookup pipeline. commands: analyze, scan, collect-info, tags, review, reset, export, proxy, status");
   console.error("  errlookup analyze <owner/repo> [--phases 1,2,3,4,5] [--force]");
   console.error("  errlookup review [--dry-run] <page-url | owner/repo/slug>...");
   console.error("  errlookup scan <file.txt> [--phases 1,2,3,5] [--force] [--seed-only]");
@@ -492,6 +498,7 @@ async function main(): Promise<void> {
   console.error("  errlookup tags [--apply] [--limit 40]   report or fold the background-family vocabulary");
   console.error("  errlookup reset [--failed] [--dry-run] [owner/repo ...]");
   console.error("  errlookup export [--out-dir <path>]");
+  console.error("  errlookup proxy [--limits]           # recording provider proxy; --limits prints the snapshot");
   console.error("  errlookup status");
   process.exit(cmd ? 1 : 0);
 }

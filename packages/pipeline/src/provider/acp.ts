@@ -119,6 +119,49 @@ function isolatedConfigHome(): string {
   return isolatedHome;
 }
 
+
+/**
+ * The opencode config this invocation runs under, delivered through
+ * OPENCODE_CONFIG_CONTENT so nothing on disk is consulted.
+ *
+ * Pure and exported because the provider block is the one part with a merge
+ * rule that can silently do the wrong thing: two different "options" live
+ * under one provider id — the SDK constructor's (`baseURL`, which decides
+ * where calls go) and the per-model call options (reasoning effort, thinking
+ * toggles). They must land in ONE block, because a second block for the same
+ * id replaces the first rather than extending it. A run that lost its
+ * reasoning-effort pin to a baseURL override would look healthy and quietly
+ * produce the low-effort compliance failures the pin exists to prevent.
+ */
+export function opencodeConfig(cfg: ProviderConfig): Record<string, unknown> {
+  // model is "providerId/modelId"; the first "/" splits them, and the model id
+  // itself may contain further slashes.
+  const slash = cfg.model?.indexOf("/") ?? -1;
+  const providerId = slash > 0 ? cfg.model!.slice(0, slash) : "";
+  const modelId = slash > 0 ? cfg.model!.slice(slash + 1) : "";
+
+  const providerBlock: Record<string, unknown> = {};
+  if (cfg.baseUrl) providerBlock.options = { baseURL: cfg.baseUrl };
+  if (modelId && cfg.modelOptions) {
+    providerBlock.models = { [modelId]: { options: cfg.modelOptions } };
+  }
+
+  return {
+    ...(cfg.model ? { model: cfg.model } : {}),
+    ...(providerId && Object.keys(providerBlock).length > 0
+      ? { provider: { [providerId]: providerBlock } }
+      : {}),
+    // No revert snapshots: opencode git-snapshots the session's worktree into
+    // $XDG_DATA_HOME/opencode/snapshot per prompt — wasted IO on a scratch
+    // clone that is deleted after the call, and 2.6GB of dead objects had
+    // accumulated on beagle-ab by 2026-08-31.
+    snapshot: false,
+    // The one MCP the extraction flow keeps: lci code search over the clone.
+    mcp: { lci: { type: "local", command: ["lci", "mcp"], enabled: true } },
+    agent: { build: { tools: toolPolicy() } },
+  };
+}
+
 export class AcpProvider implements LlmProvider {
   constructor(readonly name: string, private readonly cfg: ProviderConfig) {}
 
@@ -151,27 +194,7 @@ export class AcpProvider implements LlmProvider {
     // invocation, state dies with it. ERRLOOKUP_ACP_DB overrides with a file
     // path when a debugging run wants inspectable transcripts.
     env.OPENCODE_DB = process.env.ERRLOOKUP_ACP_DB ?? ":memory:";
-    // model is "providerId/modelId"; modelOptions pin per-model settings
-    // (reasoning effort, thinking toggles) the same way the user's static
-    // opencode.json pins them — OPENCODE_CONFIG_CONTENT merges over it.
-    // First "/" splits provider from model; the model id itself may contain "/".
-    const slash = this.cfg.model?.indexOf("/") ?? -1;
-    const providerId = slash > 0 ? this.cfg.model!.slice(0, slash) : "";
-    const modelId = slash > 0 ? this.cfg.model!.slice(slash + 1) : "";
-    env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
-      ...(this.cfg.model ? { model: this.cfg.model } : {}),
-      ...(providerId && modelId && this.cfg.modelOptions
-        ? { provider: { [providerId]: { models: { [modelId]: { options: this.cfg.modelOptions } } } } }
-        : {}),
-      // No revert snapshots: opencode git-snapshots the session's worktree
-      // into $XDG_DATA_HOME/opencode/snapshot per prompt — wasted IO on a
-      // scratch clone that is deleted after the call, and 2.6GB of dead
-      // objects had accumulated on beagle-ab by 2026-08-31.
-      snapshot: false,
-      // The one MCP the extraction flow keeps: lci code search over the clone.
-      mcp: { lci: { type: "local", command: ["lci", "mcp"], enabled: true } },
-      agent: { build: { tools: toolPolicy() } },
-    });
+    env.OPENCODE_CONFIG_CONTENT = JSON.stringify(opencodeConfig(this.cfg));
 
     let child: ChildProcess;
     try {

@@ -81,6 +81,7 @@ describe("config mapping", () => {
       model: null,
       modelOptions: null,
       promptDirective: null,
+      baseUrl: null,
     });
     expect(cfg.providers.claude.args).toContain("--max-turns");
     expect(cfg.defaults).toEqual({
@@ -145,5 +146,8 @@ describe("loadConfig", () => {
     // own settings, and could not be reproduced.
     expect(cfg.providers[cfg.defaults.primary]!.model).toBeTruthy();
     expect(cfg.defaults.maxConcurrent).toBeGreaterThanOrEqual(1);
+    // The proxy is configured but never on by default: one that is routed to
+    // and not running fails every call.
+    expect(cfg.proxy.enabled).toBe(false);
   });
 });

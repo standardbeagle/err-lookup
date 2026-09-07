@@ -17,6 +17,17 @@ provider "opencode" {
     timeout-ms 600000
     idle-timeout-ms 180000
 }
+// Recording proxy (src/proxy): forwards provider traffic byte for byte and
+// publishes the rate-limit headers the spawned CLI would otherwise swallow.
+// Off by default — a configured proxy that is not running fails every call.
+// Start it with `errlookup proxy`, then set enabled true here.
+proxy {
+    enabled false
+    host "127.0.0.1"
+    port 8919
+    upstream "https://api.z.ai/api/coding/paas/v4"
+    provider-ids "zai-coding-plan"
+}
 defaults {
     primary "opencode"
     max-concurrent 1

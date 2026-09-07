@@ -35,6 +35,35 @@ export interface ProviderConfig {
    * value; null keeps the stock opener.
    */
   promptDirective: string | null;
+  /**
+   * ACP only: overrides the model provider's API endpoint, injected into
+   * OPENCODE_CONFIG_CONTENT as provider.<id>.options.baseURL. Normally left
+   * null and filled in by buildProviders when the recording proxy is on;
+   * KDL `base-url` sets it directly for a one-off run against another host.
+   */
+  baseUrl: string | null;
+}
+
+/**
+ * The recording proxy (src/proxy). Off unless a `proxy` node says otherwise,
+ * because a proxy that is configured but not running breaks every call.
+ */
+export interface ProxyConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  /** Real API endpoint, path prefix included. */
+  upstream: string;
+  /**
+   * opencode provider ids routed through it (the part of a model id before
+   * the first "/"). A provider not listed keeps talking to its own endpoint,
+   * so one proxy per upstream is enough.
+   */
+  providerIds: string[];
+  maxBodyBytes: number;
+  maxConnections: number;
+  /** Where the limit snapshot is published; empty uses the tmpdir default. */
+  snapshotPath: string;
 }
 
 export interface ErrlookupConfig {
@@ -89,7 +118,19 @@ export interface ErrlookupConfig {
    * cycle is spent, without giving the bulk phases a fallback they don't want.
    */
   phaseFallbacks?: Partial<Record<"scope" | "discovery" | "enrichment" | "defense" | "verify" | "verify-escalate" | "review", string>>;
+  proxy: ProxyConfig;
 }
+
+export const DEFAULT_PROXY: ProxyConfig = {
+  enabled: false,
+  host: "127.0.0.1",
+  port: 8919,
+  upstream: "https://api.z.ai/api/coding/paas/v4",
+  providerIds: ["zai-coding-plan"],
+  maxBodyBytes: 32 * 1024 * 1024,
+  maxConnections: 64,
+  snapshotPath: "",
+};
 
 /**
  * The bare-run default. It pins a model on purpose: the previous default
@@ -112,6 +153,7 @@ export const DEFAULT_CONFIG: ErrlookupConfig = {
       model: "zai-coding-plan/glm-5.3-flash",
       modelOptions: null,
       promptDirective: null,
+      baseUrl: null,
     },
   },
   defaults: {
@@ -128,6 +170,7 @@ export const DEFAULT_CONFIG: ErrlookupConfig = {
     delayBetweenPhasesMs: 5_000,
     rescanShare: 0.25,
   },
+  proxy: structuredClone(DEFAULT_PROXY),
 };
 
 /** Clamp a concurrency knob to a sane positive integer. */
@@ -188,6 +231,9 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
         promptDirective: childByName(node, "prompt-directive")?.values[0] != null
           ? asString(childByName(node, "prompt-directive")?.values[0], "")
           : null,
+        baseUrl: childByName(node, "base-url")?.values[0] != null
+          ? asString(childByName(node, "base-url")?.values[0], "")
+          : null,
       };
     } else if (node.name === "phase-providers") {
       cfg.phaseProviders = {};
@@ -201,6 +247,20 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
         const v = childByName(node, phase)?.values[0];
         if (typeof v === "string" && v) cfg.phaseFallbacks[phase] = v;
       }
+    } else if (node.name === "proxy") {
+      const providerIds = (childByName(node, "provider-ids")?.values ?? [])
+        .map((v) => asString(v, ""))
+        .filter(Boolean);
+      cfg.proxy = {
+        enabled: childByName(node, "enabled")?.values[0] !== false,
+        host: asString(childByName(node, "host")?.values[0], DEFAULT_PROXY.host),
+        port: asConcurrency(childByName(node, "port")?.values[0], DEFAULT_PROXY.port),
+        upstream: asString(childByName(node, "upstream")?.values[0], DEFAULT_PROXY.upstream),
+        providerIds: providerIds.length > 0 ? providerIds : [...DEFAULT_PROXY.providerIds],
+        maxBodyBytes: asConcurrency(childByName(node, "max-body-bytes")?.values[0], DEFAULT_PROXY.maxBodyBytes),
+        maxConnections: asConcurrency(childByName(node, "max-connections")?.values[0], DEFAULT_PROXY.maxConnections),
+        snapshotPath: asString(childByName(node, "snapshot")?.values[0], ""),
+      };
     } else if (node.name === "defaults") {
       cfg.defaults = {
         primary: asString(childByName(node, "primary")?.values[0], cfg.defaults.primary),
@@ -265,6 +325,9 @@ function mergeWithDefaults(partial: Record<string, unknown>): ErrlookupConfig {
   }
   if (partial.defaults && typeof partial.defaults === "object") {
     cfg.defaults = { ...cfg.defaults, ...(partial.defaults as Partial<ErrlookupConfig["defaults"]>) };
+  }
+  if (partial.proxy && typeof partial.proxy === "object") {
+    cfg.proxy = { ...cfg.proxy, ...(partial.proxy as Partial<ProxyConfig>) };
   }
   return cfg;
 }
