@@ -54,6 +54,45 @@ the proxy is the only place it is visible.
 - The quota regexes in `provider/run.ts` stay. They catch the cases the SDK
   gives up on, and nothing here replaces them.
 
+## Result of the first routed drain (2026-09-07, ~50 minutes)
+
+The production drain on beagle-ab, routed through the proxy by the drop-in
+below, at the deployed `provider-max-concurrent 10`:
+
+```
+requests: 1745
+statuses: { "200": 713, "429": 1032 }   ->  59.1% of all requests were 429
+headerNamesSeen: [ "date", "x-request-id" ]
+```
+
+**The drain logged none of it.** Grepping that run's scan log for
+`rate.?limit|429|breaker|FAILED` returns zero. Over a thousand throttled
+requests, and the pipeline's own record of the run is silent. That is the
+ping's finding at scale: opencode's SDK absorbs the 429 and retries, so
+`provider/run.ts` never sees one until the SDK gives up entirely.
+
+Still no rate-limit headers — only `date` and `x-request-id`, over 1,745
+responses. The header route is closed, confirmed on a real sample rather than
+a single ping.
+
+### What the ratio implies
+
+Successful requests landed at roughly 14/minute while the drain issued about
+35/minute. If the account's ceiling is what actually gets through, the gate is
+driving something like **2.4x the rate the account will serve**, and ~59% of
+issued requests are pure waste — latency spent, no work done.
+
+That is an inference from one window, not a measured ceiling. Establishing
+the ceiling needs a second run at a lower `provider-max-concurrent` with the
+same measurement: if successful requests per minute hold steady while the 429
+share collapses, the gate is provably too high and the excess was never
+buying throughput. That run has not been done.
+
+It does supply a mechanism for a symptom already in the notes — the failure
+breaker tripping every ~10-25 repos on "rate-limit storms". A storm is not an
+anomaly arriving from outside; it is the tail of a distribution the drain sits
+in permanently and cannot see.
+
 ## Next step, unchanged in shape
 
 Run a full drain with the proxy routed and read `statuses` afterwards. A 429
@@ -76,7 +115,9 @@ instead:
 
 The drain runs under its usual unit — same caps, same watchdog, same timer —
 and stays supervised. **This file is temporary.** Remove it and restart
-`errlookup-scan.service` to put the drain back on a direct connection.
+`errlookup-scan.service` to put the drain back on a direct connection. It was
+removed after the measurement above; production runs direct again, and
+`errlookup-proxy.service` stays up carrying no traffic.
 
 Two things were tried first and rejected:
 
