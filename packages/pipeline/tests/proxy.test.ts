@@ -1,11 +1,11 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { LimitRecorder, readLimitSnapshot, recordedHeaders } from "../src/proxy/limits.js";
 import { createProxyServer, listen } from "../src/proxy/server.js";
-import { mapConfig, DEFAULT_CONFIG } from "../src/config/index.js";
+import { mapConfig, loadConfig, DEFAULT_CONFIG } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
 import { proxyBaseUrl } from "../src/providers.js";
 import { opencodeConfig } from "../src/provider/acp.js";
@@ -252,6 +252,25 @@ describe("proxy routing", () => {
         ].join("\n")
       )
     );
+
+  it("honours ERRLOOKUP_PROXY_ENABLED over the config file", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "errlookup-cfg-")), "c.kdl");
+    dirs.push(dirname(path));
+    writeFileSync(
+      path,
+      ["proxy {", "  enabled false", "}", "defaults {", '  primary "opencode"', "}"].join("\n")
+    );
+    try {
+      process.env.ERRLOOKUP_PROXY_ENABLED = "1";
+      expect(loadConfig(path).proxy.enabled).toBe(true);
+      process.env.ERRLOOKUP_PROXY_ENABLED = "0";
+      expect(loadConfig(path).proxy.enabled).toBe(false);
+      delete process.env.ERRLOOKUP_PROXY_ENABLED;
+      expect(loadConfig(path).proxy.enabled).toBe(false);
+    } finally {
+      delete process.env.ERRLOOKUP_PROXY_ENABLED;
+    }
+  });
 
   it("is off unless a proxy node enables it", () => {
     expect(DEFAULT_CONFIG.proxy.enabled).toBe(false);

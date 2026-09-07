@@ -53,6 +53,19 @@ provider "glm53" {
     idle-timeout-ms 180000
     model-options "{\"thinking\":{\"type\":\"disabled\"}}"
 }
+// Recording proxy (src/proxy). OFF here: routing production through a
+// process that has never carried a drain is a risk taken deliberately, not by
+// deploying a config. Measure first with ERRLOOKUP_PROXY_ENABLED=1 on a
+// manual run, which leaves this file — and so the scheduled timer — alone.
+// The proxy service must be up before either: a routed call to a dead proxy
+// fails outright.
+proxy {
+    enabled false
+    host "127.0.0.1"
+    port 8919
+    upstream "https://api.z.ai/api/coding/paas/v4"
+    provider-ids "zai-coding-plan"
+}
 defaults {
     primary "flash"
     // Concurrency deliberately UNCHANGED from the glm-5.2 era (user call,

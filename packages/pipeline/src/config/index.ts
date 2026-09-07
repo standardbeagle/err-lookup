@@ -49,6 +49,12 @@ export interface ProviderConfig {
  * because a proxy that is configured but not running breaks every call.
  */
 export interface ProxyConfig {
+  /**
+   * ERRLOOKUP_PROXY_ENABLED=1 forces this on for one run. It exists so the
+   * proxy can be measured under a real drain without editing the config the
+   * systemd timer reads — a scheduled drain firing mid-experiment would
+   * otherwise pick up the routing change and take the risk with it.
+   */
   enabled: boolean;
   host: string;
   port: number;
@@ -291,6 +297,13 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
  * Load errlookup.config.kdl (or .json) from `cwd` (or explicit path).
  * Returns DEFAULT_CONFIG if no file is present.
  */
+function withProxyOverride(cfg: ErrlookupConfig): ErrlookupConfig {
+  const flag = process.env.ERRLOOKUP_PROXY_ENABLED;
+  if (flag === "1") cfg.proxy = { ...cfg.proxy, enabled: true };
+  else if (flag === "0") cfg.proxy = { ...cfg.proxy, enabled: false };
+  return cfg;
+}
+
 export function loadConfig(configPath?: string): ErrlookupConfig {
   // An explicitly requested config (argument or env) must exist — silently
   // falling back to defaults would run the wrong provider on real budgets.
@@ -299,7 +312,7 @@ export function loadConfig(configPath?: string): ErrlookupConfig {
     const p = resolve(explicit);
     if (!existsSync(p)) throw new Error(`config not found: ${p} (from ${configPath ? "argument" : "ERRLOOKUP_CONFIG"})`);
     const src = readFileSync(p, "utf8");
-    return p.endsWith(".json") ? mergeWithDefaults(JSON.parse(src)) : mapConfig(parseKdl(src));
+    return withProxyOverride(p.endsWith(".json") ? mergeWithDefaults(JSON.parse(src)) : mapConfig(parseKdl(src)));
   }
 
   const candidates = [
@@ -309,13 +322,13 @@ export function loadConfig(configPath?: string): ErrlookupConfig {
   ];
 
   const path = candidates.find((p) => existsSync(p));
-  if (!path) return structuredClone(DEFAULT_CONFIG);
+  if (!path) return withProxyOverride(structuredClone(DEFAULT_CONFIG));
 
   const src = readFileSync(path, "utf8");
   if (path.endsWith(".json")) {
-    return mergeWithDefaults(JSON.parse(src));
+    return withProxyOverride(mergeWithDefaults(JSON.parse(src)));
   }
-  return mapConfig(parseKdl(src));
+  return withProxyOverride(mapConfig(parseKdl(src)));
 }
 
 function mergeWithDefaults(partial: Record<string, unknown>): ErrlookupConfig {
