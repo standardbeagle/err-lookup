@@ -93,6 +93,53 @@ breaker tripping every ~10-25 repos on "rate-limit storms". A storm is not an
 anomaly arriving from outside; it is the tail of a distribution the drain sits
 in permanently and cannot see.
 
+## Second arm: the same window at `provider-max-concurrent 4`
+
+Same drain, same corpus, same proxy, counters reset, window timed from first
+traffic exactly as the first arm was.
+
+| | gate 10 | gate 4 |
+|---|---|---|
+| requests | 1745 | 445 |
+| 200 | 713 | 443 |
+| 429 | 1032 | **2** |
+| 429 share | 59.1% | **0.4%** |
+| successes/min | ~14.3 | ~8.9 |
+
+The gate really was 4: while the run was live, gate slots 0-3 were held by the
+drain's pid and slots 4-9 were stale directories left by the previous arm's
+killed process. (`MachineGate` reclaims a dead holder's slot lazily, on the
+next acquire that needs it — the stale dirs are not a leak, but a slot-dir
+count is not a reading of the live gate.)
+
+### What this settles, and what it does not
+
+**Settled: the throttling is self-inflicted and avoidable.** Dropping the gate
+from 10 to 4 took the 429 share from 59.1% to 0.4%. Three quarters of the
+request volume at gate 10 — 1,300 of 1,745 — bought nothing but latency.
+
+**Not settled: whether gate 10 delivers more work.** Successful requests per
+minute fell from ~14.3 to ~8.9, a 38% drop. If a successful request is
+proportional to work done, gate 10 is genuinely extracting more despite the
+waste, and the 429s are its price.
+
+Repo completions point the other way — analyzed went 1628 → 1634 (+6) across
+the first window and 1634 → 1642 (+8) across the second — but those counts
+are noisy: different repos, different sizes, seeding moving `pending`
+underneath, and a rescan counting the same as an import. They are indicative,
+not a measurement.
+
+There is a mechanism that would reconcile the two: at gate 10 the queue is
+deeper, per-call latency is higher, and calls time out and get split
+(`enrichment batch ... timed out — retrying as halves` appears in these logs).
+A split batch spends more successful requests to produce the same records. If
+that is what is happening, successful-requests/min overstates gate 10's output
+and repo completions are the truer signal.
+
+**To settle it, count records, not requests.** Records produced per window is
+the deliverable; requests are the cost. Two longer windows measured on records
+would decide it, and nothing here should be treated as deciding it early.
+
 ## Next step, unchanged in shape
 
 Run a full drain with the proxy routed and read `statuses` afterwards. A 429
@@ -100,6 +147,7 @@ share near zero says the gate is sized correctly; the 50% seen in one idle
 ping says it is not, but one ping is not a measurement of a drain.
 
 Do not wire anything to depend on these numbers until that run exists.
+(Done — see the second arm above. The gate question it raised is still open.)
 
 ## How the measurement run is wired on beagle-ab
 
