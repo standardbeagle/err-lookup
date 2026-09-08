@@ -297,10 +297,32 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
  * Load errlookup.config.kdl (or .json) from `cwd` (or explicit path).
  * Returns DEFAULT_CONFIG if no file is present.
  */
-function withProxyOverride(cfg: ErrlookupConfig): ErrlookupConfig {
+/**
+ * Per-run overrides for the two knobs an experiment needs to move.
+ *
+ * Both exist so a measurement can run without editing the config the systemd
+ * timer reads: a scheduled drain firing mid-experiment would otherwise pick
+ * up the change and carry it unattended. They are for measurement, not for
+ * configuration — a setting worth keeping belongs in the KDL, where it is
+ * reviewable and has a comment saying why.
+ */
+function withEnvOverrides(cfg: ErrlookupConfig): ErrlookupConfig {
   const flag = process.env.ERRLOOKUP_PROXY_ENABLED;
   if (flag === "1") cfg.proxy = { ...cfg.proxy, enabled: true };
   else if (flag === "0") cfg.proxy = { ...cfg.proxy, enabled: false };
+
+  const gate = process.env.ERRLOOKUP_PROVIDER_MAX_CONCURRENT;
+  if (gate !== undefined) {
+    const n = Number.parseInt(gate, 10);
+    // 0 is meaningful (no gate at all), so the floor is 0 rather than 1. A
+    // value that is not a number is a typo in an experiment's launch line;
+    // failing loudly beats running the whole window at the wrong setting and
+    // reporting it as the intended one.
+    if (!Number.isFinite(n) || n < 0) {
+      throw new Error(`ERRLOOKUP_PROVIDER_MAX_CONCURRENT must be a non-negative integer, got "${gate}"`);
+    }
+    cfg.defaults = { ...cfg.defaults, providerMaxConcurrent: n };
+  }
   return cfg;
 }
 
@@ -312,7 +334,7 @@ export function loadConfig(configPath?: string): ErrlookupConfig {
     const p = resolve(explicit);
     if (!existsSync(p)) throw new Error(`config not found: ${p} (from ${configPath ? "argument" : "ERRLOOKUP_CONFIG"})`);
     const src = readFileSync(p, "utf8");
-    return withProxyOverride(p.endsWith(".json") ? mergeWithDefaults(JSON.parse(src)) : mapConfig(parseKdl(src)));
+    return withEnvOverrides(p.endsWith(".json") ? mergeWithDefaults(JSON.parse(src)) : mapConfig(parseKdl(src)));
   }
 
   const candidates = [
@@ -322,13 +344,13 @@ export function loadConfig(configPath?: string): ErrlookupConfig {
   ];
 
   const path = candidates.find((p) => existsSync(p));
-  if (!path) return withProxyOverride(structuredClone(DEFAULT_CONFIG));
+  if (!path) return withEnvOverrides(structuredClone(DEFAULT_CONFIG));
 
   const src = readFileSync(path, "utf8");
   if (path.endsWith(".json")) {
-    return withProxyOverride(mergeWithDefaults(JSON.parse(src)));
+    return withEnvOverrides(mergeWithDefaults(JSON.parse(src)));
   }
-  return withProxyOverride(mapConfig(parseKdl(src)));
+  return withEnvOverrides(mapConfig(parseKdl(src)));
 }
 
 function mergeWithDefaults(partial: Record<string, unknown>): ErrlookupConfig {

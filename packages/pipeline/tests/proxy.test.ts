@@ -272,6 +272,29 @@ describe("proxy routing", () => {
     }
   });
 
+  it("overrides the provider gate for one run, and refuses a bad value", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "errlookup-cfg-")), "c.kdl");
+    dirs.push(dirname(path));
+    writeFileSync(
+      path,
+      ["defaults {", '  primary "opencode"', "  provider-max-concurrent 10", "}"].join("\n")
+    );
+    try {
+      expect(loadConfig(path).defaults.providerMaxConcurrent).toBe(10);
+      process.env.ERRLOOKUP_PROVIDER_MAX_CONCURRENT = "4";
+      expect(loadConfig(path).defaults.providerMaxConcurrent).toBe(4);
+      // 0 is meaningful — it disables the gate — so it must survive the parse.
+      process.env.ERRLOOKUP_PROVIDER_MAX_CONCURRENT = "0";
+      expect(loadConfig(path).defaults.providerMaxConcurrent).toBe(0);
+      // A typo in an experiment's launch line must not run the whole window
+      // at the config's setting and be reported as the intended one.
+      process.env.ERRLOOKUP_PROVIDER_MAX_CONCURRENT = "four";
+      expect(() => loadConfig(path)).toThrow(/non-negative integer/);
+    } finally {
+      delete process.env.ERRLOOKUP_PROVIDER_MAX_CONCURRENT;
+    }
+  });
+
   it("is off unless a proxy node enables it", () => {
     expect(DEFAULT_CONFIG.proxy.enabled).toBe(false);
     const cfg = cfgWith("");
