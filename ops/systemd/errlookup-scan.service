@@ -5,6 +5,12 @@
 Description=err-lookup corpus scanner (batch analyze, export, deploy)
 After=network-online.target
 Wants=network-online.target
+# The drain routes its provider calls through the recording proxy while
+# configs/blitz-glm-k3.kdl has proxy.enabled true, and a routed call to a dead
+# proxy fails outright. Wants (not Requires) so a proxy that will not start
+# does not also block the drain from being started and logging why.
+Wants=errlookup-proxy.service
+After=errlookup-proxy.service
 # Ceiling on the restart rule below: a drain that keeps dying (OOM kill, a bad
 # deploy) stops rather than respawning forever. Six an hour still leaves room
 # for the ordinary budget cycle, which fires once every few hours.
