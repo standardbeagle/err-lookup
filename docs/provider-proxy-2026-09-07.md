@@ -149,6 +149,51 @@ ping says it is not, but one ping is not a measurement of a drain.
 Do not wire anything to depend on these numbers until that run exists.
 (Done — see the second arm above. The gate question it raised is still open.)
 
+## The decision, and the ramp (2026-09-07)
+
+Gate set to **4** in `configs/blitz-glm-k3.kdl`, and the proxy routed in
+permanently (`proxy.enabled true`). Gate 10 was also working the host hard for
+requests that were mostly bouncing.
+
+The proxy goes on because the ramp has no other early warning: the pipeline
+cannot see a 429, so without it the first sign of a gate set too high is the
+failure breaker tripping, which is late and expensive. That makes
+`errlookup-proxy.service` a dependency of every drain — the scan unit now
+`Wants`/`After` it so a boot brings it up first, and `Wants` rather than
+`Requires` so a proxy that will not start does not also stop the drain from
+starting and logging why.
+
+### Ramp procedure
+
+Hold 4 for two to three days, then raise one step at a time — 4 → 6 → 8 —
+and read the 429 share between steps.
+
+```
+# at each step: reset the tally FIRST, or the previous step's counts dilute it
+sudo systemctl stop errlookup-proxy
+pnpm --filter @errlookup/pipeline dev proxy --reset   # ctrl-c once it prints
+sudo systemctl start errlookup-proxy
+
+# edit provider-max-concurrent in configs/blitz-glm-k3.kdl, commit, deploy
+sudo systemctl restart errlookup-scan
+
+# read it later
+curl -s localhost:8919/__errlookup/limits    # or: errlookup proxy --limits
+```
+
+`since` in the snapshot says what period the numbers cover. Counts now survive
+a proxy restart, so a crash mid-window no longer zeroes the reading and makes
+it look healthy.
+
+**What "an issue" looks like.** A 429 share climbing off ~0 is the signal to
+stop and step back — it arrives before the failure breaker does, which is the
+whole point of routing. Watch host load too; that is what 10 was costing
+locally and the proxy says nothing about it.
+
+**Do not read a step as an improvement because requests went up.** Requests
+are the cost, not the deliverable. If a step is meant to prove more work is
+getting done, count records produced over the window.
+
 ## How the measurement run is wired on beagle-ab
 
 The production config keeps `proxy.enabled false`, so the deployed file never
