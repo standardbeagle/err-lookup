@@ -23,6 +23,10 @@ export async function runProxy(argv: string[]): Promise<void> {
   }
 
   const recorder = new LimitRecorder(cfg.proxy.upstream, snapshotPath(cfg.proxy.snapshotPath));
+  // --reset starts a new observation window. Without it a restart resumes the
+  // tally, which is what a multi-day reading needs and what a fresh
+  // measurement must not have.
+  if (argv.includes("--reset")) recorder.reset();
   const server = createProxyServer({
     upstream: cfg.proxy.upstream,
     recorder,
@@ -34,6 +38,7 @@ export async function runProxy(argv: string[]): Promise<void> {
   const port = await listen(server, cfg.proxy.port, cfg.proxy.host);
   console.log(`errlookup proxy: http://${cfg.proxy.host}:${port} -> ${cfg.proxy.upstream}`);
   console.log(`limits: ${snapshotPath(cfg.proxy.snapshotPath)} (also GET /__errlookup/limits)`);
+  console.log(`counting since ${recorder.current().since} (${recorder.current().requests} requests so far)`);
   if (!cfg.proxy.enabled) {
     // Running the proxy and routing to it are separate switches on purpose:
     // the recorder can be started and checked before any drain depends on it.

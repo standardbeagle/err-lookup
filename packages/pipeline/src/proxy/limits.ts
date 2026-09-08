@@ -29,6 +29,13 @@ export interface LimitObservation {
 }
 
 export interface LimitSnapshot {
+  /**
+   * When this tally started. Counters survive a proxy restart, so without it
+   * "1032 x 429" says nothing about the period it covers — and over a
+   * multi-day observation the difference between an hour and three days is
+   * the whole reading.
+   */
+  since: string;
   updatedAt: string;
   upstream: string;
   requests: number;
@@ -46,8 +53,9 @@ export interface LimitSnapshot {
   lastThrottled: LimitObservation | null;
 }
 
-function emptySnapshot(upstream: string): LimitSnapshot {
+function emptySnapshot(upstream: string, now = new Date()): LimitSnapshot {
   return {
+    since: now.toISOString(),
     updatedAt: new Date(0).toISOString(),
     upstream,
     requests: 0,
@@ -86,12 +94,29 @@ export class LimitRecorder {
   private snapshot: LimitSnapshot;
   private readonly seen = new Set<string>();
 
+  /**
+   * Resumes the tally on disk rather than starting empty. The proxy runs
+   * under Restart=always, so a crash or a deploy would otherwise silently
+   * zero a multi-day observation and the next reading would look healthy for
+   * the wrong reason. A snapshot for a DIFFERENT upstream is discarded — its
+   * counts describe another account's limit.
+   */
   constructor(
     readonly upstream: string,
     private readonly path = defaultSnapshotPath()
   ) {
-    this.snapshot = emptySnapshot(upstream);
     mkdirSync(dirname(this.path), { recursive: true });
+    const prior = readLimitSnapshot(this.path);
+    this.snapshot = prior && prior.upstream === upstream ? prior : emptySnapshot(upstream);
+    // Rebuild the first-seen set so a resumed tally does not re-append names.
+    for (const name of this.snapshot.headerNamesSeen ?? []) this.seen.add(name);
+  }
+
+  /** Start a fresh tally — the deliberate way to begin a new observation window. */
+  reset(now = new Date()): void {
+    this.snapshot = emptySnapshot(this.upstream, now);
+    this.seen.clear();
+    this.publish();
   }
 
   observe(status: number, raw: Record<string, string | string[] | undefined>, now = new Date()): void {

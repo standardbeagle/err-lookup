@@ -195,6 +195,48 @@ describe("recording proxy", () => {
   });
 });
 
+describe("tally across restarts", () => {
+  it("resumes the tally on disk instead of starting empty", () => {
+    const path = tmpSnapshot();
+    const first = new LimitRecorder("https://up.example", path);
+    first.observe(200, { "x-ratelimit-remaining": "5" });
+    first.observe(429, { "retry-after": "3" });
+    const since = first.current().since;
+
+    // The proxy runs under Restart=always; a crash must not silently zero a
+    // multi-day observation and make the next reading look healthy.
+    const resumed = new LimitRecorder("https://up.example", path);
+    expect(resumed.current().requests).toBe(2);
+    expect(resumed.current().statuses).toEqual({ "200": 1, "429": 1 });
+    expect(resumed.current().since).toBe(since);
+
+    resumed.observe(200, { "x-ratelimit-remaining": "4" });
+    expect(resumed.current().requests).toBe(3);
+    // First-seen names must not be re-appended when the tally resumes.
+    expect(resumed.current().headerNamesSeen).toEqual(["x-ratelimit-remaining", "retry-after"]);
+  });
+
+  it("discards a tally belonging to a different upstream", () => {
+    const path = tmpSnapshot();
+    new LimitRecorder("https://old.example", path).observe(429, {});
+    // Those counts describe another account's limit.
+    const moved = new LimitRecorder("https://new.example", path);
+    expect(moved.current().requests).toBe(0);
+    expect(moved.current().upstream).toBe("https://new.example");
+  });
+
+  it("reset() starts a new window", () => {
+    const path = tmpSnapshot();
+    const r = new LimitRecorder("https://up.example", path);
+    r.observe(429, {});
+    const before = r.current().since;
+    r.reset(new Date(Date.parse(before) + 60_000));
+    expect(r.current().requests).toBe(0);
+    expect(r.current().since).not.toBe(before);
+    expect(readLimitSnapshot(path)?.requests).toBe(0);
+  });
+});
+
 describe("recorded header allowlist", () => {
   it("keeps rate-limit headers and drops everything else", () => {
     const kept = recordedHeaders({

@@ -498,7 +498,7 @@ async function main(): Promise<void> {
   console.error("  errlookup tags [--apply] [--limit 40]   report or fold the background-family vocabulary");
   console.error("  errlookup reset [--failed] [--dry-run] [owner/repo ...]");
   console.error("  errlookup export [--out-dir <path>]");
-  console.error("  errlookup proxy [--limits]           # recording provider proxy; --limits prints the snapshot");
+  console.error("  errlookup proxy [--limits] [--reset] # recording provider proxy; --limits prints the snapshot, --reset starts a new window");
   console.error("  errlookup status");
   process.exit(cmd ? 1 : 0);
 }
