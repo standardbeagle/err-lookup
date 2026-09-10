@@ -69,6 +69,42 @@ describe("builtin candidate extractor", () => {
     disposeRepo(dir);
   });
 
+  it("finds python raises reached through a module or self, but not bare re-raises", () => {
+    const dir = tmpRepo("cand-py-dotted-");
+    // The uppercase anchor in the py family read the raise target as a bare
+    // class name, so anything reached through a lowercase module or `self`
+    // was invisible. Measured on fastapi 50113da: 16 real sites missed, 12 of
+    // them the 401 factory in the security module.
+    writeFileSync(
+      join(dir, "sec.py"),
+      `def a(self):\n` +
+        `    raise self.make_not_authenticated_error()\n` +
+        `def b():\n` +
+        `    raise routing.NoMatchFound(name, path_params)\n` +
+        `def c():\n` +
+        `    raise fastapi.exceptions.FastAPIError("boom")\n` +
+        `def d():\n` +
+        `    raise ValueError("still works")\n`
+    );
+    // A re-raise carries no message of its own — it belongs to the throw it
+    // re-raises, and pulling it in would publish a page with nothing on it.
+    writeFileSync(
+      join(dir, "reraise.py"),
+      `def f():\n` +
+        `    try:\n        g()\n    except Exception as e:\n        raise e\n` +
+        `def h():\n` +
+        `    raise validation_error\n` +
+        `def i():\n` +
+        `    raise http_error from e\n`
+    );
+
+    const c = extractCandidates(dir);
+    const linesFor = (file: string) => c.filter((s) => s.file === file).map((s) => s.line).sort((a, b) => a - b);
+    expect(linesFor("sec.py")).toEqual([2, 4, 6, 8]);
+    expect(linesFor("reraise.py")).toEqual([]);
+    disposeRepo(dir);
+  });
+
   it("finds C and C++ error sites, including the project-local logger", () => {
     const dir = tmpRepo("cand-c-");
     writeFileSync(

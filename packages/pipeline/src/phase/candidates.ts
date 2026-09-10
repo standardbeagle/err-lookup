@@ -151,6 +151,17 @@ const PATTERNS: Record<string, Pattern[]> = {
     // No `\(` requirement: `raise ConfigError` with no arguments is as real an
     // error as one with a message, and requiring the paren silently dropped it.
     { kind: "throw", re: /\braise\s+[A-Z][A-Za-z0-9_.]*/ },
+    // The uppercase anchor above reads the raise target as a bare class name,
+    // so every raise reached through a lowercase module or through `self` was
+    // invisible: `raise routing.NoMatchFound(...)`, `raise
+    // fastapi.exceptions.FastAPIError(...)`, and — 12 of fastapi's 401 sites —
+    // `raise self.make_not_authenticated_error()`. Measured on fastapi 50113da:
+    // 35 sites seen, 16 missed, all real. Requiring the dot AND the call is
+    // what keeps bare re-raises out (`raise e`, `raise validation_error`),
+    // which carry no message of their own and belong to the throw they
+    // re-raise. Ruby's family learned this same lesson (see rb below); Python
+    // never got the fix.
+    { kind: "throw", re: /\braise\s+[a-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+\s*\(/ },
     { kind: "http", re: /\babort\s*\(\s*[45]\d\d\b/ },
   ],
   go: [
