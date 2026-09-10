@@ -40,6 +40,7 @@ function readErrorRecords(): {
   errorCode: string | null;
   id: string;
   analyzedAt: string;
+  contentChangedAt: string | null;
 }[] {
   const repos = JSON.parse(readFileSync(resolve(publicData, "repos.json"), "utf8")) as { repo: string }[];
   const out: ReturnType<typeof readErrorRecords> = [];
@@ -47,7 +48,15 @@ function readErrorRecords(): {
     const [owner, name] = r.repo.split("/");
     const errors = JSON.parse(readFileSync(resolve(publicData, `repos/${owner}/${name}.json`), "utf8"));
     for (const e of errors)
-      out.push({ repo: r.repo, slug: e.slug, errorMessage: e.errorMessage, errorCode: e.errorCode ?? null, id: e.id, analyzedAt: e.analyzedAt });
+      out.push({
+        repo: r.repo,
+        slug: e.slug,
+        errorMessage: e.errorMessage,
+        errorCode: e.errorCode ?? null,
+        id: e.id,
+        analyzedAt: e.analyzedAt,
+        contentChangedAt: e.contentChangedAt ?? null,
+      });
   }
   return out;
 }
@@ -127,8 +136,11 @@ describe("site build (§8.3)", () => {
       // Article-family rich results are ineligible without dates, author, and
       // publisher — the node parses but earns nothing in the SERP.
       const article = ld["@graph"].find((g: { "@type": string }) => g["@type"] === "TechArticle");
-      expect(article.datePublished).toBe(e.analyzedAt);
-      expect(article.dateModified).toBe(e.analyzedAt);
+      // The date a reader (and Google) is told the page changed is the date
+      // its content changed, not the date it was last re-analyzed.
+      const changed = e.contentChangedAt ?? e.analyzedAt;
+      expect(article.datePublished).toBe(changed);
+      expect(article.dateModified).toBe(changed);
       expect(article.author?.name).toBe("Standard Beagle");
       expect(article.publisher?.logo?.url).toContain("/og/default.png");
       expect(article.headline.length).toBeLessThanOrEqual(110);
@@ -214,6 +226,32 @@ describe("site build (§8.3)", () => {
       const rel = loc.replace("https://errors.standardbeagle.com/", "");
       expect(existsSync(resolve(dist, rel)), `missing ${rel}`).toBe(true);
     }
+  });
+
+  it("every child sitemap entry carries the lastmod of the document it points at", () => {
+    // Without lastmod the index is a flat list of ~1,400 files and a crawler
+    // has to fetch all of them to find the one that moved. With a WRONG
+    // lastmod it is worse than flat. So the index date must equal the newest
+    // date inside the child it names.
+    const xml = readFileSync(resolve(dist, "sitemap-index.xml"), "utf8");
+    const entries = [...xml.matchAll(/<sitemap><loc>([^<]+)<\/loc>(?:<lastmod>([^<]+)<\/lastmod>)?<\/sitemap>/g)];
+    expect(entries.length).toBeGreaterThan(1);
+
+    let dated = 0;
+    for (const [, loc, lastmod] of entries) {
+      const rel = loc!.replace("https://errors.standardbeagle.com/", "");
+      // pages.xml holds static pages with no tracked change date; a missing
+      // lastmod is honest there and legal in the schema.
+      if (rel === "sitemaps/pages.xml") continue;
+      expect(lastmod, `no lastmod for ${rel}`).toBeTruthy();
+      expect(lastmod).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      const child = readFileSync(resolve(dist, rel), "utf8");
+      const dates = [...child.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].map((m) => m[1]!);
+      expect(dates.length, `child ${rel} has no dated URLs`).toBeGreaterThan(0);
+      expect(lastmod, `index date disagrees with ${rel}`).toBe(dates.sort().at(-1));
+      dated++;
+    }
+    expect(dated).toBeGreaterThan(0);
   });
 
   it("robots.txt points at the canonical sitemap", () => {

@@ -6,6 +6,7 @@
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { gzipSync } from "node:zlib";
 import { buildSearchIndex } from "../../schema/src/search-core.js";
+import { indexableLastmod } from "../../schema/src/indexing.js";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,6 +57,10 @@ const errors = [
     tags: ["http", "network", "axios"],
     analyzedSha: shaAxios,
     analyzedAt: "2026-07-14T00:00:00Z",
+    // Newer than analyzedAt, and the only record here that carries one: the
+    // repo's sitemap lastmod must roll up to this, and the other two records
+    // leave it null so the per-record analyzedAt fallback stays covered.
+    contentChangedAt: "2026-08-02T00:00:00Z",
     schemaVersion: 2,
   },
   {
@@ -134,6 +139,10 @@ const errors = [
   },
 ];
 
+// contentChangedAt is the sitemap-index lastmod, rolled up from each repo's
+// indexable records. Computed with the same function the exporter uses rather
+// than hand-written, so a fixture can never advertise a date production would
+// not produce.
 const repos = [
   {
     repo: "axios/axios",
@@ -155,7 +164,10 @@ const repos = [
     analyzedAt: "2026-07-14T00:00:00Z",
     errorCount: 1,
   },
-];
+].map((r) => ({
+  ...r,
+  contentChangedAt: indexableLastmod(errors.filter((e) => e.repo === r.repo)),
+}));
 
 const datasetVersion = "2026-07-14T00:00:00Z";
 
