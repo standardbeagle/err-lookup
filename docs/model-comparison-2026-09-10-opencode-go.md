@@ -21,13 +21,17 @@ opencode Go models, so a guessed value risks being silently ignored — the
 incumbent's review pick is explicitly effort-pinned and the candidates are not,
 which is a real and unclosed difference.
 
-**Budget shaped the scope.** opencode Go is a $10/mo subscription with per-model
-monthly dollar caps and a 5-hour window at 20% of the monthly allowance
-(<https://opencode.ai/docs/go/#usage-limits>). DeepSeek V4.1 Flash sits in the
-$15/mo tier (~$3 per 5-hour window) and Qwen3.8 Flash in the $30 tier (~$6). The
-August comparison swept three repos; that would spend the window before the
-third repo reported, so the bulk run here is **fastapi only** — one repo, one
-run per model. Treat the bulk section as a screen, not a verdict.
+**Budget did NOT constrain this, and an earlier draft of this doc said it did.**
+opencode Go is a $10/mo subscription with per-model monthly dollar caps and a
+5-hour window at 20% of the monthly allowance
+(<https://opencode.ai/docs/go/#usage-limits>) — DeepSeek V4.1 Flash in the
+$15/mo tier (~$3 per window), Qwen3.8 Flash in the $30 tier (~$6). Reasoning
+from those caps, this evaluation was scoped to one repo on the assumption that a
+three-repo sweep would exhaust the window. **Measured actual spend for both
+models across both the review subset and the fastapi bulk run: $0.36.** The cap
+was never close to binding; a three-repo sweep costs roughly a dollar. The
+one-repo scope is a limitation of this evaluation, not a constraint of the
+plan — nest and tokio should simply be run.
 
 ## Review phase (9-record traffic subset, dry-run)
 
@@ -108,10 +112,39 @@ but nine records is not enough evidence to conclude that holds at corpus scale.
 | flagged by `errlookup quality` | — | — | — | 1/19 (5.3%) | **1/23 (4.3%)** |
 | provider wall time | — | — | — | **2.9 min** | 9.8 min |
 
-fastapi's shortfall against its own August baseline (50 records) is
-discovery-config driven — halved source window, scope excludes, pattern guard —
-and the 08-27 comparison already established it hits every current model
-equally. The comparable columns are glm-5.2 (18) and untuned flash (22).
+### The record counts are not a shortfall — read them by area
+
+Every current model produces under half of fastapi's 50-record August baseline,
+which reads as a broad regression until you ask where those 50 records lived:
+
+| area | baseline records |
+|---|---|
+| `docs_src/` (tutorial snippets) | 19 |
+| `scripts/` (build tooling) | 16 |
+| `fastapi/` (the library) | **15** |
+
+**70% of the baseline was not the library.** The scope phase now excludes
+`docs_src/` and `scripts/` — 156 and 52 candidate locations, dropped identically
+by both candidates — and both of today's runs are 100% library code. Like for
+like:
+
+| run | library-only records |
+|---|---|
+| baseline (08-14) | 15 |
+| glm-5.3-flash (08-27) | 22 |
+| DeepSeek V4.1 Flash | 19 |
+| Qwen3.8 Flash | **23** |
+
+Every current model *beats* the baseline on real library errors, by 27–53%. The
+missing 35 pages documented tutorial snippets and build scripts — thin,
+near-duplicate, and exactly the shape of page that fed the 2026-08-18 crawl
+withdrawal. Losing them is the intended effect of the scope excludes, not
+collateral damage.
+
+Nor is the drop universal: the 08-27 tuned runs put nest at 107 against a
+100-record baseline and tokio at 88 against 74. fastapi is the only repo whose
+raw count fell, and the table above is why. Compare models on the library-only
+row, never on the raw baseline delta.
 
 **Both candidates were clean in the way the August flash run was not.** The
 08-27 evaluation rejected flash for bulk on reliability, not quality: ACP idle
@@ -178,7 +211,9 @@ means the bulk seat is genuinely contestable for the first time since August.
 
 ## Caveats
 
-- One bulk run, one repo, per model. No cost-per-record measurement.
+- One bulk run, one repo, per model. Total measured spend for everything here
+  was $0.36, so extending to nest and tokio is cheap and should be done before
+  any routing change.
 - Neither candidate has a reasoning-effort pin; the incumbent review provider
   does (low). An effort sweep was not run.
 - Qwen's first review run exited after 7 of 9 records with no error line. The
