@@ -65,3 +65,33 @@ export function indexableSlugs(all: readonly ErrorEntry[]): Set<string> {
   return new Set(all.filter((e) => canonical.has(e.slug) && !isThinRecord(e)).map((e) => e.slug));
 }
 
+/**
+ * Newest content change among the records that earn a sitemap line — the
+ * lastmod of this repo's child sitemap, and of the `<sitemap>` entry that
+ * points at it.
+ *
+ * contentChangedAt over analyzedAt on purpose: a re-analysis that produces
+ * byte-identical pages must not move the date, or the crawler learns the
+ * sitemap lies and stops using lastmod to prioritise (the same reasoning that
+ * put contentChangedAt on the per-URL lines). Records predating the field
+ * carry null and fall back to their analyzedAt.
+ *
+ * Returns null when no record is indexable: there is no content signal to
+ * report, and callers fall back to the repo's own analyzedAt.
+ *
+ * Takes the indexable set as a parameter so a caller that already computed it
+ * (the child sitemap does) pays for one canonical-grouping pass, not two.
+ */
+export function indexableLastmod(
+  all: readonly ErrorEntry[],
+  indexable: ReadonlySet<string> = indexableSlugs(all)
+): string | null {
+  let newest: string | null = null;
+  for (const e of all) {
+    if (!indexable.has(e.slug)) continue;
+    const changed = e.contentChangedAt ?? e.analyzedAt;
+    // ISO-8601 UTC strings sort lexicographically; no Date allocation per record.
+    if (newest === null || changed > newest) newest = changed;
+  }
+  return newest;
+}

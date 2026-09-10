@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { experimental_AstroContainer as AstroContainer } from "astro/container";
 import type { ErrorEntry } from "@errlookup/schema";
-import { isThinRecord, canonicalSlugs, indexableSlugs, THIN_DOC_CHARS } from "@errlookup/schema";
+import { isThinRecord, canonicalSlugs, indexableSlugs, indexableLastmod, THIN_DOC_CHARS } from "@errlookup/schema";
 import ErrorDetail from "../src/components/ErrorDetail.astro";
 
 const LONG_DOC =
@@ -91,6 +91,47 @@ describe("crawl-surface predicates (schema/indexing.ts)", () => {
       rec({ slug: "stub", messagePattern: "p2", documentation: "short", solutions: [] }),
     ];
     expect(indexableSlugs(all)).toEqual(new Set(["good"]));
+  });
+});
+
+describe("sitemap lastmod rollup (indexableLastmod)", () => {
+  it("is the newest content change among indexable records only", () => {
+    const all = [
+      rec({ slug: "good", messagePattern: "p1", contentChangedAt: "2026-09-01T00:00:00.000Z" }),
+      rec({ slug: "older", messagePattern: "p2", contentChangedAt: "2026-08-01T00:00:00.000Z" }),
+      // A thin stub and a non-canonical variant carry the newest date but earn
+      // no sitemap line — dating the index off them would advertise a change
+      // to a document that does not contain it.
+      rec({ slug: "stub", messagePattern: "p3", documentation: "short", solutions: [], contentChangedAt: "2026-09-09T00:00:00.000Z" }),
+      rec({ slug: "variant", messagePattern: "p1", contentChangedAt: "2026-09-08T00:00:00.000Z" }),
+    ];
+    expect(indexableLastmod(all)).toBe("2026-09-01T00:00:00.000Z");
+  });
+
+  it("re-analysis that changes no content leaves the date still", () => {
+    // The whole point: a drain re-analyzes hundreds of repos a day and bumps
+    // analyzedAt on every record. If that moved lastmod, every bulk scan would
+    // republish an index claiming ~1,400 changed sitemaps, and the crawler
+    // would stop believing it.
+    const before = [rec({ slug: "a", contentChangedAt: "2026-09-01T00:00:00.000Z", analyzedAt: "2026-09-01T00:00:00.000Z" })];
+    const after = [rec({ slug: "a", contentChangedAt: "2026-09-01T00:00:00.000Z", analyzedAt: "2026-09-09T00:00:00.000Z" })];
+    expect(indexableLastmod(after)).toBe(indexableLastmod(before));
+  });
+
+  it("falls back to analyzedAt per record when contentChangedAt predates the field", () => {
+    const all = [rec({ slug: "a", contentChangedAt: null, analyzedAt: "2026-08-20T00:00:00.000Z" })];
+    expect(indexableLastmod(all)).toBe("2026-08-20T00:00:00.000Z");
+  });
+
+  it("is null when nothing is indexable, so callers fall back to the repo date", () => {
+    expect(indexableLastmod([rec({ slug: "stub", documentation: "short", solutions: [] })])).toBeNull();
+    expect(indexableLastmod([])).toBeNull();
+  });
+
+  it("reuses a caller's indexable set instead of recomputing the grouping", () => {
+    const all = [rec({ slug: "a", contentChangedAt: "2026-09-01T00:00:00.000Z" })];
+    expect(indexableLastmod(all, new Set())).toBeNull();
+    expect(indexableLastmod(all, new Set(["a"]))).toBe("2026-09-01T00:00:00.000Z");
   });
 });
 

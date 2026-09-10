@@ -146,6 +146,77 @@ describe("exporter", () => {
 
     raw.close();
   });
+
+  it("rolls each repo's sitemap lastmod up into repos.json, ignoring unindexable records", () => {
+    const dbPath = tmpDbPath("export-lastmod");
+    const { db, raw } = openDb(dbPath);
+    seed(db);
+    // The seeded record is indexable and content-dated. A thin stub dated
+    // later must not raise the repo's lastmod: it earns no sitemap line, so
+    // the index would be claiming a change to a document that omits it.
+    raw
+      .prepare("UPDATE errors SET content_changed_at = ? WHERE id = ?")
+      .run("2026-08-02T00:00:00Z", "a1b2c3d4e5f60718");
+    db.insert(errors)
+      .values({
+        id: "b1b2c3d4e5f60718",
+        repo: "axios/axios",
+        slug: "thin-stub",
+        errorCode: null,
+        errorMessage: "other failure",
+        messagePattern: "other failure",
+        errorType: "exception",
+        errorClass: null,
+        httpStatus: null,
+        severity: "error",
+        filePath: "lib/other.js",
+        lineNumber: 3,
+        sourceCode: "throw new Error('y')",
+        sourceCodeStart: 1,
+        sourceCodeEnd: 5,
+        githubUrl: `https://github.com/axios/axios/blob/${"a".repeat(40)}/lib/other.js#L3`,
+        documentation: "stub",
+        triggerScenarios: "trig",
+        commonSituations: "common",
+        solutions: [],
+        preventionTips: [],
+        tags: [],
+        analyzedSha: "a".repeat(40),
+        analyzedAt: "2026-07-14T00:00:00Z",
+        contentChangedAt: "2026-09-09T00:00:00Z",
+        schemaVersion: 2,
+      })
+      .run();
+
+    const { files, counts } = buildDataset(db);
+    expect(counts.rejected).toBe(0);
+    const reposOut = JSON.parse(
+      files.find((f) => f.relPath === "repos.json")!.content as string
+    ) as { repo: string; contentChangedAt: string | null }[];
+    expect(reposOut).toHaveLength(1);
+    expect(reposOut[0]!.contentChangedAt).toBe("2026-08-02T00:00:00Z");
+
+    raw.close();
+  });
+
+  it("leaves the rollup null when a repo has no indexable record", () => {
+    const dbPath = tmpDbPath("export-lastmod-null");
+    const { db, raw } = openDb(dbPath);
+    seed(db);
+    // Thin: stub documentation and no solutions. The site falls back to the
+    // repo's own analyzedAt — there is no content signal to report.
+    raw
+      .prepare("UPDATE errors SET documentation = 'stub', solutions = '[]' WHERE id = ?")
+      .run("a1b2c3d4e5f60718");
+
+    const { files } = buildDataset(db);
+    const reposOut = JSON.parse(
+      files.find((f) => f.relPath === "repos.json")!.content as string
+    ) as { contentChangedAt: string | null }[];
+    expect(reposOut[0]!.contentChangedAt).toBeNull();
+
+    raw.close();
+  });
 });
 
 describe("scheduled publishing (crawl-surface admission)", () => {

@@ -18,6 +18,7 @@ import {
   validateRepoEntry,
   validateInfoPageEntry,
   buildSearchIndex,
+  indexableLastmod,
   type ErrorEntry,
   type RepoEntry,
   type IndexError,
@@ -87,6 +88,9 @@ function rowToRepoEntry(r: typeof repositories.$inferSelect): RepoEntry {
     defaultBranch: r.defaultBranch,
     analyzedSha: r.analyzedSha ?? "",
     analyzedAt: r.analyzedAt ?? "",
+    // Rolled up from the repo's records in buildDataset, which is where they
+    // are already in memory and already validated.
+    contentChangedAt: null,
     errorCount: r.errorCount,
   };
 }
@@ -219,6 +223,16 @@ export function buildDataset(
   // by /api/errors/:id, which reads the per-repo file.
   const allErrors: ErrorEntry[] = [];
   const repoFiles: FileOut[] = [];
+  // Sitemap-index lastmod per repo. Rolled up here rather than in the site
+  // because the records are already loaded and validated in this pass: the
+  // rollup costs one extra iteration over data in hand, and the alternative —
+  // the site opening every child sitemap to date the index — is ~1,400 file
+  // reads per build. Bulk re-analysis is the case this has to survive: a drain
+  // that re-analyzes 300 repos moves this date only for the repos whose
+  // published content actually changed, because indexableLastmod reads
+  // contentChangedAt, so the index stays byte-identical for the rest and a
+  // crawler that trusts lastmod keeps trusting it.
+  const lastmodByRepo = new Map<string, string | null>();
   for (const r of validRepos) {
     const rows = errorsByRepo.get(r.repo) ?? [];
     const valid: ErrorEntry[] = [];
@@ -228,6 +242,7 @@ export function buildDataset(
       else rejected++;
     }
     allErrors.push(...valid);
+    lastmodByRepo.set(r.repo, indexableLastmod(valid));
     const [owner, name] = r.repo.split("/");
     repoFiles.push({
       relPath: `repos/${owner}/${name}.json`,
@@ -254,7 +269,10 @@ export function buildDataset(
     errors: indexErrors,
   };
 
-  const reposJson = validRepos;
+  const reposJson: RepoEntry[] = validRepos.map((r) => ({
+    ...r,
+    contentChangedAt: lastmodByRepo.get(r.repo) ?? null,
+  }));
 
   // Info pages (§ info-collector): one file per page + a compact hub index,
   // same validate-or-drop policy as error records.

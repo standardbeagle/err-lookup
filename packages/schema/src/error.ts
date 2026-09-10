@@ -85,6 +85,13 @@ export const RepoEntry = z
     defaultBranch: z.string().min(1),
     analyzedSha: GitSha,
     analyzedAt: IsoUtc,
+    /** Newest content change across this repo's indexable records — the
+     *  lastmod of its child sitemap and of the sitemap-index entry pointing at
+     *  it. Rolled up by the exporter (schema/indexing.ts indexableLastmod) so
+     *  the index does not have to open 1,400 child sitemaps to answer "what
+     *  moved". null when the repo has no indexable record, or when the dataset
+     *  predates the field; readers fall back to analyzedAt. */
+    contentChangedAt: IsoUtc.nullable().default(null),
     errorCount: z.number().int().min(0),
   })
   .strict();
