@@ -117,7 +117,8 @@ $reasons"
 ALERT_ENV="${ERRLOOKUP_ALERT_ENV:-$HOME/.config/errlookup/alert.env}"
 [ -z "${ERRLOOKUP_ALERT_URL:-}" ] && [ -f "$ALERT_ENV" ] && . "$ALERT_ENV"
 
-RUN_LOG="$LOG_DIR/scan-$(date -u +%Y%m%d-%H%M%S).log"
+RUN_STAMP="$(date -u +%Y%m%d-%H%M%S)"
+RUN_LOG="$LOG_DIR/scan-$RUN_STAMP.log"
 restart_wanted=0
 {
   echo "=== scan run start $(date -u +%FT%TZ) corpus=$CORPUS code=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
@@ -160,6 +161,15 @@ fi
   NODE_OPTIONS=--max-old-space-size=6144 pnpm --filter @errlookup/pipeline dev export
   export_exit=$?
   echo "=== export exit=$export_exit"
+  # Questionable-page stream: one JSONL snapshot per drain, kept alongside the
+  # run logs. The export log line says how big the backlog is; this says which
+  # records and why, so a cleanup pass can be aimed:
+  #   jq -r 'select(.flags|index("thin")).url' quality-*.jsonl | head
+  # Retention matches the run logs (30), so the stream shows whether a class of
+  # defect is draining or holding across drains.
+  NODE_OPTIONS=--max-old-space-size=6144 pnpm --filter @errlookup/pipeline dev quality \
+    >"$LOG_DIR/quality-$RUN_STAMP.jsonl" 2>>"$RUN_LOG"
+  echo "=== quality exit=$? ($(wc -l <"$LOG_DIR/quality-$RUN_STAMP.jsonl") flagged records)"
   if [ -x "$REPO_ROOT/scripts/deploy-site.sh" ]; then
     "$REPO_ROOT/scripts/deploy-site.sh"
     echo "=== deploy exit=$?"
@@ -169,5 +179,6 @@ fi
   echo "=== scan run end $(date -u +%FT%TZ)"
 } >>"$RUN_LOG" 2>&1
 
-# keep the 30 most recent run logs
+# keep the 30 most recent run logs and quality snapshots
 ls -1t "$LOG_DIR"/scan-*.log 2>/dev/null | tail -n +31 | xargs -r rm --
+ls -1t "$LOG_DIR"/quality-*.jsonl 2>/dev/null | tail -n +31 | xargs -r rm --

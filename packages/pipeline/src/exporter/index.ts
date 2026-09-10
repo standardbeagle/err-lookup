@@ -11,6 +11,7 @@ import { join, dirname, resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { repositories, errors, infoPages, publishedRepos } from "../db/schema.js";
+import { qualityRows, qualitySummary } from "./quality.js";
 import {
   CURRENT_SCHEMA_VERSION,
   INFO_PAGE_SCHEMA_VERSION,
@@ -198,6 +199,8 @@ export function buildDataset(
   files: FileOut[];
   manifest: object;
   counts: { repos: number; errors: number; rejected: number };
+  /** One-line state of the questionable-page backlog for the run log. */
+  quality: string;
 } {
   const { repos, errorsByRepo } = readDataset(db);
   const datasetVersion = opts.datasetVersion ?? new Date().toISOString();
@@ -223,6 +226,9 @@ export function buildDataset(
   // by /api/errors/:id, which reads the per-repo file.
   const allErrors: ErrorEntry[] = [];
   const repoFiles: FileOut[] = [];
+  // Questionable records, kept per repo so the run can report the backlog it
+  // just republished. `errlookup quality` emits the same rows as a stream.
+  const validByRepo = new Map<string, ErrorEntry[]>();
   // Sitemap-index lastmod per repo. Rolled up here rather than in the site
   // because the records are already loaded and validated in this pass: the
   // rollup costs one extra iteration over data in hand, and the alternative —
@@ -242,6 +248,7 @@ export function buildDataset(
       else rejected++;
     }
     allErrors.push(...valid);
+    validByRepo.set(r.repo, valid);
     lastmodByRepo.set(r.repo, indexableLastmod(valid));
     const [owner, name] = r.repo.split("/");
     repoFiles.push({
@@ -359,7 +366,12 @@ export function buildDataset(
   };
   files.unshift({ relPath: "manifest.json", content: JSON.stringify(manifest) });
 
-  return { files, manifest, counts: { repos: validRepos.length, errors: allErrors.length, rejected } };
+  return {
+    files,
+    manifest,
+    counts: { repos: validRepos.length, errors: allErrors.length, rejected },
+    quality: qualitySummary(allErrors.length, qualityRows(validByRepo)),
+  };
 }
 
 /**
@@ -369,12 +381,16 @@ export function buildDataset(
 export function publishDataset(
   db: Db,
   opts: ExportOptions = {}
-): { manifest: object; counts: { repos: number; errors: number; rejected: number } } {
+): {
+  manifest: object;
+  counts: { repos: number; errors: number; rejected: number };
+  quality: string;
+} {
   const outDir = resolve(opts.outDir ?? defaultOutDir());
   const tmpDir = `${outDir}.tmp-${process.pid}`;
 
   // Build + validate into the temp dir first.
-  const { files, manifest, counts } = buildDataset(db, opts);
+  const { files, manifest, counts, quality } = buildDataset(db, opts);
 
   rmSync(tmpDir, { recursive: true, force: true });
   for (const f of files) {
@@ -391,7 +407,7 @@ export function publishDataset(
   renameSync(tmpDir, outDir);
   rmSync(backup, { recursive: true, force: true });
 
-  return { manifest, counts };
+  return { manifest, counts, quality };
 }
 
 /** Walk up from cwd to the pnpm workspace root (pnpm --filter runs set cwd to the package dir). */

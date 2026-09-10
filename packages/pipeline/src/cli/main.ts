@@ -9,7 +9,8 @@ import { buildProviders } from "../providers.js";
 import { analyzeRepo } from "../pipeline.js";
 import { usageLimitResetAt } from "../provider/run.js";
 import { runScan } from "../scan.js";
-import { publishDataset, rowToErrorEntry } from "../exporter/index.js";
+import { publishDataset, readDataset, rowToErrorEntry } from "../exporter/index.js";
+import { qualityRows, qualitySummary, SITE_ORIGIN } from "../exporter/quality.js";
 import { resetRepo, reposByStatus, purgeOrphanedJobs, errorBySlug, updateErrorFields, recordPhase } from "../db/store.js";
 import { runReviewOne, parseReviewTarget } from "../phase/review.js";
 import { collectInfoPages } from "../info/collector.js";
@@ -93,12 +94,51 @@ async function main(): Promise<void> {
     });
     const { db, raw } = openDb(dbPath());
     try {
-      const { manifest, counts } = publishDataset(db, {
+      const { manifest, counts, quality } = publishDataset(db, {
         outDir: values["out-dir"] ? resolve(values["out-dir"]) : undefined,
       });
       console.log(
-        `exported: ${counts.repos} repos, ${counts.errors} errors (${counts.rejected} rejected)\n${
+        `exported: ${counts.repos} repos, ${counts.errors} errors (${counts.rejected} rejected)\n${quality}\n${
           JSON.stringify(manifest, null, 2)
+        }`
+      );
+    } finally {
+      raw.close();
+    }
+    return;
+  }
+
+  if (cmd === "quality") {
+    const { values } = parseArgs({
+      options: {
+        flag: { type: "string", multiple: true },
+        limit: { type: "string" },
+        summary: { type: "boolean", default: false },
+      },
+      allowPositionals: true,
+      args: rest,
+    });
+    const { db, raw } = openDb(dbPath());
+    try {
+      const { repos, errorsByRepo } = readDataset(db);
+      const total = [...errorsByRepo.values()].reduce((n, rs) => n + rs.length, 0);
+      const all = qualityRows(errorsByRepo, SITE_ORIGIN);
+      let rows = all;
+      const wanted = values.flag as string[] | undefined;
+      if (wanted && wanted.length > 0) {
+        const want = new Set(wanted);
+        rows = rows.filter((r) => r.flags.some((f) => want.has(f)));
+      }
+      const limit = values.limit ? Number.parseInt(values.limit, 10) : 0;
+      if (limit > 0) rows = rows.slice(0, limit);
+      // JSONL on stdout, summary on stderr: the stream stays pipeable into jq
+      // while the run that produced it still says what it found. The summary
+      // always describes the whole corpus — a --limit that also shrank the
+      // numbers would make every capped run read like an improvement.
+      if (!values.summary) for (const r of rows) console.log(JSON.stringify(r));
+      console.error(
+        `${repos.length} repos, ${qualitySummary(total, all)}${
+          rows.length === all.length ? "" : ` (showing ${rows.length})`
         }`
       );
     } finally {
@@ -488,7 +528,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.error("err-lookup pipeline. commands: analyze, scan, collect-info, tags, review, reset, export, proxy, status");
+  console.error("err-lookup pipeline. commands: analyze, scan, collect-info, tags, review, reset, export, quality, proxy, status");
   console.error("  errlookup analyze <owner/repo> [--phases 1,2,3,4,5] [--force]");
   console.error("  errlookup review [--dry-run] <page-url | owner/repo/slug>...");
   console.error("  errlookup scan <file.txt> [--phases 1,2,3,5] [--force] [--seed-only]");
@@ -498,6 +538,8 @@ async function main(): Promise<void> {
   console.error("  errlookup tags [--apply] [--limit 40]   report or fold the background-family vocabulary");
   console.error("  errlookup reset [--failed] [--dry-run] [owner/repo ...]");
   console.error("  errlookup export [--out-dir <path>]");
+  console.error("  errlookup quality [--flag thin|short-doc|no-solutions|generic-slug|opaque-slug|duplicate|no-source] [--limit N] [--summary]");
+  console.error("      # JSONL stream of questionable published pages, worst first — the cleanup work list");
   console.error("  errlookup proxy [--limits] [--reset] # recording provider proxy; --limits prints the snapshot, --reset starts a new window");
   console.error("  errlookup status");
   process.exit(cmd ? 1 : 0);
