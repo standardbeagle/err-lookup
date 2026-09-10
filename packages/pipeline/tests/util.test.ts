@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { withTimeout, TimeoutError, sleep } from "../src/util/watchdog.js";
 import { mapPool, chunk, Semaphore } from "../src/util/pool.js";
 import { isPeak, msUntilOffPeak } from "../src/util/peak.js";
-import { computeErrorId, deriveSlug, normalizeErrorType } from "../src/util/ids.js";
+import { computeErrorId, deriveSlug, deriveSlugAlternative, normalizeErrorType } from "../src/util/ids.js";
 import { extractSourceRegion, githubPermalink } from "../src/util/source.js";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
@@ -86,6 +86,41 @@ describe("ids", () => {
   it("deriveSlug kebab-codes and truncates", () => {
     expect(deriveSlug("ERR_BAD_RESPONSE", "x")).toBe("err-bad-response");
     expect(deriveSlug(null, "Cannot find module 'foo'")).toBe("cannot-find-module-foo");
+  });
+
+  it("deriveSlug trims at a word boundary, never mid-word", () => {
+    // The old hard 50-char slice made long messages sharing a prefix collide:
+    // 110 of 272 hex-suffixed slugs in a 2026-09-09 sample came from this.
+    const long =
+      "Expected the configured transport to expose a writable stream before the handshake completes";
+    const slug = deriveSlug(null, long);
+    expect(slug.length).toBeLessThanOrEqual(60);
+    expect(slug.endsWith("-")).toBe(false);
+    // whole words only — no truncated tail
+    for (const word of slug.split("-")) expect(long.toLowerCase()).toContain(word);
+  });
+
+  it("deriveSlug falls back to the file name when the message has no ASCII", () => {
+    // Every CJK message kebabs to nothing and used to become the literal
+    // "error" (macrozheng/mall published /error/ and /error-39bdc1/).
+    expect(deriveSlug(null, "用户名或密码错误", "src/service/UmsMemberService.java")).toBe(
+      "umsmemberservice"
+    );
+    // ...and only "error" when the file name is unusable too.
+    expect(deriveSlug(null, "用户名或密码错误", "src/服务/服务.java")).toBe("error");
+    expect(deriveSlug(null, "用户名或密码错误")).toBe("error");
+  });
+
+  it("deriveSlugAlternative adds what the primary derivation ignored", () => {
+    // one code, several files: the message distinguishes them
+    expect(deriveSlugAlternative("ERR_BAD_RESPONSE", "Invalid status", "a.js")).toBe(
+      "err-bad-response-invalid-status"
+    );
+    // one message, several files: the file does
+    expect(deriveSlugAlternative(null, "boom", "lib/core/settle.js")).toBe("boom-settle");
+    // nothing to add
+    expect(deriveSlugAlternative(null, "boom", "")).toBeNull();
+    expect(deriveSlugAlternative(null, "settle", "lib/settle.js")).toBeNull();
   });
 
   it("normalizeErrorType maps known + defaults to exception", () => {

@@ -5,7 +5,13 @@ import {
   CURRENT_SCHEMA_VERSION,
 } from "@errlookup/schema";
 import type { DiscoveredErrorJson, EnrichedErrorJson, DefenseStrategyJson } from "./prompts.js";
-import { computeErrorId, deriveSlug, normalizeErrorCode, normalizeErrorType } from "../util/ids.js";
+import {
+  computeErrorId,
+  deriveSlug,
+  deriveSlugAlternative,
+  normalizeErrorCode,
+  normalizeErrorType,
+} from "../util/ids.js";
 import { extractSourceRegion, githubPermalink } from "../util/source.js";
 import { deriveMessagePattern } from "../util/pattern.js";
 
@@ -58,6 +64,12 @@ export function assemble(input: AssembleInput): AssembleOutput {
   const rejects: { message: string; error: string }[] = [];
   const seenIds = new Set<string>(input.reservedIds ?? []);
   const usedSlugs = new Set<string>(input.reservedSlugs ?? []);
+  // existingSlugOwners is slug → id over the published records, and both sides
+  // are unique per repo, so it inverts to the published slug of an identity.
+  // That inverse is what freezes a published record's URL (below).
+  const slugById = new Map<string, string>();
+  for (const [slug, owner] of input.existingSlugOwners ?? []) slugById.set(owner, slug);
+  const publishedSlugFor = (id: string): string | undefined => slugById.get(id);
 
   discovered.forEach((d, i) => {
     // The model answers `code` with whatever the source shows, and error codes
@@ -84,12 +96,27 @@ export function assemble(input: AssembleInput): AssembleOutput {
     }
     seenIds.add(id);
 
-    // Slug must be unique per repo (unique index). deriveSlug collides when the
-    // same errorCode is thrown from multiple files, so disambiguate with a
-    // stable id fragment — deterministic across runs.
-    let slug = deriveSlug(code, d.message);
-    const ownedByOther = input.existingSlugOwners?.get(slug) !== undefined && input.existingSlugOwners.get(slug) !== id;
-    if (usedSlugs.has(slug) || ownedByOther) slug = `${slug}-${id.slice(0, 6)}`;
+    // A record that is already published keeps the slug it was published
+    // under, whatever the derivation would produce today. Re-deriving is what
+    // makes any change to deriveSlug re-slug the whole corpus on its next
+    // re-analysis: the old URL stops existing, and every crawled copy of it
+    // becomes a redirect we spend crawl budget on. Improvements apply to new
+    // records only; retiring a bad published slug is a separate, deliberate
+    // migration with redirects.
+    const published = publishedSlugFor(id);
+    let slug = published ?? deriveSlug(code, d.message, filePath);
+    if (published === undefined) {
+      // Unique per repo (unique index). Try the more specific derivation
+      // before the hex fragment — err-bad-response-invalid-status reads as a
+      // page about something; err-bad-response-3f2a1c does not.
+      const taken = (s: string): boolean =>
+        usedSlugs.has(s) ||
+        (input.existingSlugOwners?.get(s) !== undefined && input.existingSlugOwners.get(s) !== id);
+      if (taken(slug)) {
+        const alt = deriveSlugAlternative(code, d.message, filePath);
+        slug = alt !== null && !taken(alt) ? alt : `${slug}-${id.slice(0, 6)}`;
+      }
+    }
     usedSlugs.add(slug);
 
     const record = {

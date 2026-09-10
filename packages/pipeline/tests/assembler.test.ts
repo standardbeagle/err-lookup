@@ -118,9 +118,30 @@ describe("assemble slug uniqueness", () => {
     expect(out.records).toHaveLength(2);
     const slugs = out.records.map((r) => r.slug);
     expect(new Set(slugs).size).toBe(2);
-    // first occurrence keeps the clean slug; collision gets a stable suffix
+    // First occurrence keeps the clean slug. The collision is resolved by
+    // what the code-only derivation ignored — the message — rather than by a
+    // hex fragment nobody can read.
     expect(slugs[0]).toBe("err-invalid-state");
-    expect(slugs[1]).toMatch(/^err-invalid-state-[0-9a-f]{6}$/);
+    expect(slugs[1]).toBe("err-invalid-state-in-lexer");
+  });
+
+  it("falls back to the hex fragment only when the alternative collides too", () => {
+    const out = assemble({
+      repo: "acme/lib",
+      sha: "a".repeat(40),
+      repoPath: "/nonexistent",
+      // Same code, same message, three files: the alternative distinguishes
+      // the second, and by the third there is nothing left to say.
+      discovered: [
+        discovered("ERR_SAME", "identical text", "src/a.ts"),
+        discovered("ERR_SAME", "identical text", "src/b.ts"),
+        discovered("ERR_SAME", "identical text", "src/c.ts"),
+      ],
+      enriched: new Map(),
+    });
+    expect(out.records[0]!.slug).toBe("err-same");
+    expect(out.records[1]!.slug).toBe("err-same-identical-text");
+    expect(out.records[2]!.slug).toMatch(/^err-same-[0-9a-f]{6}$/);
   });
 
   it("drops exact duplicate discoveries (same id) instead of failing the repo", () => {
@@ -156,10 +177,34 @@ describe("assemble: slugs owned by surviving published records", () => {
     expect(free.records[0]!.slug).toBe("err-taken");
 
     const takenByOther = assemble({ ...base, existingSlugOwners: new Map([["err-taken", "f".repeat(16)]]) });
-    expect(takenByOther.records[0]!.slug).toBe(`err-taken-${id.slice(0, 6)}`);
+    expect(takenByOther.records[0]!.slug).toBe("err-taken-boom-happens");
 
     // The same identity re-published keeps its own slug — no churn.
     const takenBySelf = assemble({ ...base, existingSlugOwners: new Map([["err-taken", id]]) });
     expect(takenBySelf.records[0]!.slug).toBe("err-taken");
+  });
+
+  it("a published record keeps its slug even when the derivation would now differ", () => {
+    // This is what makes a corpus-wide re-analysis safe to schedule. Without
+    // it, every improvement to deriveSlug silently re-slugs every record it
+    // touches: the published URL stops existing, and each crawled copy turns
+    // into a redirect paid for out of a crawl budget already down to tens of
+    // requests a day.
+    const d = discovered(null, "用户名或密码错误", "src/service/UmsMemberService.java");
+    const base = {
+      repo: "acme/lib",
+      sha: "a".repeat(40),
+      repoPath: "/nonexistent",
+      discovered: [d],
+      enriched: new Map(),
+    };
+    const fresh = assemble({ ...base });
+    // A new record gets the improved derivation...
+    expect(fresh.records[0]!.slug).toBe("umsmemberservice");
+
+    // ...but one already published as the old "error" keeps it.
+    const id = fresh.records[0]!.id;
+    const republished = assemble({ ...base, existingSlugOwners: new Map([["error", id]]) });
+    expect(republished.records[0]!.slug).toBe("error");
   });
 });
