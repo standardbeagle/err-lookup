@@ -1,0 +1,37 @@
+// Bulk-phase evaluation: DeepSeek V4.1 Flash via opencode Go — one model for every
+// phase (scope, discovery, analysis, verify), the same shape as
+// configs/compare-glm53flash.kdl so the numbers land in the same table.
+// Compare against data/baseline-isolation-cmp.db and the glm-5.2 / glm-5.3
+// -flash runs in docs/model-comparison-2026-08-27-glm53-flash.md.
+//
+// Budget: opencode Go is $15/mo tier — ~$3 per 5-hour window
+// (https://opencode.ai/docs/go/#usage-limits), so this runs ONE repo at a
+// time and the concurrency stays low — a three-repo sweep would spend the
+// window before the third repo reported.
+// Use with: ERRLOOKUP_CONFIG=configs/compare-deepseek-v41-flash.kdl ERRLOOKUP_DB=data/compare-deepseek-v41-flash.db
+provider "candidate" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "opencode-go/deepseek-v4.1-flash"
+    timeout-ms 600000
+    idle-timeout-ms 180000
+    // The same directive production's flash carries. The incumbent's bulk
+    // numbers were measured WITH it (and with batch 10 below); comparing a
+    // tuned incumbent against an untuned candidate would only measure the
+    // tuning. No reasoningEffort pin: it is a z.ai-shaped option and these
+    // are opencode Go models, so guessing one risks being silently ignored
+    // or rejected.
+    prompt-directive "Be thorough and complete. Produce an entry for EVERY item asked for — an incomplete answer is a failed answer. Keep each field brief and factual; never pad. Deliver the output exactly as the delivery instruction says, using the write tool, and verify the file holds the complete JSON before finishing."
+}
+defaults {
+    primary "candidate"
+    provider-max-concurrent 3
+    max-concurrent 1
+    batch-concurrency 3
+    // Half-size outputs cannot hit the truncation ceiling — production's value.
+    analysis-batch-size 10
+    source-window 6
+    call-facts true
+    delay-between-phases-ms 2000
+}
