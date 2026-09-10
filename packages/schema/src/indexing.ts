@@ -1,4 +1,4 @@
-import type { ErrorEntry } from "@errlookup/schema";
+import type { ErrorEntry } from "./error.js";
 
 /**
  * Which error pages the site advertises to crawlers. Everything renders and
@@ -11,6 +11,11 @@ import type { ErrorEntry } from "@errlookup/schema";
  * A page is index-worthy when its repo has been admitted by the scheduled
  * publisher (published.json) AND the record is the canonical carrier of its
  * message pattern AND it is not thin.
+ *
+ * Lives in the schema package because two producers must agree on it: the site
+ * decides which URLs enter a sitemap, and the exporter rolls the same set up
+ * into each repo's sitemap-index lastmod. Two copies of this rule would put a
+ * lastmod on a document whose contents it does not describe.
  */
 
 /** Same bar the pipeline's verify phase uses for a documentation gap. */
@@ -59,3 +64,4 @@ export function indexableSlugs(all: readonly ErrorEntry[]): Set<string> {
   const canonical = canonicalSlugs(all);
   return new Set(all.filter((e) => canonical.has(e.slug) && !isThinRecord(e)).map((e) => e.slug));
 }
+

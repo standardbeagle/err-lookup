@@ -1,6 +1,6 @@
 import type { APIRoute } from "astro";
 import { getPublishedRepoEntries, getRepoErrors } from "../../../data/load.js";
-import { indexableSlugs } from "../../../data/indexing.js";
+import { indexableSlugs } from "@errlookup/schema";
 
 // Per-repo sitemap: /sitemaps/{owner}/{name}.xml (§6.2). Only repos the
 // scheduled publisher has admitted get one — an unadmitted repo's pages are
@@ -16,7 +16,7 @@ export const GET: APIRoute = ({ props }) => {
   const repo = props.repo as string;
   const errors = getRepoErrors(repo);
   // Thin records and non-canonical pattern variants render noindex, so they
-  // earn no sitemap line either (data/indexing.ts) — the sitemap advertises
+  // earn no sitemap line either (schema/indexing.ts) — the sitemap advertises
   // exactly the set we want judged.
   const indexable = indexableSlugs(errors);
   const repoLastmod = getPublishedRepoEntries().find((r) => r.repo === repo)?.analyzedAt;

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { experimental_AstroContainer as AstroContainer } from "astro/container";
 import type { ErrorEntry } from "@errlookup/schema";
-import { isThinRecord, canonicalSlugs, indexableSlugs, THIN_DOC_CHARS } from "../src/data/indexing.js";
+import { isThinRecord, canonicalSlugs, indexableSlugs, THIN_DOC_CHARS } from "@errlookup/schema";
 import ErrorDetail from "../src/components/ErrorDetail.astro";
 
 const LONG_DOC =
@@ -46,7 +46,7 @@ function rec(overrides: Partial<ErrorEntry>): ErrorEntry {
   } as ErrorEntry;
 }
 
-describe("crawl-surface predicates (data/indexing.ts)", () => {
+describe("crawl-surface predicates (schema/indexing.ts)", () => {
   it("thin = short documentation AND no solutions; either alone is enough to index", () => {
     expect(isThinRecord(rec({ documentation: "stub", solutions: [] }))).toBe(true);
     expect(isThinRecord(rec({ documentation: "stub", solutions: ["fix"] }))).toBe(false);
