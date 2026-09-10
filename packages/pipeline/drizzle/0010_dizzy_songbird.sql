@@ -1,0 +1,1 @@
+ALTER TABLE `queue` ADD `backfill` integer DEFAULT 0 NOT NULL;

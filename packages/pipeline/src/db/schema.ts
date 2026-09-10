@@ -132,6 +132,15 @@ export const queue = sqliteTable(
     // with no other repos running at all. An infra failure at level 2 settles
     // as failed.
     solo: integer("solo").notNull().default(0),
+    /**
+     * 1 = a scheduled re-analysis of an already-published repo, enqueued by
+     * the backfill once no never-analyzed repo is left to import. It runs the
+     * full pipeline regardless of whether HEAD moved, because the point is to
+     * re-analyze old content with the current pipeline, and the fast paths
+     * that make ordinary rescans cheap (unchanged-HEAD skip, zero-yield
+     * damping, incremental diff) would all decline to do exactly that.
+     */
+    backfill: integer("backfill").notNull().default(0),
     lastError: text("last_error"),
     updatedAt: integer("updated_at").notNull().$defaultFn(() => Date.now()),
   },

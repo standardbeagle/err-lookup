@@ -97,6 +97,8 @@ describe("config mapping", () => {
       skipPeak: false,
       delayBetweenPhasesMs: 5_000,
       rescanShare: 0.25,
+      backfillAfterDays: 30,
+      backfillBatch: 50,
     });
   });
 

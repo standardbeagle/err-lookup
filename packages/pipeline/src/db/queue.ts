@@ -45,12 +45,93 @@ export function seedQueue(db: Db, repos: string[]): { added: number; requeued: n
       // A fresh seed is a fresh start: terminal rows come back best-effort,
       // dropping any solo mark from a previous incident.
       db.update(queue)
-        .set({ status: "queued", solo: 0, lastError: null, updatedAt: Date.now() })
+        .set({ status: "queued", solo: 0, backfill: 0, lastError: null, updatedAt: Date.now() })
         .where(and(eq(queue.repo, repo), eq(queue.status, existing.status)))
         .run();
       requeued++;
     }
     return { added, requeued };
+  });
+}
+
+/** Repos queued for their FIRST analysis — the import the backfill waits behind. */
+export function countQueuedNeverAnalyzed(db: Db): number {
+  return db
+    .select({ n: sql<number>`count(*)` })
+    .from(queue)
+    .leftJoin(repositories, eq(repositories.repo, queue.repo))
+    .where(
+      and(
+        sql`${queue.status} IN ('queued','running')`,
+        sql`${repositories.analyzedSha} IS NULL`
+      )
+    )
+    .get()!.n;
+}
+
+/**
+ * Schedule the recrawl: enqueue published repos whose last analysis predates
+ * `before`, oldest first, for a FULL re-analysis.
+ *
+ * This is how old repos reach the current pipeline. An ordinary rescan will
+ * not do it — the unchanged-HEAD skip, the zero-yield damping and the
+ * incremental diff all exist to avoid re-spending the pipeline on content
+ * that has not moved, and here the content is exactly what has not moved
+ * while the pipeline around it did (the verify bar, the thin-record rules,
+ * the slug derivation). The `backfill` flag on the row is what tells the
+ * drain to take the long path.
+ *
+ * Bounded by `limit` per call and never touching a queued or running row, so
+ * it is safe to run every drain: it tops the queue up, it does not refill it.
+ * Nothing here forces a slug to change — published records keep their slugs
+ * (see phase/assembler.ts) — so a repo can be re-analyzed without retiring a
+ * single crawled URL.
+ */
+export function enqueueBackfill(
+  db: Db,
+  opts: { before: string; limit: number }
+): { enqueued: number; eligible: number } {
+  const eligibleRows = db
+    .select({ repo: repositories.repo, queueStatus: queue.status, queueUpdatedAt: queue.updatedAt })
+    .from(repositories)
+    .leftJoin(queue, eq(queue.repo, repositories.repo))
+    .where(
+      and(
+        sql`${repositories.analyzedSha} IS NOT NULL`,
+        sql`${repositories.status} IN ('analyzed','exported')`,
+        sql`${repositories.analyzedAt} IS NOT NULL`,
+        lt(repositories.analyzedAt, opts.before)
+      )
+    )
+    .orderBy(asc(repositories.analyzedAt))
+    .all()
+    .filter((r) => {
+      // Never steal in-flight work, and honour the failed cooloff: a repo that
+      // fails its recrawl keeps a stale analyzedAt, so without this it would
+      // be re-enqueued by every drain and eat the batch forever.
+      if (r.queueStatus === "queued" || r.queueStatus === "running") return false;
+      if (
+        r.queueStatus === "failed" &&
+        Date.now() - (r.queueUpdatedAt ?? 0) < FAILED_REQUEUE_COOLOFF_MS
+      ) {
+        return false;
+      }
+      return true;
+    });
+
+  const take = eligibleRows.slice(0, Math.max(0, opts.limit));
+  if (take.length === 0) return { enqueued: 0, eligible: eligibleRows.length };
+  return tx(db, () => {
+    for (const r of take) {
+      db.insert(queue)
+        .values({ repo: r.repo, status: "queued", backfill: 1, solo: 0, updatedAt: Date.now() })
+        .onConflictDoUpdate({
+          target: queue.repo,
+          set: { status: "queued", backfill: 1, solo: 0, lastError: null, updatedAt: Date.now() },
+        })
+        .run();
+    }
+    return { enqueued: take.length, eligible: eligibleRows.length };
   });
 }
 

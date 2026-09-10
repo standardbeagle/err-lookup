@@ -9,6 +9,8 @@ import {
   seedQueue,
   reclaimRunningQueue,
   claimNextQueued,
+  countQueuedNeverAnalyzed,
+  enqueueBackfill,
   settleQueueItem,
   requeueInfraFailure,
   type ClaimPreference,
@@ -63,6 +65,8 @@ export interface ScanSummary {
   dampened: number;
   /** Left queued because the failure breaker tripped. */
   leftQueued: number;
+  /** Repos this drain enqueued for the scheduled recrawl (0 while imports remain). */
+  backfilled: number;
   /** Requeued without a failed mark because the host, not the repo, was sick. */
   infraRequeued: number;
   /**
@@ -98,6 +102,36 @@ export function isInfraFailure(msg: string): boolean {
 const BREAKER = 5;
 
 /**
+ * Enqueue the next slice of the recrawl, or explain why it is not due.
+ * Returns how many repos were enqueued.
+ */
+function scheduleBackfill(
+  db: Db,
+  cfg: ErrlookupConfig,
+  log: (repo: string, msg: string) => void,
+  now: () => number
+): number {
+  const { backfillAfterDays, backfillBatch } = cfg.defaults;
+  if (backfillAfterDays <= 0 || backfillBatch <= 0) return 0;
+  const pendingImports = countQueuedNeverAnalyzed(db);
+  if (pendingImports > 0) {
+    log("*", `backfill held: ${pendingImports} repos still waiting for a first analysis`);
+    return 0;
+  }
+  const before = new Date(now() - backfillAfterDays * 86_400_000).toISOString();
+  const { enqueued, eligible } = enqueueBackfill(db, { before, limit: backfillBatch });
+  if (eligible === 0) {
+    log("*", `backfill idle: no published repo is older than ${backfillAfterDays}d`);
+    return 0;
+  }
+  log(
+    "*",
+    `backfill: enqueued ${enqueued} of ${eligible} repos last analyzed before ${before.slice(0, 10)}`
+  );
+  return enqueued;
+}
+
+/**
  * Re-entrant corpus scan (§11.1): seed the queue, then drain it with
  * maxConcurrent workers that each loop claim → check remote HEAD → analyze →
  * settle. Because workers claim until the queue is empty, rows seeded by a
@@ -117,6 +151,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
     dampened: 0,
     leftQueued: 0,
     infraRequeued: 0,
+    backfilled: 0,
     stoppedForRestart: false,
     providerHoldUntil: null,
     seeded,
@@ -140,6 +175,14 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
   // starts a fresh one on current code. 0 disables the budget.
   const now = opts.now ?? Date.now;
   const deadline = cfg.defaults.maxRuntimeMinutes > 0 ? now() + cfg.defaults.maxRuntimeMinutes * 60_000 : Infinity;
+
+  // Recrawl schedule. Imports come first: while any repo is still waiting for
+  // its first analysis, the corpus is growing and the backfill stays out of
+  // the way. Once that reaches zero the drain tops the queue up with the
+  // oldest published repos, so they get re-analyzed by the current pipeline
+  // instead of sitting on whatever it produced months ago. Bounded per drain,
+  // so this is a steady cycle rather than one enormous re-run.
+  summary.backfilled = scheduleBackfill(db, cfg, log, now);
   let budgetSpent = false;
   // Analysis starts by kind, shared by all workers. Counted at claim time
   // (synchronously, so concurrent workers cannot all pick the same kind off a
@@ -198,6 +241,10 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
       const row = getRepo(db, repo);
       const kind: ClaimPreference = row?.analyzedSha ? "rescan" : "fresh";
       started[kind]++;
+      // A scheduled recrawl row is here precisely because its content has not
+      // moved while the pipeline has. Every cheap path below asks "did HEAD
+      // change?" and would answer no, which is the wrong question for it.
+      const fullReanalysis = opts.force || item.backfill === 1;
 
       // Peak-price gate: checked between repos, never mid-repo (§ batch note).
       if (cfg.defaults.skipPeak) {
@@ -212,7 +259,7 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
       // repos with a published version qualify; a lookup failure is not fatal —
       // the full analysis path does its own clone and reports properly.
       const cloneUrl = opts.cloneUrlFor?.(repo);
-      if (!opts.force) {
+      if (!fullReanalysis) {
         // Zero-yield damping: a published analysis that found nothing marks a
         // repo as docs/config-shaped, and those repos churn HEAD on README
         // edits. Re-analyzing on every HEAD move re-spends the whole LLM
@@ -246,14 +293,19 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
         }
       }
 
-      log(repo, item.solo > 0 ? `start (escalation level ${item.solo})` : "start");
+      log(
+        repo,
+        `${item.backfill === 1 ? "start (scheduled recrawl)" : "start"}${
+          item.solo > 0 ? ` (escalation level ${item.solo})` : ""
+        }`
+      );
       try {
         const r = await analyzeRepo(repo, {
           db,
           providers: opts.providers,
           cfg,
           phases: opts.phases,
-          force: opts.force,
+          force: fullReanalysis,
           cloneUrlOverride: cloneUrl,
           solo: item.solo >= 1,
           onLog: (m) => log(repo, m),

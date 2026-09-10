@@ -112,6 +112,14 @@ export interface ErrlookupConfig {
      * 1 = rescans first). Balances growing the index against keeping it fresh.
      */
     rescanShare: number;
+    /**
+     * Recrawl schedule. Once no never-analyzed repo is left queued, the drain
+     * tops the queue up with published repos whose last analysis is older
+     * than `backfillAfterDays`, oldest first, at most `backfillBatch` per
+     * drain. 0 days or 0 batch disables it.
+     */
+    backfillAfterDays: number;
+    backfillBatch: number;
   };
   /**
    * Per-phase provider overrides (model routing): cheap models for bulk
@@ -175,6 +183,8 @@ export const DEFAULT_CONFIG: ErrlookupConfig = {
     skipPeak: false,
     delayBetweenPhasesMs: 5_000,
     rescanShare: 0.25,
+    backfillAfterDays: 30,
+    backfillBatch: 50,
   },
   proxy: structuredClone(DEFAULT_PROXY),
 };
@@ -285,6 +295,8 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
         skipPeak: childByName(node, "skip-peak")?.values[0] === true,
         delayBetweenPhasesMs: asNumber(childByName(node, "delay-between-phases-ms")?.values[0], 5_000),
         rescanShare: Math.min(1, Math.max(0, asNumber(childByName(node, "rescan-share")?.values[0], 0.25))),
+        backfillAfterDays: Math.max(0, asNumber(childByName(node, "backfill-after-days")?.values[0], 30)),
+        backfillBatch: Math.max(0, Math.floor(asNumber(childByName(node, "backfill-batch")?.values[0], 50))),
       };
     }
   }

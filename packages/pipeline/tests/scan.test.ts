@@ -14,6 +14,8 @@ import {
   settleQueueItem,
   requeueInfraFailure,
   queueByStatus,
+  enqueueBackfill,
+  countQueuedNeverAnalyzed,
   FAILED_REQUEUE_COOLOFF_MS,
 } from "../src/db/queue.js";
 import { runScan, isInfraFailure, pickClaimKind } from "../src/scan.js";
@@ -361,6 +363,23 @@ describe("runtime budget", () => {
   });
 });
 
+/** ISO timestamp `n` days before now. */
+function daysAgo(n: number): string {
+  return new Date(Date.now() - n * 86_400_000).toISOString();
+}
+
+/** A repo with a published analysis of the given age. */
+function published(db: Db, repo: string, analyzedAt: string): void {
+  upsertRepo(db, {
+    repo,
+    status: "analyzed",
+    analyzedSha: "a".repeat(40),
+    analyzedAt,
+    errorCount: 3,
+    defaultBranch: "main",
+  });
+}
+
 describe("re-entrant scan", () => {
   it("analyzes a seeded repo, then skips it without cloning while HEAD is unchanged", async () => {
     const local = await makeLocalRepo();
@@ -419,6 +438,109 @@ describe("re-entrant scan", () => {
     }
     close();
   });
+
+  it("holds the recrawl while any repo still awaits a first analysis", async () => {
+    // Growing the index outranks refreshing it: a backfill that ran alongside
+    // the import would spend the drain re-analyzing what is already published
+    // while new repos waited.
+    published(db, "old/repo", daysAgo(90));
+    const logs: string[] = [];
+    const summary = await runScan({
+      db,
+      cfg: makeCfg(["  backfill-after-days 30", "  backfill-batch 10"]),
+      corpus: ["never/analyzed"],
+      providers: {},
+      seedOnly: true,
+      onLog: (_r, m) => logs.push(m),
+    });
+    expect(summary.backfilled).toBe(0);
+
+    // Once the import is done the same call schedules the recrawl.
+    settleQueueItem(db, "never/analyzed", "done");
+    upsertRepo(db, {
+      repo: "never/analyzed",
+      status: "analyzed",
+      analyzedSha: "b".repeat(40),
+      analyzedAt: new Date().toISOString(),
+      errorCount: 1,
+      defaultBranch: "main",
+    });
+    expect(countQueuedNeverAnalyzed(db)).toBe(0);
+    const after = enqueueBackfill(db, { before: daysAgo(30), limit: 10 });
+    // Only the 90-day-old repo is eligible; the one just analyzed is not.
+    expect(after).toEqual({ enqueued: 1, eligible: 1 });
+    close();
+  });
+
+  it("recrawls oldest first, bounded per drain, and never disturbs live rows", async () => {
+    published(db, "a/oldest", daysAgo(120));
+    published(db, "b/older", daysAgo(90));
+    published(db, "c/old", daysAgo(60));
+    published(db, "d/fresh", daysAgo(1));
+    // A repo already queued for ordinary work must not be re-flagged.
+    published(db, "e/queued", daysAgo(200));
+    seedQueue(db, ["e/queued"]);
+
+    const first = enqueueBackfill(db, { before: daysAgo(30), limit: 2 });
+    expect(first).toEqual({ enqueued: 2, eligible: 3 });
+    expect(queueByStatus(db, "queued").filter((r) => r.backfill === 1).map((r) => r.repo).sort()).toEqual([
+      "a/oldest",
+      "b/older",
+    ]);
+    expect(queueByStatus(db, "queued").find((r) => r.repo === "e/queued")!.backfill).toBe(0);
+
+    // The next drain picks up where this one stopped: a recrawled repo stamps
+    // a fresh analyzedAt, which is what takes it out of the eligible set.
+    settleQueueItem(db, "a/oldest", "done");
+    settleQueueItem(db, "b/older", "done");
+    published(db, "a/oldest", daysAgo(0));
+    published(db, "b/older", daysAgo(0));
+    const second = enqueueBackfill(db, { before: daysAgo(30), limit: 2 });
+    expect(second).toEqual({ enqueued: 1, eligible: 1 });
+    expect(queueByStatus(db, "queued").map((r) => r.repo)).toContain("c/old");
+    close();
+  });
+
+  it("a repo that fails its recrawl waits out the cooloff instead of eating every batch", () => {
+    // Its analyzedAt stays old, so nothing else would ever stop it being
+    // picked first — every drain, ahead of repos that would succeed.
+    published(db, "a/breaks", daysAgo(120));
+    expect(enqueueBackfill(db, { before: daysAgo(30), limit: 5 }).enqueued).toBe(1);
+    settleQueueItem(db, "a/breaks", "failed", "boom");
+    expect(enqueueBackfill(db, { before: daysAgo(30), limit: 5 })).toEqual({
+      enqueued: 0,
+      eligible: 0,
+    });
+    close();
+  });
+
+  it("a recrawl row re-analyzes even though HEAD has not moved", async () => {
+    // The unchanged-HEAD skip is right for an ordinary rescan and wrong for
+    // this one: the content is exactly what did not change while the pipeline
+    // around it did.
+    const local = await makeLocalRepo();
+    const cfg = makeCfg();
+    const opts = {
+      db,
+      cfg,
+      corpus: ["sindresorhus/is"],
+      providers: makeProviders(),
+      cloneUrlFor: () => local.path,
+      onLog: () => {},
+    };
+    expect((await runScan(opts)).ok).toBe(1);
+
+    // An ordinary reseed skips it...
+    expect((await runScan({ ...opts, providers: {} })).unchanged).toBe(1);
+
+    // ...a scheduled recrawl re-analyzes it.
+    settleQueueItem(db, "sindresorhus/is", "done");
+    expect(enqueueBackfill(db, { before: daysAgo(0), limit: 5 }).enqueued).toBe(1);
+    const recrawl = await runScan({ ...opts, corpus: [] });
+    expect(recrawl.unchanged).toBe(0);
+    expect(recrawl.ok).toBe(1);
+    close();
+  }, 20_000);
 
   it("seed-only enqueues without draining", async () => {
     const summary = await runScan({

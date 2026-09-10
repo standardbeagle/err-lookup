@@ -111,6 +111,13 @@ defaults {
     // refreshes an already-published repo; the rest import new ones.
     rescan-share 0.25
     delay-between-phases-ms 2000
+
+    // Recrawl schedule: once nothing is left to import, re-analyze the oldest
+    // published repos with the current pipeline. 50/drain against 4 drains a
+    // day cycles a ~1,500-repo corpus in roughly a week, and never runs while
+    // repos are still waiting for their first analysis.
+    backfill-after-days 30
+    backfill-batch 50
 }
 phase-providers {
     review "flash-review"
