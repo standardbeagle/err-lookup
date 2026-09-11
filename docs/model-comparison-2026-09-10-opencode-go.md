@@ -184,13 +184,17 @@ kept glm-5.3 out of the seat in August. DeepSeek matches the incumbent's
 calibration on that record, is marginally faster (24s vs 27s), and its patches
 were justified on inspection.
 
-Do not switch on this evidence alone. DeepSeek patches 11 fields to the
-incumbent's 2, and the incumbent was chosen partly *for* restraint. Nine records
-cannot tell us whether that interventionism stays correct at corpus scale, and
-the failure mode it would introduce (over-patching verified records) is quieter
-than the one it fixes. The cheap next step is a live A/B: route `review` to
-DeepSeek behind the existing dry-run path for a week of real pages and count
-patches that survive inspection.
+**Closed 2026-09-11: not adopting DeepSeek for review. No A/B was run.** The
+incumbent stays in the seat. glm-5.3-flash's review calibration is adequate, the
+account is already paid for, and adding a second vendor to the review path buys
+a marginal verdict improvement in exchange for another provider to keep
+authenticated, rate-limited and monitored. The open question below is recorded
+for anyone who reopens this, not as pending work.
+
+Recorded for that reader: DeepSeek patched 11 fields to the incumbent's 2 on the
+traffic subset. That was read here as an over-patching risk, and it may instead
+be the incumbent under-patching — but the evidence never got past anecdote, and
+the decision does not turn on it.
 
 **Bulk: Qwen3.8 Flash is the first candidate to beat the incumbent on quality
 without a reliability penalty** — more records, more sites, baseline-parity
