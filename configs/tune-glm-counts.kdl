@@ -1,0 +1,36 @@
+// glm-5.3-flash prompt tuning, cell "counts" — adds explicit list-coverage guidance; brevity clause retained
+//
+// The four cells differ ONLY in prompt-directive. Everything else matches
+// production's bulk path (glm-5.3-flash, reasoningEffort high, batch 10), so
+// the field-richness deltas belong to the directive and nothing else.
+//
+// The control must be re-run alongside the variants: commit 150a171 moved
+// fastapi's in-scope candidate pool from 43 to 59, and comparing a new
+// directive against pre-fix numbers would credit the prompt for the pattern.
+//
+// Directive applies to every phase (scope, discovery, analysis, verify), not
+// just enrichment — that is how production's directive already works, so the
+// cells stay comparable to the control even though the blast radius is wide.
+//
+// Use with: ERRLOOKUP_CONFIG=configs/tune-glm-counts.kdl ERRLOOKUP_DB=data/tune-glm-counts.db
+provider "flash" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "zai-coding-plan/glm-5.3-flash"
+    timeout-ms 600000
+    idle-timeout-ms 180000
+    model-options "{\"reasoningEffort\":\"high\"}"
+    prompt-directive "Be thorough and complete. Produce an entry for EVERY item asked for — an incomplete answer is a failed answer. Keep each field brief and factual; never pad. When a field is a list, give every entry that genuinely applies: tags should name the language, the subsystem, the error class and the cause; solutions should list every distinct fix, not only the first. Deliver the output exactly as the delivery instruction says, using the write tool, and verify the file holds the complete JSON before finishing."
+}
+defaults {
+    primary "flash"
+    provider-max-concurrent 3
+    max-concurrent 1
+    batch-concurrency 3
+    analysis-batch-size 10
+    source-window 6
+    call-facts true
+    skip-peak true
+    delay-between-phases-ms 2000
+}
