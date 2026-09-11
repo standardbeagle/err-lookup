@@ -7,6 +7,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { openDb, type Db } from "../src/db/client.js";
 import { getRepo, upsertRepo } from "../src/db/store.js";
+import { errors } from "../src/db/schema.js";
 import {
   seedQueue,
   claimNextQueued,
@@ -498,6 +499,52 @@ describe("re-entrant scan", () => {
     const second = enqueueBackfill(db, { before: daysAgo(30), limit: 2 });
     expect(second).toEqual({ enqueued: 1, eligible: 1 });
     expect(queueByStatus(db, "queued").map((r) => r.repo)).toContain("c/old");
+    close();
+  });
+
+  it("ages a repo by its records, not by a timestamp an incremental rescan refreshed", () => {
+    // An incremental rescan diffs against the published SHA and only touches
+    // changed hunks, so it stamps repositories.analyzedAt while leaving every
+    // record untouched. Production 2026-09-11: 86 of 1,628 repos carried a repo
+    // stamp >7d newer than their newest record — clap-rs/clap stamped 09-06
+    // over 100%-thin records last written 08-18. Keying eligibility on the repo
+    // stamp would make exactly those repos permanently ineligible.
+    published(db, "stale/records", daysAgo(1)); // repo looks fresh...
+    db.insert(errors)
+      .values({
+        id: "c1b2c3d4e5f60718",
+        repo: "stale/records",
+        slug: "old-record",
+        errorCode: null,
+        errorMessage: "stale",
+        messagePattern: "stale",
+        errorType: "exception",
+        errorClass: null,
+        httpStatus: null,
+        severity: "error",
+        filePath: "src/a.ts",
+        lineNumber: 1,
+        sourceCode: null,
+        sourceCodeStart: null,
+        sourceCodeEnd: null,
+        githubUrl: `https://github.com/stale/records/blob/${"a".repeat(40)}/src/a.ts#L1`,
+        documentation: "stub",
+        triggerScenarios: "t",
+        commonSituations: "c",
+        solutions: [],
+        preventionTips: [],
+        tags: [],
+        analyzedSha: "a".repeat(40),
+        analyzedAt: daysAgo(120), // ...but its records are ancient
+        schemaVersion: 2,
+      })
+      .run();
+
+    expect(enqueueBackfill(db, { before: daysAgo(30), limit: 5 })).toEqual({
+      enqueued: 1,
+      eligible: 1,
+    });
+    expect(queueByStatus(db, "queued").find((r) => r.repo === "stale/records")!.backfill).toBe(1);
     close();
   });
 

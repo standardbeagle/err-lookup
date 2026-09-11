@@ -1,6 +1,6 @@
 import { eq, and, asc, desc, lt, sql } from "drizzle-orm";
 import { tx, type Db } from "./client.js";
-import { queue, repositories, type QueueRow } from "./schema.js";
+import { queue, repositories, errors, type QueueRow } from "./schema.js";
 
 /**
  * Re-entrant work queue over the corpus (§11.1). Every scan invocation seeds;
@@ -91,6 +91,16 @@ export function enqueueBackfill(
   db: Db,
   opts: { before: string; limit: number }
 ): { enqueued: number; eligible: number } {
+  // Age the repo by its RECORDS, not by repositories.analyzedAt. An incremental
+  // rescan stamps the repo even when it re-analyzed nothing — it diffs against
+  // the published SHA and only touches changed hunks — so a repo can carry a
+  // fresh timestamp over records that have not moved in weeks. Measured on the
+  // production corpus 2026-09-11: 86 of 1,628 repos (51,945 records) had a repo
+  // stamp more than 7 days newer than their newest record, clap-rs/clap among
+  // them, stamped 09-06 over records last written 08-18 and 100% thin. Keying
+  // on the repo stamp would have made exactly the repos that most need a full
+  // re-analysis permanently ineligible for one.
+  const contentAt = sql`coalesce((select max(${errors.analyzedAt}) from ${errors} where ${errors.repo} = ${repositories.repo}), ${repositories.analyzedAt})`;
   const eligibleRows = db
     .select({ repo: repositories.repo, queueStatus: queue.status, queueUpdatedAt: queue.updatedAt })
     .from(repositories)
@@ -100,10 +110,10 @@ export function enqueueBackfill(
         sql`${repositories.analyzedSha} IS NOT NULL`,
         sql`${repositories.status} IN ('analyzed','exported')`,
         sql`${repositories.analyzedAt} IS NOT NULL`,
-        lt(repositories.analyzedAt, opts.before)
+        sql`${contentAt} < ${opts.before}`
       )
     )
-    .orderBy(asc(repositories.analyzedAt))
+    .orderBy(sql`${contentAt} asc`)
     .all()
     .filter((r) => {
       // Never steal in-flight work, and honour the failed cooloff: a repo that
