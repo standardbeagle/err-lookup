@@ -108,3 +108,60 @@ Blocking items before any routing change:
 3. **fastapi only.** nest and tokio are the repos where the August evaluation
    found flash's coverage weakest; a directive that helps a 59-candidate Python
    repo may not help a 1,000-candidate TypeScript one.
+
+## Addendum — a reachability clause for the review directive (2026-09-11)
+
+A live record, `Automattic/harper/expected-a-dom-element`, named an
+environment in which its error cannot fire. The throw is
+`if (!(el instanceof Element)) throw new TypeError(...)` with no existence
+check on `Element`, so in a bare Node/SSR context that line raises
+`ReferenceError: Element is not defined` and the TypeError is unreachable —
+yet `triggerScenarios` led with "Running outside a real DOM (SSR/node...)".
+The wrong premise had propagated into `commonSituations` and the first
+solution. Corrected in production via `updateErrorFields` (contentChangedAt
+moved, so the sitemap lastmod follows).
+
+Can the directive catch this class? Tested on the pre-fix record, incumbent
+model and effort (glm-5.3-flash, low):
+
+| directive | verdict | caught it? |
+|---|---|---|
+| stock | good | no |
+| "confirm the error is reachable there" | good | **no — misapplied** |
+| value-guard vs capability-guard, named explicitly | **improved** | **yes** |
+
+The middle row is the useful failure. glm reasoned "the throw is the
+function's own guard (instanceof Element check...), so it is reachable",
+conflating a guard that rejects a bad VALUE with one that tests for a MISSING
+capability. Naming that distinction is what worked; the vaguer instruction
+actively produced the wrong answer. With it, glm reached the correct analysis
+on its own: "a bare Node SSR environment without any DOM globals cannot reach
+this throw (the `Element` identifier would be undefined, causing a
+ReferenceError at the guard), so only jsdom-style incomplete DOM setups
+genuinely trigger it."
+
+**False-positive check matters more than the catch**, because ~180 corpus
+records name a non-browser environment *correctly* — their code guards for the
+missing capability and throws deliberately. Three controls, all held:
+
+| record | verdict | why it held |
+|---|---|---|
+| jquery/jquery-requires-a-window-with-a-document | good | `typeof window === "undefined" \|\| !window.document` is a capability guard |
+| webpack/automatic-publicpath-is-not-supported-in-this-brow | good | tests for absent document/importScripts |
+| dotnet/aspnetcore/cannot-resolve-url | good | deliberate non-browser throw |
+
+1 true positive, 0 false positives on 3 controls. Config:
+`configs/review-flash-reachability.kdl`.
+
+**Recommendation: scope it to the review directive only, not the bulk one.**
+The bulk directive rides every phase of every repo, and the matrix above shows
+directive text has effects well beyond its subject — the `counts` clause moved
+reject rates and tag counts. Review is single-record and low-volume, so the
+clause is cheap there and its blast radius is one phase.
+
+Be clear about the size of the win: a narrow detector (unguarded browser-global
+dereference plus a non-browser trigger claim) finds 4 candidates corpus-wide,
+of which harper is the confirmed defect. This buys correctness on a rare class,
+not volume. A broader detector matches 184 records, but a sample of 8 from that
+set were all correct by design — errors whose own guard tests for the missing
+thing — so the broad number is not a defect count.

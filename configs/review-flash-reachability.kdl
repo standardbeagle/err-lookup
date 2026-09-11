@@ -1,0 +1,21 @@
+// Review probe: can a directive clause make the incumbent catch a trigger that
+// cannot fire? Test case Automattic/harper/expected-a-dom-element, whose throw
+// is `if (!(el instanceof Element)) throw new TypeError(...)` with no existence
+// check on Element — so a bare Node/SSR context raises ReferenceError there and
+// this TypeError is unreachable, yet the record named SSR/node as its leading
+// trigger and the stock directive rated it "good".
+provider "flash-review" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "zai-coding-plan/glm-5.3-flash"
+    timeout-ms 600000
+    idle-timeout-ms 180000
+    model-options "{\"reasoningEffort\":\"low\"}"
+    prompt-directive "Work with minimal thinking: no extended reasoning, no plans, no self-review. Produce the required output directly, in one pass. When a trigger names an environment, test it against the throw line identifier by identifier. Two kinds of guard differ: a guard that rejects a bad VALUE (x instanceof Foo, x == null) still requires every identifier it names to EXIST, including the class on the right of instanceof; a guard that tests for a MISSING capability (typeof window === undefined, !globalThis.foo) is the only kind that makes an environment claim valid. If the named environment does not define an identifier the throw line dereferences, that line raises ReferenceError there and this error never fires, so the named environment is wrong."
+}
+defaults {
+    primary "flash-review"
+    max-concurrent 1
+    delay-between-phases-ms 2000
+}
