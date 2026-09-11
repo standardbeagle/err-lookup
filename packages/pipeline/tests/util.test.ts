@@ -111,6 +111,21 @@ describe("ids", () => {
     expect(deriveSlug(null, "用户名或密码错误")).toBe("error");
   });
 
+  it("pairs a numeric code with its message instead of publishing /404/", () => {
+    // HTTP statuses and errno values make fine ids and useless URLs: they carry
+    // no keyword, and every other 404 in the repo collides into 404-<hex>.
+    expect(deriveSlug("404", "Page not found", "src/a.php")).toBe("404-page-not-found");
+    expect(deriveSlug("32001", "Database connection failed", "db.php")).toBe(
+      "32001-database-connection-failed"
+    );
+    // An alphabetic code is already a keyword — left alone.
+    expect(deriveSlug("ERR_BAD_RESPONSE", "Request failed", "a.js")).toBe("err-bad-response");
+    // A numeric code whose message adds nothing falls back to the bare number.
+    expect(deriveSlug("500", "500", "x.php")).toBe("500");
+    // ...and to the file when there is no message either.
+    expect(deriveSlug("418", "☕", "src/teapot.php")).toBe("418-teapot");
+  });
+
   it("deriveSlugAlternative adds what the primary derivation ignored", () => {
     // one code, several files: the message distinguishes them
     expect(deriveSlugAlternative("ERR_BAD_RESPONSE", "Invalid status", "a.js")).toBe(

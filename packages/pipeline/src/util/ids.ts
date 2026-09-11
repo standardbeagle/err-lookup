@@ -61,7 +61,26 @@ function fileStem(filePath: string): string {
  * the file name is unusable too.
  */
 export function deriveSlug(errorCode: string | null, errorMessage: string, filePath = ""): string {
-  return kebab(errorCode ?? errorMessage) || fileStem(filePath) || "error";
+  const code = errorCode === null ? "" : kebab(errorCode);
+  // A purely numeric code is a fine identifier and a terrible URL. HTTP
+  // statuses and errno values kebab to "404", "16", "32001" — no keyword for a
+  // search result to match, and every other 404 in the repo then collides into
+  // 404-68ab46. Pair the number with the message so the slug says what the
+  // error IS. Measured on typecho 2026-09-11 (a repo whose errors carry numeric
+  // codes): 14 of its 43 fresh slugs were bare numbers or number-plus-hex.
+  if (code !== "" && !/[a-z]/.test(code)) {
+    // Only the words the code does not already carry, so a message that just
+    // restates the number ("500") does not produce 500-500.
+    const seen = new Set(code.split("-"));
+    const added = kebab(errorMessage).split("-").filter((w) => w !== "" && !seen.has(w));
+    if (added.length > 0) return kebab(`${code}-${added.join("-")}`);
+    // Numeric code AND nothing sluggable in the message — a CJK message on a
+    // numeric-code repo hits both at once. The file at least says where.
+    // A one- or two-letter stem ("a", "db") is no more use than the number.
+    const stem = fileStem(filePath);
+    if (stem.length >= 3 && !seen.has(stem)) return kebab(`${code}-${stem}`);
+  }
+  return code || kebab(errorMessage) || fileStem(filePath) || "error";
 }
 
 /**

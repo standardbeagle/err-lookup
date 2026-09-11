@@ -80,7 +80,8 @@ describe("assemble: a code the model did not answer as a string", () => {
 
     expect(out.records).toHaveLength(1);
     expect(out.records[0]!.errorCode).toBe("111");
-    expect(out.records[0]!.slug).toBe("111");
+    // A bare "111" is a fine id and a useless URL, so the message rides along.
+    expect(out.records[0]!.slug).toBe("111-connection-refused");
   });
 
   it("treats a non-code shape as no code at all, and still keeps the record", () => {
