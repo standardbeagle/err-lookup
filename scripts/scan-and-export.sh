@@ -158,7 +158,7 @@ fi
   # "heap out of memory" at the end of every run while the uncapped cron
   # publisher succeeded. Give the exporter an explicit heap; the limit below
   # sits under the service cap with room for the DB mapping.
-  NODE_OPTIONS=--max-old-space-size=6144 pnpm --filter @errlookup/pipeline dev export
+  NODE_OPTIONS=--max-old-space-size=16384 pnpm --filter @errlookup/pipeline dev export
   export_exit=$?
   echo "=== export exit=$export_exit"
   # Questionable-page stream: one JSONL snapshot per drain, kept alongside the
@@ -167,7 +167,7 @@ fi
   #   jq -r 'select(.flags|index("thin")).url' quality-*.jsonl | head
   # Retention matches the run logs (30), so the stream shows whether a class of
   # defect is draining or holding across drains.
-  NODE_OPTIONS=--max-old-space-size=6144 pnpm --filter @errlookup/pipeline dev quality \
+  NODE_OPTIONS=--max-old-space-size=16384 pnpm --filter @errlookup/pipeline dev quality \
     >"$LOG_DIR/quality-$RUN_STAMP.jsonl" 2>>"$RUN_LOG"
   echo "=== quality exit=$? ($(wc -l <"$LOG_DIR/quality-$RUN_STAMP.jsonl") flagged records)"
   if [ -x "$REPO_ROOT/scripts/deploy-site.sh" ]; then

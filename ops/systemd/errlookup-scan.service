@@ -58,9 +58,17 @@ TimeoutStopSec=600
 # Nice alone did not do this -- it only yields when the CPU is otherwise idle.
 # MemoryMax also sizes V8's default heap (~limit/4): any node step that needs
 # more must set --max-old-space-size itself (the exporter does).
+#
+# Raised 8G -> 24G on 2026-09-11. The exporter holds the whole dataset in
+# memory, and the corpus reached 383,611 records / 2,079 repos — past what a
+# 6 GB heap can build. The publisher (cron, uncapped) started failing at
+# 15:18 that day with "Reached heap limit", six runs in a row, and the
+# in-drain export runs under this cap, so raising its --max-old-space-size
+# without raising the cap would only move the kill from V8 to the cgroup.
+# The host has 47G; the drain's own working set is ~4-5G of agents and lci.
 Nice=10
 CPUQuota=400%
-MemoryMax=8G
+MemoryMax=24G
 TasksMax=2048
 
 [Install]
