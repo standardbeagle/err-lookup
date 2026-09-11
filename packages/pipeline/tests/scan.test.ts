@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -296,6 +296,58 @@ describe("provider window quota", () => {
     expect(summary.providerHoldUntil).toBeNull();
     close();
   });
+});
+
+describe("scope failure is not repo failure", () => {
+  it("falls back to the static floor and still analyzes the repo", async () => {
+    // A scope timeout used to return early, discarding a clone that had
+    // already succeeded AND counting toward the drain's failure breaker —
+    // 7 of them tripped it on 2026-09-11 and ended the drain with the queue
+    // still full. Scope is an optimisation: ERRLOOKUP_SCOPE=off is supported
+    // and an absent scope means "use the static SKIP_DIRS floor".
+    // Needs >= MIN_DIRS_FOR_SCOPE (3) directories, or runScope short-circuits
+    // as "skipped-small" and never calls a provider at all.
+    const dir = mkdtempSync(join(tmpdir(), "el-scope-"));
+    for (const sub of ["src", "lib", "internal", "pkg"]) {
+      mkdirSync(join(dir, sub), { recursive: true });
+      writeFileSync(
+        join(dir, sub, "index.js"),
+        Array.from({ length: 17 }, (_, i) => `// line ${i + 1}`).join("\n") +
+          "\nthrow new TypeError('Expected a function');\n"
+      );
+    }
+    await exec("git", ["init", "-q", "-b", "main", dir]);
+    await exec("git", ["-C", dir, "add", "."]);
+    await exec("git", ["-C", dir, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"]);
+
+    const inner = makeProviders().claude;
+    const scopeFails = {
+      name: "claude",
+      scopeCalls: 0,
+      async invoke(prompt: string, ...rest: unknown[]) {
+        if (prompt.includes("configuring the scan scope")) {
+          this.scopeCalls++;
+          return { ok: false as const, kind: "timeout" as const, error: "operation timed out after 2400000ms" };
+        }
+        return (inner as unknown as { invoke: (p: string, ...r: unknown[]) => Promise<unknown> }).invoke(prompt, ...rest);
+      },
+    };
+    const logs: string[] = [];
+    const summary = await runScan({
+      db,
+      cfg: makeCfg(),
+      corpus: ["sindresorhus/is"],
+      providers: { claude: scopeFails as never },
+      cloneUrlFor: () => dir,
+      onLog: (_r, m) => logs.push(m),
+    });
+
+    expect(scopeFails.scopeCalls).toBeGreaterThan(0);
+    expect(summary.failed).toBe(0);
+    expect(summary.ok).toBe(1);
+    expect(logs.some((m) => m.includes("continuing on the static floor"))).toBe(true);
+    close();
+  }, 30_000);
 });
 
 describe("runtime budget", () => {

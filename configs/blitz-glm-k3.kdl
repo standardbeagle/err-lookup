@@ -42,6 +42,23 @@ provider "flash-review" {
     idle-timeout-ms 180000
     model-options "{\"reasoningEffort\":\"low\"}"
 }
+// Scope gets its own clone purely for a shorter clock. The phase watchdog is
+// timeout-ms x 4, so flash's 600s gave scope a 40-minute budget for a call
+// that normally answers in 20-30s. Repos whose scope hangs burned the full 40
+// before giving up — 7 of them in the 2026-09-11T16:15 drain. 300s caps the
+// waste at ~20 minutes, and since a scope failure now degrades to the static
+// SKIP_DIRS floor rather than failing the repo, giving up sooner costs only
+// the directory targeting.
+provider "flash-scope" {
+    command "opencode"
+    args "acp" "--pure"
+    type "acp"
+    model "zai-coding-plan/glm-5.3-flash"
+    timeout-ms 300000
+    idle-timeout-ms 120000
+    model-options "{\"reasoningEffort\":\"high\"}"
+    prompt-directive "Be thorough and complete. Produce an entry for EVERY item asked for — an incomplete answer is a failed answer. Keep each field brief and factual; never pad. Deliver the output exactly as the delivery instruction says, using the write tool, and verify the file holds the complete JSON before finishing."
+}
 // Verify fallback only: records still ship verified if flash is down or
 // rate-limit-stormed. Off every primary path since 2026-08-28.
 provider "glm53" {
@@ -120,6 +137,7 @@ defaults {
     backfill-batch 50
 }
 phase-providers {
+    scope "flash-scope"
     review "flash-review"
     // Second opinion for records flash left without documentation or
     // solutions after the verify rounds: full glm-5.3 gets one pass before

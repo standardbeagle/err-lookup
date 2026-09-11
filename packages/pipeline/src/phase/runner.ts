@@ -177,9 +177,16 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
           analyzedSha: sha,
           errorLog: msg,
         });
-        recordAnalysisFailure(db, repo, `scope: ${msg}`);
-        log(`phase scope: FAILED — ${msg}`);
-        return { errorCount: 0, rejects: [], skipped, failed: `scope: ${msg}` };
+        // Scope is an optimisation, not a requirement. ERRLOOKUP_SCOPE=off is a
+        // supported mode, and every consumer treats an absent scope as "use the
+        // static SKIP_DIRS floor" — isOutOfScope returns false without one. So
+        // failing the repo here threw away a clone that had already succeeded,
+        // and counted toward the drain's failure breaker: 7 scope timeouts in
+        // the 2026-09-11T16:15 drain tripped it at 5 and ended the run with the
+        // queue still full. The phase row is still written as failed, so the
+        // timeout stays visible; the repo just proceeds on the floor.
+        scope = undefined;
+        log(`phase scope: FAILED — ${msg} — continuing on the static floor`);
       }
     }
   }
