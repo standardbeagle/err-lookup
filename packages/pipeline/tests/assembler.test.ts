@@ -157,6 +157,10 @@ describe("assemble slug uniqueness", () => {
     expect(out.records).toHaveLength(1);
     expect(out.rejects).toHaveLength(1);
     expect(out.rejects[0]!.error).toMatch(/duplicate/i);
+    // The scan log groups rejects by the leading token of this string, so a
+    // rewording here changes what operators see when a repo loses half its
+    // discoveries (typecho dropped 46 of 89 on 2026-09-11).
+    expect(out.rejects[0]!.error).toMatch(/^duplicate discovery/);
   });
 });
 

@@ -317,6 +317,27 @@ export async function runScan(opts: ScanOptions): Promise<ScanSummary> {
           summary.ok++;
           consecutiveFailures = 0;
           log(repo, `→ ${r.errorCount} errors`);
+          // Rejects are discovered sites that never became records: work the
+          // providers were already paid for, dropped. The count alone hides
+          // why, and the rate is repo-shaped — 1 of 17 on whoops against 46 of
+          // 89 on typecho in the 2026-09-11 pre-deploy run — so a repo quietly
+          // losing half its discoveries looks identical to a small repo.
+          if (r.rejects.length > 0) {
+            const byReason = new Map<string, number>();
+            for (const rej of r.rejects) {
+              // Collapse to the shape, not the instance: zod issues carry the
+              // offending field, duplicate-discovery carries an id.
+              const key = rej.error.startsWith("duplicate discovery")
+                ? "duplicate discovery"
+                : rej.error.split(";")[0]!.split(":")[0]!.trim();
+              byReason.set(key, (byReason.get(key) ?? 0) + 1);
+            }
+            const summary = [...byReason]
+              .sort((a, b) => b[1] - a[1])
+              .map(([reason, n]) => `${reason}=${n}`)
+              .join(" ");
+            log(repo, `rejected ${r.rejects.length} discovered site(s): ${summary}`);
+          }
         }
       } catch (e) {
         settleFailure(repo, (e as Error).message, item.solo, (e as { heldLargeSlot?: boolean }).heldLargeSlot ?? false);
