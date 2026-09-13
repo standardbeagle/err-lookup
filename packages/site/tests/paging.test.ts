@@ -95,7 +95,11 @@ describe("repo list paging", () => {
  */
 describe("rendered repo pager", () => {
   const siteRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-  const dist = resolve(siteRoot, "dist");
+  // Its own output directory, not the shared dist/. This suite needs a build
+  // configured with one repo per page, which is not what the other suites
+  // read — and restoring dist afterwards used to cost a second full Astro
+  // build, doubling this file's runtime to put a directory back.
+  const dist = resolve(siteRoot, "dist-paging");
   const publicData = resolve(siteRoot, "public", "data");
   let home = "";
   let pageTwo = "";
@@ -109,17 +113,16 @@ describe("rendered repo pager", () => {
     execFileSync("pnpm", ["exec", "astro", "build"], {
       cwd: siteRoot,
       stdio: "pipe",
-      env: { ...process.env, ERRLOOKUP_REPOS_PER_PAGE: "1" },
+      env: { ...process.env, ERRLOOKUP_REPOS_PER_PAGE: "1", ERRLOOKUP_OUT_DIR: dist },
     });
     home = readFileSync(resolve(dist, "index.html"), "utf8");
     pageTwo = readFileSync(resolve(dist, "repos", "2", "index.html"), "utf8");
   }, 90_000);
 
   afterAll(() => {
-    // Leave dist matching the real page size for any later assertions.
+    // Nothing to restore — the shared dist/ was never touched.
     rmSync(dist, { recursive: true, force: true });
-    execFileSync("pnpm", ["exec", "astro", "build"], { cwd: siteRoot, stdio: "pipe" });
-  }, 90_000);
+  });
 
   it("generates a route per page beyond the first, and none for page 1", () => {
     expect(existsSync(resolve(dist, "repos", "2", "index.html"))).toBe(true);
