@@ -84,22 +84,14 @@ export function repoErrorPageHref(repo: string, page: number): string {
 }
 
 /**
- * URLs per sitemap file. The protocol allows 50,000, but a big file is a big
- * fetch for a crawler on a small budget, and weaviate's sitemap carried 4,880
- * URLs in one document. 1,000 keeps each shard small enough to re-fetch
- * cheaply when only part of a repo changed.
+ * URLs per sitemap file. The protocol's own ceiling, used deliberately.
+ *
+ * This was 1,000 for one day, on the theory that a smaller file is a cheaper
+ * re-fetch. That optimised the wrong resource: one file per repo produced
+ * 1,658 children with a median of 49 URLs, against a Googlebot budget of
+ * 35-94 requests a day. Fetch COUNT is what is rationed, not fetch size.
  */
-export const SITEMAP_URLS_PER_FILE = Number(process.env.ERRLOOKUP_SITEMAP_URLS_PER_FILE) || 1000;
-
-/** Shard 1 keeps the bare path so existing sitemap URLs stay valid. */
-export function sitemapShardHref(base: string, shard: number): string {
-  return shard <= 1 ? `${base}.xml` : `${base}-${shard}.xml`;
-}
-
-/** How many shards a list of `count` URLs needs. */
-export function sitemapShardCount(count: number): number {
-  return Math.max(1, Math.ceil(count / SITEMAP_URLS_PER_FILE));
-}
+export const SITEMAP_URLS_PER_FILE = Number(process.env.ERRLOOKUP_SITEMAP_URLS_PER_FILE) || 50000;
 
 /** Errors in the order the repo page lists them: documented ones first. */
 export function sortRepoErrors(errors: readonly ErrorEntry[]): ErrorEntry[] {

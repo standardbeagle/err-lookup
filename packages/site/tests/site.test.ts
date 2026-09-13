@@ -206,21 +206,42 @@ describe("site build (§8.3)", () => {
     expect(readFileSync(canonical, "utf8")).toBe(readFileSync(resolve(dist, "sitemap-index.xml"), "utf8"));
   });
 
-  it("sitemap.xml lists every repo's child sitemap, and each one exists", () => {
+  it("packs the corpus into few sitemap shards, each one reachable", () => {
+    // One file per repo produced 1,658 children with a median of 49 URLs
+    // against a Googlebot budget of 35-94 requests a day — roughly a month
+    // spent reading sitemaps before fetching a page. The protocol allows
+    // 50,000 URLs per file and offers no other grouping, so pack them.
     const xml = readFileSync(resolve(dist, "sitemap.xml"), "utf8");
     const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]!);
-    expect(locs.length).toBeGreaterThan(1); // pages.xml + at least one repo
+    expect(locs[0]).toBe("https://errors.standardbeagle.com/sitemaps/pages.xml");
+    expect(locs.slice(1).every((l) => /\/sitemaps\/urls-\d+\.xml$/.test(l))).toBe(true);
 
-    const repos = JSON.parse(readFileSync(resolve(dist, "data", "repos.json"), "utf8")) as { repo: string }[];
-    expect(locs).toHaveLength(repos.length + 1);
-    for (const r of repos) {
-      expect(locs).toContain(`https://errors.standardbeagle.com/sitemaps/${r.repo}.xml`);
-    }
     // A sitemap index pointing at a 404 is worse than no sitemap: the crawler
     // drops the whole submission.
     for (const loc of locs) {
       const rel = loc.replace("https://errors.standardbeagle.com/", "");
       expect(existsSync(resolve(dist, rel)), `missing ${rel}`).toBe(true);
+    }
+  });
+
+  it("loses no URL and repeats none when packing shards", () => {
+    // The failure mode of packing is a slice boundary that drops or doubles a
+    // URL, and it would be invisible — the index still looks right.
+    const xml = readFileSync(resolve(dist, "sitemap.xml"), "utf8");
+    const shardFiles = [...xml.matchAll(/<loc>([^<]+urls-\d+\.xml)<\/loc>/g)].map((m) =>
+      m[1]!.replace("https://errors.standardbeagle.com/", "")
+    );
+    const seen: string[] = [];
+    for (const f of shardFiles) {
+      const body = readFileSync(resolve(dist, f), "utf8");
+      seen.push(...[...body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]!));
+    }
+    expect(new Set(seen).size, "a URL appears in two shards").toBe(seen.length);
+
+    // Every admitted repo's landing page must be in there somewhere.
+    const repos = JSON.parse(readFileSync(resolve(dist, "data", "published.json"), "utf8")) as string[];
+    for (const r of repos) {
+      expect(seen, `${r} missing from every shard`).toContain(`https://errors.standardbeagle.com/${r}/`);
     }
   });
 
