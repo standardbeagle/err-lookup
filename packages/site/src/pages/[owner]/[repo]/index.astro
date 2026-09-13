@@ -2,6 +2,8 @@
 import Base from "../../../layouts/Base.astro";
 import { getRepoErrors, getRepos, getPublishedRepos } from "../../../data/load.js";
 import { repoOg } from "../../../data/og.js";
+import { paginate, sortRepoErrors, repoErrorPageHref, ERRORS_PER_PAGE } from "../../../data/paging.js";
+import ErrorTable from "../../../components/ErrorTable.astro";
 
 // Every repo gets a page (site search and the API link here), but only repos
 // the scheduled publisher has admitted are indexable — the props carry the
@@ -18,7 +20,10 @@ export function getStaticPaths() {
 }
 
 const { repo, published } = Astro.props;
-const errors = getRepoErrors(repo.repo);
+const allErrors = sortRepoErrors(getRepoErrors(repo.repo));
+// Page 1 only. This page used to render every error the repo had, which put
+// weaviate/weaviate at 1.66 MB and ~6,000 links.
+const errorPage = paginate(allErrors, 1, ERRORS_PER_PAGE, (n) => repoErrorPageHref(repo.repo, n));
 const title = `${repo.repo} — ErrLookup`;
 const SITE = "https://errors.standardbeagle.com";
 // Breadcrumb only: the repo page is an index, so a trail is the useful signal.
@@ -65,24 +70,7 @@ const ld = JSON.stringify({
 
   <h1>{repo.repo}</h1>
   <p class="muted">{repo.description ?? ""} · {repo.language ?? "—"} · {repo.sourceFiles != null ? `${repo.sourceFiles.toLocaleString()} source files` : "source files not counted"}</p>
-  <p class="muted">Analyzed at <code>{repo.analyzedSha.slice(0, 10)}</code> on {repo.analyzedAt.slice(0, 10)}. {errors.length} documented errors.</p>
+  <p class="muted">Analyzed at <code>{repo.analyzedSha.slice(0, 10)}</code> on {repo.analyzedAt.slice(0, 10)}. {allErrors.length} documented errors.</p>
 
-  <table>
-    <thead><tr><th>Code / Message</th><th>Type</th><th>Severity</th><th>Tags</th></tr></thead>
-    <tbody>
-      {errors.map((e) => (
-        <tr>
-          <td>
-            <a href={`/${repo.repo}/${e.slug}/`}>
-              {e.errorCode ? <code>{e.errorCode}</code> : <span>{e.errorMessage.slice(0, 60)}</span>}
-            </a>
-            <div class="muted">{e.errorCode ? e.errorMessage.slice(0, 80) : ""}</div>
-          </td>
-          <td>{e.errorType}</td>
-          <td><span class="pill">{e.severity}</span></td>
-          <td class="muted">{e.tags.join(", ")}</td>
-        </tr>
-      ))}
-    </tbody>
-  </table>
+  <ErrorTable repo={repo.repo} page={errorPage} />
 </Base>

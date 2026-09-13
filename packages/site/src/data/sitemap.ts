@@ -1,4 +1,6 @@
-import { getPublishedRepoEntries } from "./load.js";
+import { getPublishedRepoEntries, getRepoErrors } from "./load.js";
+import { indexableSlugs } from "@errlookup/schema";
+import { SITEMAP_URLS_PER_FILE } from "./paging.js";
 
 export const SITE = "https://errors.standardbeagle.com";
 
@@ -31,11 +33,19 @@ export function sitemapIndexXml(): string {
   for (const r of getPublishedRepoEntries()) {
     const [owner, name] = r.repo.split("/");
     const lastmod = r.contentChangedAt ?? r.analyzedAt;
-    parts.push(
-      `  <sitemap><loc>${SITE}/sitemaps/${owner}/${name}.xml</loc>${
-        lastmod ? `<lastmod>${lastmod.slice(0, 10)}</lastmod>` : ""
-      }</sitemap>`
-    );
+    // One entry per shard. A repo with more indexable URLs than fit in a
+    // single sitemap file is split, and every shard has to be advertised or
+    // the tail is invisible.
+    const urlCount = indexableSlugs(getRepoErrors(r.repo)).size + 1; // + the repo page
+    const shards = Math.max(1, Math.ceil(urlCount / SITEMAP_URLS_PER_FILE));
+    for (let s = 1; s <= shards; s++) {
+      const file = s === 1 ? `${name}.xml` : `${name}-${s}.xml`;
+      parts.push(
+        `  <sitemap><loc>${SITE}/sitemaps/${owner}/${file}</loc>${
+          lastmod ? `<lastmod>${lastmod.slice(0, 10)}</lastmod>` : ""
+        }</sitemap>`
+      );
+    }
   }
   parts.push("</sitemapindex>");
   return parts.join("\n");

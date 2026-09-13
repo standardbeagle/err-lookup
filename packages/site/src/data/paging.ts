@@ -1,5 +1,92 @@
-import type { RepoEntry } from "@errlookup/schema";
+import type { ErrorEntry, RepoEntry } from "@errlookup/schema";
 import { getPublishedRepoEntries } from "./load.js";
+
+/**
+ * One page of any list, plus the neighbours a crawler and a reader need.
+ *
+ * Every list on the site paginates through this, because an unpaged list is a
+ * page whose weight is set by the corpus rather than by design — weaviate's
+ * repo page reached 1.66 MB and ~6,000 links before this existed, and it is
+ * the first URL in its own sitemap, so it was also the crawler's entry point
+ * to everything beneath it.
+ */
+export interface Page<T> {
+  items: T[];
+  page: number;
+  totalPages: number;
+  prev: string | null;
+  next: string | null;
+}
+
+/** Slice one page out of an already-ordered list. Clamps out-of-range pages. */
+export function paginate<T>(
+  items: readonly T[],
+  page: number,
+  perPage: number,
+  href: (page: number) => string
+): Page<T> {
+  const totalPages = Math.max(1, Math.ceil(items.length / perPage));
+  const current = Math.min(Math.max(Math.floor(page) || 1, 1), totalPages);
+  const start = (current - 1) * perPage;
+  return {
+    items: items.slice(start, start + perPage),
+    page: current,
+    totalPages,
+    prev: current > 1 ? href(current - 1) : null,
+    next: current < totalPages ? href(current + 1) : null,
+  };
+}
+
+/** Every page href for a list of `count` items, for sitemaps and nav. */
+export function allPageHrefs(count: number, perPage: number, href: (page: number) => string): string[] {
+  const total = Math.max(1, Math.ceil(count / perPage));
+  return Array.from({ length: total }, (_, i) => href(i + 1));
+}
+
+/**
+ * Errors per page of a repo's error list. 100 keeps the heaviest page near
+ * 40 KB against the §6.2 50 KB bar — measured at ~285 bytes of markup per row
+ * on the pre-paging weaviate page.
+ */
+export const ERRORS_PER_PAGE = Number(process.env.ERRLOOKUP_ERRORS_PER_PAGE) || 100;
+
+/**
+ * Page 1 of a repo's errors is the repo page itself; later pages live under
+ * the /repos/ listing namespace.
+ *
+ * NOT /{owner}/{repo}/{n}/ and NOT /{owner}/{repo}/page/{n}/: both collide
+ * with real, frozen slugs. 950 published records have purely numeric slugs
+ * (error codes — "404", "16", "32001") and three are literally named "page",
+ * "pages" and "p", so either shape would shadow a live error page.
+ */
+export function repoErrorPageHref(repo: string, page: number): string {
+  return page <= 1 ? `/${repo}/` : `/repos/${repo}/${page}/`;
+}
+
+/**
+ * URLs per sitemap file. The protocol allows 50,000, but a big file is a big
+ * fetch for a crawler on a small budget, and weaviate's sitemap carried 4,880
+ * URLs in one document. 1,000 keeps each shard small enough to re-fetch
+ * cheaply when only part of a repo changed.
+ */
+export const SITEMAP_URLS_PER_FILE = Number(process.env.ERRLOOKUP_SITEMAP_URLS_PER_FILE) || 1000;
+
+/** Shard 1 keeps the bare path so existing sitemap URLs stay valid. */
+export function sitemapShardHref(base: string, shard: number): string {
+  return shard <= 1 ? `${base}.xml` : `${base}-${shard}.xml`;
+}
+
+/** How many shards a list of `count` URLs needs. */
+export function sitemapShardCount(count: number): number {
+  return Math.max(1, Math.ceil(count / SITEMAP_URLS_PER_FILE));
+}
+
+/** Errors in the order the repo page lists them: documented ones first. */
+export function sortRepoErrors(errors: readonly ErrorEntry[]): ErrorEntry[] {
+  return [...errors].sort(
+    (a, b) => b.documentation.length - a.documentation.length || a.slug.localeCompare(b.slug)
+  );
+}
 
 /**
  * Repos per page of the analyzed-repos list. The corpus is heading for 110+

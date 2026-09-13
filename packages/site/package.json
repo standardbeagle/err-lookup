@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "tsx scripts/gen-og-images.ts && astro build",
+    "build": "tsx scripts/gen-og-images.ts && astro build && tsx scripts/audit-dist.ts",
     "preview": "astro preview",
     "check": "astro check",
     "test": "vitest run",
     "clean": "rm -rf dist",
-    "gen-og": "tsx scripts/gen-og-images.ts"
+    "gen-og": "tsx scripts/gen-og-images.ts",
+    "audit": "tsx scripts/audit-dist.ts"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^12.6.13",
