@@ -1,0 +1,60 @@
+---
+/**
+ * Page 2+ of a repo's error list. Page 1 is the repo page itself.
+ *
+ * Why this lives under /repos/ rather than /{owner}/{repo}/{n}/ or
+ * /{owner}/{repo}/page/{n}/: both collide with real, frozen slugs. 950
+ * published records have purely numeric slugs (error codes — "404", "16",
+ * "32001") and three are literally named "page", "pages" and "p", so either
+ * shape would shadow a live error page. /repos/ already means "listing".
+ */
+import Base from "../../../../layouts/Base.astro";
+import ErrorTable from "../../../../components/ErrorTable.astro";
+import { getRepoErrors, getPublishedRepoEntries } from "../../../../data/load.js";
+import { paginate, sortRepoErrors, repoErrorPageHref, ERRORS_PER_PAGE } from "../../../../data/paging.js";
+
+export function getStaticPaths() {
+  const out: {
+    params: { owner: string; repo: string; page: string };
+    props: { repoName: string; pageNum: number };
+  }[] = [];
+  // Admitted repos only: these pages are crawl surface, and an unadmitted
+  // repo's pages are noindex — inviting a crawl to them would contradict that.
+  for (const r of getPublishedRepoEntries()) {
+    const total = Math.max(1, Math.ceil(getRepoErrors(r.repo).length / ERRORS_PER_PAGE));
+    const [owner, name] = r.repo.split("/");
+    // From 2: page 1 is the repo page, and a /repos/{repo}/1/ would duplicate it.
+    for (let p = 2; p <= total; p++) {
+      out.push({ params: { owner: owner!, repo: name!, page: String(p) }, props: { repoName: r.repo, pageNum: p } });
+    }
+  }
+  return out;
+}
+
+const { repoName, pageNum } = Astro.props;
+const errorPage = paginate(
+  sortRepoErrors(getRepoErrors(repoName)),
+  pageNum,
+  ERRORS_PER_PAGE,
+  (n) => repoErrorPageHref(repoName, n)
+);
+const title = `${repoName} errors — page ${pageNum} — ErrLookup`;
+const SITE = "https://errors.standardbeagle.com";
+---
+<Base
+  title={title}
+  description={`Documented errors from ${repoName}, page ${pageNum} of ${errorPage.totalPages}.`}
+  canonical={`${SITE}${repoErrorPageHref(repoName, pageNum)}`}
+>
+  <nav aria-label="Breadcrumb" class="muted">
+    <a href="/">ErrLookup</a> › <a href={`/${repoName}/`}>{repoName}</a> › page {pageNum}
+  </nav>
+
+  <h1>{repoName}</h1>
+  <p class="muted">
+    Documented errors, page {pageNum} of {errorPage.totalPages}.
+    <a href={`/${repoName}/`}>Back to {repoName}</a>
+  </p>
+
+  <ErrorTable repo={repoName} page={errorPage} />
+</Base>

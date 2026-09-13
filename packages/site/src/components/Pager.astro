@@ -1,0 +1,48 @@
+---
+/**
+ * The pager every paged list uses. Extracted from RepoTable when the repo
+ * error lists needed one too — two copies of page-number windowing is two
+ * chances to emit a different crawl surface for the same idea.
+ *
+ * `href` is supplied by the caller because each list numbers its pages into a
+ * different namespace: the repo list puts page 1 at "/", a repo's error list
+ * puts page 1 at "/{owner}/{repo}/" and later pages under "/repos/".
+ */
+import type { Page } from "../data/paging.js";
+
+interface Props {
+  page: Page<unknown>;
+  label: string;
+  href: (n: number) => string;
+}
+const { page, label, href } = Astro.props as Props;
+
+// Window the numbers so a 60-page list does not print 60 links — the whole
+// point of paging is to stop one page carrying the entire corpus.
+const WINDOW = 2;
+const numbers = Array.from({ length: page.totalPages }, (_, i) => i + 1).filter(
+  (n) => n === 1 || n === page.totalPages || Math.abs(n - page.page) <= WINDOW
+);
+---
+{page.totalPages > 1 && (
+  <nav class="pager" aria-label={label}>
+    {page.prev
+      ? <a rel="prev" href={page.prev}>← Previous</a>
+      : <span class="off" aria-hidden="true">← Previous</span>}
+
+    <span class="nums">
+      {numbers.map((n, i) => (
+        <>
+          {i > 0 && numbers[i - 1]! < n - 1 && <span class="gap">…</span>}
+          {n === page.page
+            ? <span class="here" aria-current="page">{n}</span>
+            : <a href={href(n)}>{n}</a>}
+        </>
+      ))}
+    </span>
+
+    {page.next
+      ? <a rel="next" href={page.next}>Next →</a>
+      : <span class="off" aria-hidden="true">Next →</span>}
+  </nav>
+)}

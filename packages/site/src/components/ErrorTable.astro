@@ -1,0 +1,41 @@
+---
+/**
+ * One page of a repo's documented errors.
+ *
+ * Extracted from the repo page when it turned out that page was rendering
+ * every error a repo had: weaviate/weaviate shipped 5,976 rows in 1.66 MB of
+ * HTML, with ~6,000 links out of a document that is the first URL in its own
+ * sitemap. The table markup is unchanged; what is new is that it only ever
+ * receives one page of rows.
+ */
+import type { ErrorEntry } from "@errlookup/schema";
+import type { Page } from "../data/paging.js";
+import { repoErrorPageHref } from "../data/paging.js";
+import Pager from "./Pager.astro";
+
+interface Props {
+  repo: string;
+  page: Page<ErrorEntry>;
+}
+const { repo, page } = Astro.props as Props;
+---
+<table>
+  <thead><tr><th>Code / Message</th><th>Type</th><th>Severity</th><th>Tags</th></tr></thead>
+  <tbody>
+    {page.items.map((e) => (
+      <tr>
+        <td>
+          <a href={`/${repo}/${e.slug}/`}>
+            {e.errorCode ? <code>{e.errorCode}</code> : <span>{e.errorMessage.slice(0, 60)}</span>}
+          </a>
+          <div class="muted">{e.errorCode ? e.errorMessage.slice(0, 80) : ""}</div>
+        </td>
+        <td>{e.errorType}</td>
+        <td><span class="pill">{e.severity}</span></td>
+        <td class="muted">{e.tags.join(", ")}</td>
+      </tr>
+    ))}
+  </tbody>
+</table>
+
+<Pager page={page} label={`${repo} error pages`} href={(n) => repoErrorPageHref(repo, n)} />
