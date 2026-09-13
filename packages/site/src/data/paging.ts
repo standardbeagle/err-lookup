@@ -84,14 +84,21 @@ export function repoErrorPageHref(repo: string, page: number): string {
 }
 
 /**
- * URLs per sitemap file. The protocol's own ceiling, used deliberately.
+ * URLs per sitemap file.
  *
- * This was 1,000 for one day, on the theory that a smaller file is a cheaper
- * re-fetch. That optimised the wrong resource: one file per repo produced
- * 1,658 children with a median of 49 URLs, against a Googlebot budget of
- * 35-94 requests a day. Fetch COUNT is what is rationed, not fetch size.
+ * Two wrong answers before this one. One file per repo gave 1,658 children
+ * with a median of 49 URLs, against a Googlebot budget of 35-94 requests a
+ * day — fetch COUNT is the rationed resource, so that was backwards. Then the
+ * protocol ceiling of 50,000, which packs the corpus into six files but makes
+ * each one 6.9 MB and 50,000 nodes: Search Console reported "Couldn't fetch"
+ * and Firefox takes an age to render one.
+ *
+ * 10,000 sits between them. ~1.4 MB and ~29 files for a 286k-URL corpus: 57x
+ * fewer fetches than the per-repo layout, and an artifact tools can actually
+ * open. The limits it stays under (50,000 URLs, 50 MB) are ceilings, not
+ * targets.
  */
-export const SITEMAP_URLS_PER_FILE = Number(process.env.ERRLOOKUP_SITEMAP_URLS_PER_FILE) || 50000;
+export const SITEMAP_URLS_PER_FILE = Number(process.env.ERRLOOKUP_SITEMAP_URLS_PER_FILE) || 10000;
 
 /** Errors in the order the repo page lists them: documented ones first. */
 export function sortRepoErrors(errors: readonly ErrorEntry[]): ErrorEntry[] {
