@@ -1,8 +1,16 @@
 ---
 import Base from "../../layouts/Base.astro";
 import { getInfoIndex } from "../../data/load.js";
+import { paginate, articlePageHref, ARTICLES_PER_PAGE } from "../../data/paging.js";
+import ArticleList from "../../components/ArticleList.astro";
 
-const pages = getInfoIndex();
+const all = getInfoIndex().map((p) => ({
+  href: `/info/${p.slug}/`,
+  title: p.title,
+  summary: p.summary,
+  meta: `(${p.errorCount.toLocaleString()} records across ${p.repoCount} repos)`,
+}));
+const pages = paginate(all, 1, ARTICLES_PER_PAGE, (n) => articlePageHref("/info", n));
 ---
 <Base
   title="Error background articles — ErrLookup"
@@ -14,16 +22,7 @@ const pages = getInfoIndex();
     mechanism behind it, the causes the records agree on, and where the libraries differ.
     They are generated from the documented records and grow as the corpus does.
   </p>
-  {pages.length === 0 && <p class="muted">No articles yet — the collector has not run against this dataset.</p>}
-  <ul>
-    {pages.map((p) => (
-      <li>
-        <a href={`/info/${p.slug}/`}><strong>{p.title}</strong></a>
-        <br />
-        {p.summary}
-        <span class="muted"> ({p.errorCount.toLocaleString()} records across {p.repoCount} repos)</span>
-      </li>
-    ))}
-  </ul>
+  {all.length === 0 && <p class="muted">No articles yet — the collector has not run against this dataset.</p>}
+  <ArticleList page={pages} label="Background article pages" href={(n) => articlePageHref("/info", n)} />
   <p class="muted">Guides and background articles share one combined index at <a href="/troubleshooting/">troubleshooting</a>; the <a href="/guides/">guides</a> go deeper on the big classes.</p>
 </Base>

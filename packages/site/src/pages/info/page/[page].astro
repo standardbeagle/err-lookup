@@ -1,0 +1,42 @@
+---
+/**
+ * Page 2+ of the background-article hub. Page 1 is /info/.
+ *
+ * Under a static "page" segment rather than /info/{n}/, because /info/[slug]/
+ * already owns that depth — two dynamic routes at one depth is an ambiguous
+ * match. A future article slugged "page" would shadow this, so a test pins
+ * that no info slug is named "page".
+ */
+import Base from "../../../layouts/Base.astro";
+import ArticleList from "../../../components/ArticleList.astro";
+import { getInfoIndex } from "../../../data/load.js";
+import { paginate, articlePageHref, ARTICLES_PER_PAGE } from "../../../data/paging.js";
+
+export function getStaticPaths() {
+  const total = Math.max(1, Math.ceil(getInfoIndex().length / ARTICLES_PER_PAGE));
+  // From 2: page 1 is /info/, and /info/page/1/ would duplicate it.
+  return Array.from({ length: Math.max(0, total - 1) }, (_, i) => ({
+    params: { page: String(i + 2) },
+    props: { pageNum: i + 2 },
+  }));
+}
+
+const { pageNum } = Astro.props;
+const all = getInfoIndex().map((p) => ({
+  href: `/info/${p.slug}/`,
+  title: p.title,
+  summary: p.summary,
+  meta: `(${p.errorCount.toLocaleString()} records across ${p.repoCount} repos)`,
+}));
+const pages = paginate(all, pageNum, ARTICLES_PER_PAGE, (n) => articlePageHref("/info", n));
+const SITE = "https://errors.standardbeagle.com";
+---
+<Base
+  title={`Error background articles — page ${pageNum} — ErrLookup`}
+  description={`Background articles on error families, page ${pageNum} of ${pages.totalPages}.`}
+  canonical={`${SITE}${articlePageHref("/info", pageNum)}`}
+>
+  <h1>Error background articles</h1>
+  <p class="muted">Page {pageNum} of {pages.totalPages}. <a href="/info/">Back to the first page</a></p>
+  <ArticleList page={pages} label="Background article pages" href={(n) => articlePageHref("/info", n)} />
+</Base>

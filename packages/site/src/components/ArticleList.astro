@@ -1,0 +1,29 @@
+---
+/**
+ * One page of background-article entries, shared by the info hub and the
+ * troubleshooting index. Both rendered all 183 articles before paging, which
+ * put each near 170 KB — the two pages a reader browses rather than searches.
+ */
+import type { Page } from "../data/paging.js";
+import Pager from "./Pager.astro";
+
+import type { ArticleEntry } from "../data/troubleshooting.js";
+interface Props {
+  page: Page<ArticleEntry>;
+  label: string;
+  href: (n: number) => string;
+}
+const { page, label, href } = Astro.props as Props;
+---
+<ul>
+  {page.items.map((e) => (
+    <li>
+      <a href={e.href}><strong>{e.title}</strong></a>
+      <br />
+      {e.summary}
+      {e.meta && <span class="muted"> {e.meta}</span>}
+    </li>
+  ))}
+</ul>
+
+<Pager page={page} label={label} href={href} />

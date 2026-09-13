@@ -5,6 +5,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RepoEntry } from "@errlookup/schema";
 import { paginateRepos, sortRepos, totalRepoPages, repoPageHref, REPOS_PER_PAGE } from "../src/data/paging.js";
+import { checkPage, countLinks } from "../src/data/page-budget.js";
 
 function repos(n: number): RepoEntry[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -85,6 +86,42 @@ describe("repo list paging", () => {
       return -1;
     };
     expect(pageOf(after, "owner075/name")).toBe(pageOf(before, "owner075/name"));
+  });
+});
+
+describe("page-budget rules", () => {
+  it("fails an unpaged list and passes a paged one", () => {
+    // weaviate/weaviate's repo page before paging: 1,696,840 bytes, ~6,000 links.
+    const before = checkPage({ path: "weaviate/weaviate/index.html", bytes: 1_696_840, links: 5_977 });
+    expect(before.map((v) => v.rule).sort()).toEqual(["page-bytes", "page-links"]);
+    expect(before.every((v) => v.severity === "fail")).toBe(true);
+    // After: one page of 100 rows.
+    expect(checkPage({ path: "weaviate/weaviate/index.html", bytes: 35_517, links: 150 })).toEqual([]);
+  });
+
+  it("warns before it fails, so weight is visible while it is still cheap", () => {
+    const warn = checkPage({ path: "info/index.html", bytes: 168_876, links: 200 });
+    expect(warn).toHaveLength(1);
+    expect(warn[0]!.severity).toBe("warn");
+  });
+
+  it("counts only anchors a crawler would follow", () => {
+    expect(countLinks('<a href="/a/">x</a><a\n  href="/b/">y</a><link href="/c">')).toBe(2);
+  });
+});
+
+/**
+ * A static "page" segment carries the later pages of /info/ and
+ * /troubleshooting/. /info/[slug]/ shares that depth, so an article slugged
+ * "page" would shadow the route — pin the assumption rather than discover it.
+ */
+describe("paged routes do not shadow content slugs", () => {
+  it("no info article is slugged like a pager segment", () => {
+    const publicData = resolve(dirname(fileURLToPath(import.meta.url)), "..", "public", "data");
+    const indexPath = resolve(publicData, "info", "index.json");
+    if (!existsSync(indexPath)) return; // dataset predates the collector
+    const slugs = (JSON.parse(readFileSync(indexPath, "utf8")) as { slug: string }[]).map((p) => p.slug);
+    for (const reserved of ["page", "pages", "p"]) expect(slugs).not.toContain(reserved);
   });
 });
 

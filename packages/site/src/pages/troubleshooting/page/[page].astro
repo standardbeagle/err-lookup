@@ -1,0 +1,36 @@
+---
+/**
+ * Page 2+ of the troubleshooting index. Page 1 is /troubleshooting/.
+ * Static "page" segment: /troubleshooting/ has no dynamic sibling, so this
+ * cannot shadow anything.
+ */
+import Base from "../../../layouts/Base.astro";
+import ArticleList from "../../../components/ArticleList.astro";
+import { GUIDES, guideHref, guideErrors } from "../../../data/guides.js";
+import { getInfoIndex } from "../../../data/load.js";
+import { troubleshootingEntries } from "../../../data/troubleshooting.js";
+import { paginate, articlePageHref, ARTICLES_PER_PAGE } from "../../../data/paging.js";
+
+export function getStaticPaths() {
+  const count = troubleshootingEntries(GUIDES, guideHref, guideErrors, getInfoIndex()).length;
+  const total = Math.max(1, Math.ceil(count / ARTICLES_PER_PAGE));
+  return Array.from({ length: Math.max(0, total - 1) }, (_, i) => ({
+    params: { page: String(i + 2) },
+    props: { pageNum: i + 2 },
+  }));
+}
+
+const { pageNum } = Astro.props;
+const all = troubleshootingEntries(GUIDES, guideHref, guideErrors, getInfoIndex());
+const pages = paginate(all, pageNum, ARTICLES_PER_PAGE, (n) => articlePageHref("/troubleshooting", n));
+const SITE = "https://errors.standardbeagle.com";
+---
+<Base
+  title={`Troubleshooting — page ${pageNum} | ErrLookup`}
+  description={`Failure-class guides and background articles, page ${pageNum} of ${pages.totalPages}.`}
+  canonical={`${SITE}${articlePageHref("/troubleshooting", pageNum)}`}
+>
+  <h1>Troubleshooting with ErrLookup</h1>
+  <p class="muted">Page {pageNum} of {pages.totalPages}. <a href="/troubleshooting/">Back to the first page</a></p>
+  <ArticleList page={pages} label="Troubleshooting index pages" href={(n) => articlePageHref("/troubleshooting", n)} />
+</Base>

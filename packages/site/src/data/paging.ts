@@ -44,6 +44,19 @@ export function allPageHrefs(count: number, perPage: number, href: (page: number
 }
 
 /**
+ * Entries per page of the background-article lists (the info hub and the
+ * troubleshooting index). 183 info pages rendered as one list put both near
+ * 170 KB — under the 250 KB failure bar but well over the 100 KB warning, and
+ * they are the two lists a reader browses rather than searches.
+ */
+export const ARTICLES_PER_PAGE = Number(process.env.ERRLOOKUP_ARTICLES_PER_PAGE) || 50;
+
+/** Page 1 keeps the bare path; later pages get a numbered child route. */
+export function articlePageHref(base: string, page: number): string {
+  return page <= 1 ? `${base}/` : `${base}/${page}/`;
+}
+
+/**
  * Errors per page of a repo's error list. 100 keeps the heaviest page near
  * 40 KB against the §6.2 50 KB bar — measured at ~285 bytes of markup per row
  * on the pre-paging weaviate page.
