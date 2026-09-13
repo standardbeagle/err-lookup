@@ -51,9 +51,16 @@ export function allPageHrefs(count: number, perPage: number, href: (page: number
  */
 export const ARTICLES_PER_PAGE = Number(process.env.ERRLOOKUP_ARTICLES_PER_PAGE) || 50;
 
-/** Page 1 keeps the bare path; later pages get a numbered child route. */
+/**
+ * Page 1 keeps the bare path; later pages sit under a static "page" segment.
+ *
+ * The segment is not decoration: /info/[slug]/ already owns that depth, so
+ * /info/{n}/ would be a second dynamic route at the same level and an
+ * ambiguous match. Both lists use the same shape so the pager does not have
+ * to know which list it is rendering.
+ */
 export function articlePageHref(base: string, page: number): string {
-  return page <= 1 ? `${base}/` : `${base}/${page}/`;
+  return page <= 1 ? `${base}/` : `${base}/page/${page}/`;
 }
 
 /**

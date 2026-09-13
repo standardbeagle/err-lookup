@@ -1,6 +1,5 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { execFileSync } from "node:child_process";
-import { readFileSync, existsSync, rmSync } from "node:fs";
+import { describe, it, expect, beforeAll } from "vitest";
+import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { RepoEntry } from "@errlookup/schema";
@@ -132,33 +131,19 @@ describe("paged routes do not shadow content slugs", () => {
  */
 describe("rendered repo pager", () => {
   const siteRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-  // Its own output directory, not the shared dist/. This suite needs a build
-  // configured with one repo per page, which is not what the other suites
-  // read — and restoring dist afterwards used to cost a second full Astro
-  // build, doubling this file's runtime to put a directory back.
-  const dist = resolve(siteRoot, "dist-paging");
+  const dist = resolve(siteRoot, "dist");
   const publicData = resolve(siteRoot, "public", "data");
   let home = "";
   let pageTwo = "";
   let repoCount = 0;
 
+  // tests/global-setup.ts builds the site once for the whole suite, with one
+  // repo, one error and one article per page so this deliberately tiny
+  // fixture still produces multi-page output. Nothing to build here.
   beforeAll(() => {
-    if (!existsSync(resolve(publicData, "manifest.json"))) {
-      execFileSync("pnpm", ["exec", "tsx", "scripts/seed-dataset.ts"], { cwd: siteRoot });
-    }
     repoCount = (JSON.parse(readFileSync(resolve(publicData, "repos.json"), "utf8")) as unknown[]).length;
-    execFileSync("pnpm", ["exec", "astro", "build"], {
-      cwd: siteRoot,
-      stdio: "pipe",
-      env: { ...process.env, ERRLOOKUP_REPOS_PER_PAGE: "1", ERRLOOKUP_OUT_DIR: dist },
-    });
     home = readFileSync(resolve(dist, "index.html"), "utf8");
     pageTwo = readFileSync(resolve(dist, "repos", "2", "index.html"), "utf8");
-  }, 90_000);
-
-  afterAll(() => {
-    // Nothing to restore — the shared dist/ was never touched.
-    rmSync(dist, { recursive: true, force: true });
   });
 
   it("generates a route per page beyond the first, and none for page 1", () => {

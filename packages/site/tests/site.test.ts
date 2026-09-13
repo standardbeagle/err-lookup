@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,12 +61,9 @@ function readErrorRecords(): {
 }
 
 beforeAll(() => {
-  // Ensure a seeded dataset exists, then (re)build the site for assertions.
-  if (!existsSync(resolve(publicData, "manifest.json"))) {
-    execFileSync("pnpm", ["exec", "tsx", "scripts/seed-dataset.ts"], { cwd: siteRoot });
-  }
-  execFileSync("pnpm", ["exec", "astro", "build"], { cwd: siteRoot, stdio: "pipe" });
-}, 60_000);
+  // tests/global-setup.ts builds the site once for the whole suite; every
+  // file here only reads dist/.
+});
 
 function htmlFiles(dir: string): string[] {
   const out: string[] = [];
