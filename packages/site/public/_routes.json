@@ -1,29 +1,13 @@
 {
   "version": 1,
-  "description": "Hand-authored: the adapter's generated file enumerates every prerendered path and static asset, which breaks Cloudflare's 100-rule cap as the corpus grows. Everything matching an exclude is served static; the rest (the API and the on-demand error pages) hits the worker, which falls back to the ASSETS binding for prerendered paths it doesn't own.",
+  "description": "Hand-authored: the adapter's generated file enumerates every prerendered path and static asset, which breaks Cloudflare's 100-rule cap as the corpus grows. Everything matching an exclude is served static; the rest (the API and the on-demand error pages) hits the worker, which falls back to the ASSETS binding for prerendered paths it doesn't own. An excluded path never reaches the worker, so it writes no Analytics Engine row and is invisible: on 2026-09-14 a 3-day query for /sitemaps/*, /repos/* and /sitemap-index.xml returned exactly 0 rows, which meant there was no way to tell whether Google had fetched the new sitemap shards at all. The crawl-facing paths are now worker-routed so they are measurable. What stays excluded is deliberate: /_astro/*, /og/* and /favicon.svg are assets with no diagnostic value, and /data/* is the dataset the MCP pulls \u2014 the highest -volume unknown here, and the worker budget has roughly 130k invocations/day of headroom (200k used against 333k included). Adding /data/* is a separate decision that should be made with a day of monitoring behind it.",
   "include": [
     "/*"
   ],
   "exclude": [
-    "/",
     "/_astro/*",
     "/data/*",
     "/og/*",
-    "/sitemaps/*",
-    "/blog/*",
-    "/guides/*",
-    "/info/*",
-    "/troubleshooting/*",
-    "/repos/*",
-    "/about/*",
-    "/api-docs/*",
-    "/search/*",
-    "/request-crawl/*",
-    "/favicon.svg",
-    "/robots.txt",
-    "/rss.xml",
-    "/sitemap.xml",
-    "/sitemap-index.xml",
-    "/llms.txt"
+    "/favicon.svg"
   ]
 }

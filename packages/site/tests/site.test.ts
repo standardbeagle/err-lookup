@@ -104,6 +104,13 @@ describe("site build (§8.3)", () => {
     const routes = JSON.parse(readFileSync(resolve(dist, "_routes.json"), "utf8"));
     expect(routes.include).toContain("/*"); // one splat: wrangler rejects overlapping include rules
     expect(routes.include.length + routes.exclude.length, "over Cloudflare's 100-rule cap").toBeLessThanOrEqual(100);
+    // An excluded path never reaches the worker, so it writes no Analytics
+    // Engine row. Excluding the crawl-facing paths made it impossible to tell
+    // whether Google had fetched the sitemaps at all — a 3-day query returned
+    // 0 rows on 2026-09-14. Only assets and the MCP dataset stay excluded.
+    for (const measurable of ["/sitemaps/*", "/sitemap-index.xml", "/repos/*", "/robots.txt"]) {
+      expect(routes.exclude, `${measurable} must stay measurable`).not.toContain(measurable);
+    }
     for (const e of readErrorRecords()) {
       const p = resolve(dist, e.repo, e.slug, "index.html");
       expect(existsSync(p), `${p} should be on-demand, not prerendered`).toBe(false);
