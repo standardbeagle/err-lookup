@@ -43,10 +43,29 @@ export function isThinRecord(e: Pick<ErrorEntry, "documentation" | "solutions">)
  * render and remain searchable, they just don't compete with their canonical
  * sibling in the index.
  */
+export function canonicalBySlug(all: readonly ErrorEntry[]): Map<string, string> {
+  const best = new Map<string, ErrorEntry>();
+  for (const e of all) {
+    const key = groupKey(e);
+    const cur = best.get(key);
+    if (!cur || richness(e) > richness(cur) || (richness(e) === richness(cur) && e.slug < cur.slug)) {
+      best.set(key, e);
+    }
+  }
+  const out = new Map<string, string>();
+  for (const e of all) out.set(e.slug, best.get(groupKey(e))!.slug);
+  return out;
+}
+
+/** The code-or-pattern key two records must share to be the same error. */
+function groupKey(e: ErrorEntry): string {
+  return e.errorCode ? `c:${e.errorCode}` : `p:${e.messagePattern}`;
+}
+
 export function canonicalSlugs(all: readonly ErrorEntry[]): Set<string> {
   const best = new Map<string, ErrorEntry>();
   for (const e of all) {
-    const key = e.errorCode ? `c:${e.errorCode}` : `p:${e.messagePattern}`;
+    const key = groupKey(e);
     const cur = best.get(key);
     if (!cur || richness(e) > richness(cur) || (richness(e) === richness(cur) && e.slug < cur.slug)) {
       best.set(key, e);

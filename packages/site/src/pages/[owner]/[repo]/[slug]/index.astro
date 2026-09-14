@@ -1,7 +1,7 @@
 ---
 import ErrorDetail from "../../../../components/ErrorDetail.astro";
 import { missingErrorPage, relatedFrom } from "../../../../data/load.js";
-import { indexableSlugs } from "@errlookup/schema";
+import { canonicalBySlug, isThinRecord } from "@errlookup/schema";
 import { fetchRepoErrors, fetchInfoIndex, findBackgroundArticle, fetchPublishedRepos } from "../../../../data/runtime.js";
 
 // On demand (§6 revised): one prerendered page per error stopped scaling —
@@ -26,13 +26,31 @@ if (!e) {
 }
 const related = relatedFrom(all, e.slug);
 const backgroundArticle = findBackgroundArticle(await fetchInfoIndex(Astro.locals, Astro.url.origin), e);
-// Crawl-surface gate: repo admitted by the scheduled publisher AND this record
-// is the canonical, non-thin carrier of its message pattern (schema/indexing.ts).
+// Crawl-surface gate, in two parts that used to be one.
+//
+// A near-duplicate canonicalises to the record that won its group instead of
+// being noindexed. noindex discards a page's signals; a canonical hands them
+// to the page we want ranked, and Google files it under "Alternate page with
+// proper canonical tag" rather than deciding for us. Previously every variant
+// carried noindex AND a canonical to itself, which are contradictory claims.
+//
+// noindex is now reserved for the case with nothing to consolidate onto: a
+// record that already IS its group's canonical and is still thin.
 const published = await fetchPublishedRepos(Astro.locals, Astro.url.origin);
-const indexable = (published === null || published.has(repoFullName)) && indexableSlugs(all).has(e.slug);
+const repoAdmitted = published === null || published.has(repoFullName);
+const canonicalSlug = canonicalBySlug(all).get(e.slug) ?? e.slug;
+const isCanonical = canonicalSlug === e.slug;
+const indexable = repoAdmitted && !(isCanonical && isThinRecord(e));
 
 // Rendered HTML is immutable until the next dataset publish; let the CDN keep
 // it for an hour and serve stale while revalidating.
 Astro.response.headers.set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
 ---
-<ErrorDetail error={e} repoFullName={repoFullName} related={related} backgroundArticle={backgroundArticle} indexable={indexable} />
+<ErrorDetail
+  error={e}
+  repoFullName={repoFullName}
+  related={related}
+  backgroundArticle={backgroundArticle}
+  indexable={indexable}
+  canonicalSlug={canonicalSlug}
+/>

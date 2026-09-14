@@ -1,7 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { experimental_AstroContainer as AstroContainer } from "astro/container";
 import type { ErrorEntry } from "@errlookup/schema";
-import { isThinRecord, canonicalSlugs, indexableSlugs, indexableLastmod, THIN_DOC_CHARS } from "@errlookup/schema";
+import {
+  isThinRecord,
+  canonicalSlugs,
+  canonicalBySlug,
+  indexableSlugs,
+  indexableLastmod,
+  THIN_DOC_CHARS,
+} from "@errlookup/schema";
 import ErrorDetail from "../src/components/ErrorDetail.astro";
 
 const LONG_DOC =
@@ -132,6 +139,41 @@ describe("sitemap lastmod rollup (indexableLastmod)", () => {
     const all = [rec({ slug: "a", contentChangedAt: "2026-09-01T00:00:00.000Z" })];
     expect(indexableLastmod(all, new Set())).toBeNull();
     expect(indexableLastmod(all, new Set(["a"]))).toBe("2026-09-01T00:00:00.000Z");
+  });
+});
+
+describe("duplicate consolidation (canonicalBySlug)", () => {
+  it("points every variant at the record that won its group", () => {
+    const rich = rec({ slug: "rich", messagePattern: "p", solutions: ["fix"], documentation: LONG_DOC });
+    const poor = rec({ slug: "poor", messagePattern: "p", solutions: [], documentation: LONG_DOC });
+    const solo = rec({ slug: "solo", messagePattern: "other" });
+    const map = canonicalBySlug([rich, poor, solo]);
+    // The variant hands its signals to the winner instead of being suppressed.
+    expect(map.get("poor")).toBe("rich");
+    // The winner, and anything with no duplicate, canonicalises to itself.
+    expect(map.get("rich")).toBe("rich");
+    expect(map.get("solo")).toBe("solo");
+  });
+
+  it("groups on the error code when there is one, else the message pattern", () => {
+    // Two codes sharing a message template are different errors (serverless
+    // FUNCTION_MSK_/FUNCTION_KAFKA_ shared theirs verbatim).
+    const msk = rec({ slug: "msk", errorCode: "MSK", messagePattern: "shared" });
+    const kafka = rec({ slug: "kafka", errorCode: "KAFKA", messagePattern: "shared" });
+    const map = canonicalBySlug([msk, kafka]);
+    expect(map.get("msk")).toBe("msk");
+    expect(map.get("kafka")).toBe("kafka");
+  });
+
+  it("agrees with canonicalSlugs about who won", () => {
+    const all = [
+      rec({ slug: "a", messagePattern: "p", solutions: [] }),
+      rec({ slug: "b", messagePattern: "p", solutions: ["fix"] }),
+    ];
+    const winners = canonicalSlugs(all);
+    for (const [slug, canonical] of canonicalBySlug(all)) {
+      expect(winners.has(canonical), `${slug} points at a non-winner`).toBe(true);
+    }
   });
 });
 
