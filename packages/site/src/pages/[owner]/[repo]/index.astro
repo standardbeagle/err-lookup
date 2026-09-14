@@ -3,6 +3,7 @@ import Base from "../../../layouts/Base.astro";
 import { getRepoErrors, getRepos, getPublishedRepos } from "../../../data/load.js";
 import { repoOg } from "../../../data/og.js";
 import { paginate, sortRepoErrors, repoErrorPageHref, ERRORS_PER_PAGE } from "../../../data/paging.js";
+import { indexableSlugs } from "@errlookup/schema";
 import ErrorTable from "../../../components/ErrorTable.astro";
 
 // Every repo gets a page (site search and the API link here), but only repos
@@ -20,7 +21,15 @@ export function getStaticPaths() {
 }
 
 const { repo, published } = Astro.props;
-const allErrors = sortRepoErrors(getRepoErrors(repo.repo));
+// Indexable records only. The list used to carry every record the repo had,
+// including the ones that render noindex — 55,846 corpus-wide. Googlebot is
+// running ~50 requests a day on this host, and every one it spends on a page
+// we have told it not to index is one it does not spend on a page we want
+// indexed. It also split link equity 383,611 ways instead of 286,029.
+// Unindexable records stay reachable through search and direct links.
+const repoErrors = getRepoErrors(repo.repo);
+const indexable = indexableSlugs(repoErrors);
+const allErrors = sortRepoErrors(repoErrors.filter((e) => indexable.has(e.slug)));
 // Page 1 only. This page used to render every error the repo had, which put
 // weaviate/weaviate at 1.66 MB and ~6,000 links.
 const errorPage = paginate(allErrors, 1, ERRORS_PER_PAGE, (n) => repoErrorPageHref(repo.repo, n));

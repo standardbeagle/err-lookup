@@ -11,6 +11,7 @@
 import Base from "../../../../layouts/Base.astro";
 import ErrorTable from "../../../../components/ErrorTable.astro";
 import { getRepoErrors, getPublishedRepoEntries } from "../../../../data/load.js";
+import { indexableSlugs } from "@errlookup/schema";
 import { paginate, sortRepoErrors, repoErrorPageHref, ERRORS_PER_PAGE } from "../../../../data/paging.js";
 
 export function getStaticPaths() {
@@ -21,7 +22,7 @@ export function getStaticPaths() {
   // Admitted repos only: these pages are crawl surface, and an unadmitted
   // repo's pages are noindex — inviting a crawl to them would contradict that.
   for (const r of getPublishedRepoEntries()) {
-    const total = Math.max(1, Math.ceil(getRepoErrors(r.repo).length / ERRORS_PER_PAGE));
+    const total = Math.max(1, Math.ceil(indexableSlugs(getRepoErrors(r.repo)).size / ERRORS_PER_PAGE));
     const [owner, name] = r.repo.split("/");
     // From 2: page 1 is the repo page, and a /repos/{repo}/1/ would duplicate it.
     for (let p = 2; p <= total; p++) {
@@ -32,8 +33,10 @@ export function getStaticPaths() {
 }
 
 const { repoName, pageNum } = Astro.props;
+const pageErrors = getRepoErrors(repoName);
+const pageIndexable = indexableSlugs(pageErrors);
 const errorPage = paginate(
-  sortRepoErrors(getRepoErrors(repoName)),
+  sortRepoErrors(pageErrors.filter((e) => pageIndexable.has(e.slug))),
   pageNum,
   ERRORS_PER_PAGE,
   (n) => repoErrorPageHref(repoName, n)

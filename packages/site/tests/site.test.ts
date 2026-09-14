@@ -3,6 +3,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GUIDES, guidesFor } from "../src/data/guides.js";
+import { indexableSlugs } from "@errlookup/schema";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const siteRoot = resolve(__dirname, "..");
@@ -114,6 +115,25 @@ describe("site build (§8.3)", () => {
     for (const e of readErrorRecords()) {
       const p = resolve(dist, e.repo, e.slug, "index.html");
       expect(existsSync(p), `${p} should be on-demand, not prerendered`).toBe(false);
+    }
+  });
+
+  it("repo lists link only to indexable pages", async () => {
+    // Googlebot runs ~50 requests a day on this host after the August
+    // withdrawal. A link to a page we render noindex spends one of them on a
+    // page we have asked it not to index, and splits link equity with the
+    // pages we do want. Unindexable records stay reachable through search.
+    const repos = JSON.parse(readFileSync(resolve(publicData, "repos.json"), "utf8")) as { repo: string }[];
+    for (const r of repos) {
+      const file = resolve(dist, r.repo, "index.html");
+      if (!existsSync(file)) continue;
+      const html = readFileSync(file, "utf8");
+      const all = fullErrorsByRepo().get(r.repo) ?? [];
+      const linkable = new Set(indexableSlugs(all));
+      for (const e of all) {
+        if (linkable.has(e.slug)) continue;
+        expect(html, `${r.repo} links noindexed ${e.slug}`).not.toContain(`/${r.repo}/${e.slug}/"`);
+      }
     }
   });
 
