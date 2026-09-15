@@ -26,6 +26,23 @@ pnpm --filter @errlookup/site build
 # run from packages/site so wrangler reads wrangler.toml (nodejs_compat flag);
 # the API + on-demand pages ship inside dist/_worker.js built by Astro
 cd "$REPO_ROOT/packages/site"
+
+# Content-loss guard. A Pages deploy replaces the whole asset set, so building
+# against the 2-repo fixture in public/data (the checked-in default) publishes a
+# 24-page site over the ~4,700-page production one and every error URL in the
+# sitemaps starts 404ing. That happened on 2026-09-15; recovery was a rollback.
+# The full corpus arrives from the export on the publisher host, so a build that
+# small means the data is missing, not that the site shrank.
+pages=$(find dist -name '*.html' | wc -l)
+min="${ERRLOOKUP_MIN_PAGES:-1000}"
+if [ "$pages" -lt "$min" ]; then
+  echo "error: built $pages pages, below the $min floor — refusing to publish." >&2
+  echo "       public/data holds the fixture export, not the full corpus." >&2
+  echo "       Set ERRLOOKUP_MIN_PAGES to deploy a deliberately small build." >&2
+  exit 1
+fi
+echo "content guard: $pages pages (floor $min)"
+
 npx --yes wrangler@4 pages deploy dist \
   --project-name "${ERRLOOKUP_PAGES_PROJECT:-errlookup}" \
   --branch main \
