@@ -3,7 +3,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GUIDES, guidesFor } from "../src/data/guides.js";
-import { indexableSlugs } from "@errlookup/schema";
+import { indexableSlugs, canonicalBySlug } from "@errlookup/schema";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const siteRoot = resolve(__dirname, "..");
@@ -134,6 +134,25 @@ describe("site build (§8.3)", () => {
         if (linkable.has(e.slug)) continue;
         expect(html, `${r.repo} links noindexed ${e.slug}`).not.toContain(`/${r.repo}/${e.slug}/"`);
       }
+    }
+  });
+
+  it("emits exactly one canonical per page, pointing at the group's winner", async () => {
+    // Base renders a canonical from its own prop and ErrorDetail used to render
+    // a second one. While both said the same thing the duplication was
+    // harmless; the moment a duplicate could canonicalise to a sibling they
+    // disagreed, and a page with two conflicting canonicals has none as far as
+    // Google is concerned — strictly worse than the noindex it replaced.
+    const pages = await renderedErrorPages();
+    for (const [key, html] of pages) {
+      const tags = [...html.matchAll(/<link rel="canonical" href="([^"]+)"/g)].map((m) => m[1]!);
+      expect(tags, `${key} should have exactly one canonical`).toHaveLength(1);
+      const [repo, slug] = [key.split("/").slice(0, 2).join("/"), key.split("/")[2]!];
+      const all = fullErrorsByRepo().get(repo)!;
+      const winner = canonicalBySlug(all).get(slug) ?? slug;
+      expect(tags[0], `${key} canonical should point at ${winner}`).toBe(
+        `https://errors.standardbeagle.com/${repo}/${winner}/`
+      );
     }
   });
 

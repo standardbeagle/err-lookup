@@ -128,10 +128,16 @@ const ld = {
   ],
 };
 ---
-<Base ogImage={repoOg(repoFullName)} title={title} description={description} ogType="article" noindex={!indexable}>
+<Base
+  ogImage={repoOg(repoFullName)}
+  title={title}
+  description={description}
+  ogType="article"
+  noindex={!indexable}
+  canonical={canonicalHref}
+>
   <Fragment slot="head">
     <link rel="alternate" type="application/json" href={jsonUrl} title="JSON dataset record" />
-    <link rel="canonical" href={canonicalHref} />
     <script type="application/ld+json" set:html={JSON.stringify(ld)} />
   </Fragment>
 
