@@ -1,6 +1,7 @@
 ---
 import Base from "../layouts/Base.astro";
 import { guidesFor, guideHref } from "../data/guides.js";
+import { titleMessage, metaDescription } from "../data/seo.js";
 import { repoOg } from "../data/og.js";
 import type { ErrorEntry, InfoPageIndexEntry } from "@errlookup/schema";
 
@@ -50,20 +51,28 @@ const canonicalHref = `https://errors.standardbeagle.com/${repoFullName}/${canon
 // two files is two pages (slug gets an id suffix), and the message is what
 // keeps their titles distinct.
 const repoName = repoFullName.split("/")[1] ?? repoFullName;
+/**
+ * Titles carry the message with its format placeholders rendered readable.
+ *
+ * Half the corpus — 213,301 of 427,338 records — has a message holding a raw
+ * placeholder: `{process.ExitCode}`, `${tableName}`, `%s`, `{}`. A searcher
+ * pastes the RESOLVED string ("exited during startup (code 1)"), never the
+ * template, so the placeholder matches nothing they typed and reads as broken
+ * output in a result list. Cutting the title at the first placeholder keeps
+ * the part a human recognises and drops the part that only ever confused.
+ *
+ * The exact template is not lost: the page's own "Error message" block still
+ * prints it verbatim, which is what a pasted stack trace matches against.
+ */
+const titleText = titleMessage(e.errorMessage);
 const title = e.errorCode
-  ? `${e.errorCode}: ${e.errorMessage} — ${repoName}`
-  : `${e.errorMessage} — ${repoName}`;
+  ? `${e.errorCode}: ${titleText} — ${repoName}`
+  : `${titleText} — ${repoName}`;
 // Meta description: a complete sentence cut on a word boundary. The old
 // slice(0,155) ended mid-word, which reads as machine output and loses to
 // Google's own snippet extraction (a live SERP showed text scraped from the
 // bottom of the page instead).
-const truncateAtWord = (s: string, max: number) =>
-  s.length <= max ? s : `${s.slice(0, s.lastIndexOf(" ", max - 1)).replace(/[,;:.]$/, "")}…`;
-const firstSentence = e.documentation.match(/^.*?[.!?](?=\s|$)/s)?.[0] ?? e.documentation;
-const description = truncateAtWord(
-  `${e.errorCode ?? "This error"} in ${repoFullName}: ${firstSentence} See causes, fixes, and prevention.`,
-  160
-);
+const description = metaDescription(e.documentation, e.solutions);
 const guides = guidesFor(e.errorCode, e.errorMessage);
 const jsonUrl = `/api/errors/${e.id}`;
 const issuesUrl = `https://github.com/${repoFullName}/issues`;
@@ -151,10 +160,9 @@ const ld = {
   <h2>What it means</h2>
   <p>{e.documentation}</p>
 
-  <h2>Source</h2>
-  <p class="muted">Thrown at <code>{e.filePath}{e.lineNumber ? `:${e.lineNumber}` : ""}</code></p>
-  {e.sourceCode && <pre>{e.sourceCode}</pre>}
-  <p><a href={e.githubUrl} target="_blank" rel="noopener noreferrer">View on GitHub</a> (pinned to <code>{e.analyzedSha.slice(0, 10)}</code>)</p>
+  {/* Fix before evidence. The source region used to sit between the
+      explanation and the solutions, so both a reader and a snippet extractor
+      hit a wall of code before reaching anything actionable. */}
 
   {e.solutions.length > 0 && (
     <>
@@ -225,4 +233,14 @@ const ld = {
     Data as JSON: <a href={jsonUrl}>{jsonUrl}</a>.
     Report an issue: <a href={issuesUrl} target="_blank" rel="noopener noreferrer">GitHub</a>.
   </p>
+
+  {/* Appendix. The source region is evidence for everything above it, not a
+      prerequisite to reading any of it — it sat between the explanation and
+      the solutions, so a reader looking for the fix, and a snippet extractor
+      looking for something to quote, both hit a wall of code first. */}
+  <h2>Appendix: source</h2>
+  <p class="muted">Thrown at <code>{e.filePath}{e.lineNumber ? `:${e.lineNumber}` : ""}</code></p>
+  {e.sourceCode && <pre>{e.sourceCode}</pre>}
+  <p><a href={e.githubUrl} target="_blank" rel="noopener noreferrer">View on GitHub</a> (pinned to <code>{e.analyzedSha.slice(0, 10)}</code>)</p>
+
 </Base>
