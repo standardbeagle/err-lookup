@@ -80,7 +80,9 @@ if [ -n "$repo" ]; then
     echo "FAIL error-page: no slug found in $repo shard"; failures+=("error-page")
   fi
   expect_redirect "retired-slug-301" "$BASE/$repo/smoke-test-definitely-not-a-slug/" "/$repo/?reason=removed"
-  expect "repo-sitemap" 200 "$BASE/sitemaps/$owner/$name.xml" "<urlset"
+  # Packed shards, not one file per repo: the per-repo layout cost Googlebot
+  # ~1,658 fetches a day of budget it does not have (see data/sitemap.ts).
+  expect "sitemap-shard" 200 "$BASE/sitemaps/urls-1.xml" "<urlset"
 else
   echo "FAIL dataset: could not read a repo from published.json"; failures+=("dataset")
 fi
