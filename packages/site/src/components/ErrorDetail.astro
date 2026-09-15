@@ -1,7 +1,7 @@
 ---
 import Base from "../layouts/Base.astro";
 import { guidesFor, guideHref } from "../data/guides.js";
-import { titleMessage, metaDescription } from "../data/seo.js";
+import { titleMessage, metaDescription, entryLabel } from "../data/seo.js";
 import { repoOg } from "../data/og.js";
 import type { ErrorEntry, InfoPageIndexEntry } from "@errlookup/schema";
 
@@ -93,7 +93,7 @@ const ld = {
         {
           "@type": "ListItem",
           position: 3,
-          name: e.errorCode ?? e.errorMessage.slice(0, 60),
+          name: entryLabel(e.errorCode, e.errorMessage),
           item: `${SITE}/${repoFullName}/${e.slug}/`,
         },
       ],
@@ -151,7 +151,7 @@ const ld = {
   </Fragment>
 
   <p class="muted"><a href={`/${repoFullName}/`}>{repoFullName}</a> · <span class="pill">{e.severity}</span> {e.errorClass && <>· <code>{e.errorClass}</code></>}</p>
-  <h1>{e.errorCode ?? e.errorMessage.slice(0, 60)}</h1>
+  <h1>{entryLabel(e.errorCode, e.errorMessage)}</h1>
   {e.errorCode && <p class="muted"><code>{e.errorCode}</code></p>}
 
   <h2>Error message</h2>
@@ -222,7 +222,7 @@ const ld = {
     <>
       <h2>Related errors</h2>
       <ul>
-        {related.map((r) => <li><a href={`/${repoFullName}/${r.slug}/`}>{r.errorCode ?? r.errorMessage.slice(0, 60)}</a></li>)}
+        {related.map((r) => <li><a href={`/${repoFullName}/${r.slug}/`}>{entryLabel(r.errorCode, r.errorMessage)}</a></li>)}
       </ul>
     </>
   )}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { titleMessage, metaDescription, truncateAtWord } from "../src/data/seo.js";
+import { titleMessage, metaDescription, entryLabel, truncateAtWord } from "../src/data/seo.js";
 
 describe("titleMessage", () => {
   it("cuts at the placeholder and closes what it left dangling", () => {
@@ -65,5 +65,24 @@ describe("truncateAtWord", () => {
   });
   it("does not strand punctuation before the ellipsis", () => {
     expect(truncateAtWord("one two three, four five", 15)).toBe("one two three…");
+  });
+});
+
+describe("entryLabel", () => {
+  it("prefers the error code when the record has one", () => {
+    expect(entryLabel("EACCES", "permission denied {path}")).toBe("EACCES");
+  });
+
+  it("strips the placeholder that the title fix removes", () => {
+    // The live SubtitleEdit h1 read "llama-server exited during startup (code {proces"
+    // while its <title> was already clean — the two disagreed on the same page.
+    expect(entryLabel(null, "llama-server exited during startup (code {process.ExitCode})"))
+      .toBe("llama-server exited during startup");
+  });
+
+  it("cuts on a word boundary, never mid-word", () => {
+    const label = entryLabel(null, `${"a".repeat(20)} ${"b".repeat(80)}`);
+    expect(label.endsWith("…")).toBe(true);
+    expect(label).not.toMatch(/b{2,}…$/);
   });
 });

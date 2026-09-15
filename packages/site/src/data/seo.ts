@@ -71,3 +71,16 @@ export function metaDescription(documentation: string, solutions: readonly strin
   const firstSolution = solutions[0]?.trim();
   return truncateAtWord(firstSolution ? `${firstSentence} Fix: ${firstSolution}` : firstSentence, max);
 }
+
+/**
+ * The short name for an error in a heading, breadcrumb or link.
+ *
+ * The same string that goes in the title also goes in the <h1>, the
+ * BreadcrumbList, and every list row that links to the page — Google picks the
+ * displayed title from among those, so a placeholder left in any one of them
+ * undoes the title fix. Cut on a word boundary: a label ending mid-word reads
+ * as truncated output rather than as a name.
+ */
+export function entryLabel(errorCode: string | null | undefined, errorMessage: string, max = 60): string {
+  return errorCode ?? truncateAtWord(titleMessage(errorMessage), max);
+}

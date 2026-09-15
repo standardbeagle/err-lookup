@@ -10,6 +10,7 @@
  */
 import type { ErrorEntry } from "@errlookup/schema";
 import type { Page } from "../data/paging.js";
+import { entryLabel } from "../data/seo.js";
 import { repoErrorPageHref } from "../data/paging.js";
 import Pager from "./Pager.astro";
 
@@ -26,9 +27,9 @@ const { repo, page } = Astro.props as Props;
       <tr>
         <td>
           <a href={`/${repo}/${e.slug}/`}>
-            {e.errorCode ? <code>{e.errorCode}</code> : <span>{e.errorMessage.slice(0, 60)}</span>}
+            {e.errorCode ? <code>{e.errorCode}</code> : <span>{entryLabel(null, e.errorMessage)}</span>}
           </a>
-          <div class="muted">{e.errorCode ? e.errorMessage.slice(0, 80) : ""}</div>
+          <div class="muted">{e.errorCode ? entryLabel(null, e.errorMessage, 80) : ""}</div>
         </td>
         <td>{e.errorType}</td>
         <td><span class="pill">{e.severity}</span></td>
