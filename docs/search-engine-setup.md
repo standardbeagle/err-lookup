@@ -69,7 +69,7 @@ indexes, because no two of these sites lay theirs out the same way.
 | errors.standardbeagle.com | `packages/site/public/` | `/sitemap-index.xml` | 313,881 URLs submitted |
 | dev.standardbeagle.com | `standardbeagle.github.io` repo root | nested `/sitemap.xml` | 507 URLs submitted |
 | curvatureofthemind.com | `prod2:/var/www/curvatureofthemind.com-astro/` | `/sitemap.xml` | 196 URLs submitted |
-| standardbeagle.com | — | `/sitemap_index.xml` | blocked, see below |
+| standardbeagle.com | Nexcess WordPress root (via beagle-ab2) | `/sitemap_index.xml` | 281 URLs submitted |
 
 ```bash
 scripts/indexnow-submit.mjs --base https://dev.standardbeagle.com --key <key> --all --max 0
@@ -91,12 +91,13 @@ and no deploy script on the box — whatever builds that site will wipe the file
 on its next deploy. The key belongs in that site's source repo, which is not on
 this machine or in either GitHub org.
 
-**standardbeagle.com is blocked on access.** It is WordPress behind Cloudflare
-(`cache-enabler-engine`, `x-cache-nxaccel`) on a zone that is not in the account
-our credentials reach, and its origin is not on the fleet — `dev2` carries only a
-stub `/var/www/standardbeagle.com` that nginx does not serve. Two ways in, both
-needing a human: enable IndexNow in the SEO plugin (Yoast and Rank Math both
-ship it), or upload a key file to the web root over SFTP.
+**standardbeagle.com is reached through beagle-ab2.** It is WordPress on Nexcess,
+SSH user `a8277114_1@199.189.225.135`, and that account only holds beagle-ab2's
+keys — connecting from any other machine is refused, which looks like a password
+prompt but there is no password. The key file sits in
+`/chroot/home/a8277114/d773d993a2.nxcli.io/html`, the directory both
+`~/public_html` and `~/standardbeagle.com/html` resolve to. A plain file in the
+WordPress root is outside anything core or plugin updates replace.
 
 ## Bing Webmaster Tools
 
