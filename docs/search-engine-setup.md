@@ -58,6 +58,46 @@ A first `--all --max 0` run submits about 32 batches with a one-second pause
 between them. That is a deliberate one-off; the marker keeps subsequent runs to
 the pages that actually changed.
 
+## Other Standard Beagle properties
+
+The submitter takes `--base` and `--key`, so it drives any host we can write a
+file to. Sitemap discovery reads `robots.txt` first and follows nested sitemap
+indexes, because no two of these sites lay theirs out the same way.
+
+| host | key file | sitemap | status |
+| --- | --- | --- | --- |
+| errors.standardbeagle.com | `packages/site/public/` | `/sitemap-index.xml` | 313,881 URLs submitted |
+| dev.standardbeagle.com | `standardbeagle.github.io` repo root | nested `/sitemap.xml` | 507 URLs submitted |
+| curvatureofthemind.com | `prod2:/var/www/curvatureofthemind.com-astro/` | `/sitemap.xml` | 196 URLs submitted |
+| standardbeagle.com | — | `/sitemap_index.xml` | blocked, see below |
+
+```bash
+scripts/indexnow-submit.mjs --base https://dev.standardbeagle.com --key <key> --all --max 0
+```
+
+**A fresh key 403s until IndexNow can see it.** Both new hosts returned
+`403 key not valid` on the first submission with the key file already serving
+200, byte-identical and `text/plain`, and then `200 accepted` on a retry a few
+minutes later. This is propagation, not a key problem — do not go regenerating
+keys or rewriting files when it happens. (An earlier note here blamed key-to-host
+binding; that was wrong, and the retry disproved it.)
+
+Keys are per host anyway, which costs nothing and keeps the properties
+independent if one is ever handed to a client.
+
+**curvatureofthemind.com's key is not durable.** It sits in the deployed Astro
+artifact at `prod2:/var/www/curvatureofthemind.com-astro/`, which has no `.git`
+and no deploy script on the box — whatever builds that site will wipe the file
+on its next deploy. The key belongs in that site's source repo, which is not on
+this machine or in either GitHub org.
+
+**standardbeagle.com is blocked on access.** It is WordPress behind Cloudflare
+(`cache-enabler-engine`, `x-cache-nxaccel`) on a zone that is not in the account
+our credentials reach, and its origin is not on the fleet — `dev2` carries only a
+stub `/var/www/standardbeagle.com` that nginx does not serve. Two ways in, both
+needing a human: enable IndexNow in the SEO plugin (Yoast and Rank Math both
+ship it), or upload a key file to the web root over SFTP.
+
 ## Bing Webmaster Tools
 
 Not yet claimed. Without it there is no impressions, ranking, or index-coverage
