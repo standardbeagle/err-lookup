@@ -90,7 +90,7 @@ export function offHostUrls(site: string, urls: readonly string[]): string[] {
  * 202 means "accepted, key not validated yet", which is the NORMAL answer for
  * the first submission after a key is published and must not read as an error.
  */
-export function describeStatus(status: number): { ok: boolean; meaning: string } {
+export function describeStatus(status: number, key: string = INDEXNOW_KEY): { ok: boolean; meaning: string } {
   switch (status) {
     case 200:
       return { ok: true, meaning: "accepted" };
@@ -99,7 +99,7 @@ export function describeStatus(status: number): { ok: boolean; meaning: string }
     case 400:
       return { ok: false, meaning: "bad request (malformed payload)" };
     case 403:
-      return { ok: false, meaning: `key not valid — is ${INDEXNOW_KEY}.txt served at the site root?` };
+      return { ok: false, meaning: `key not valid — is ${key}.txt served at the site root?` };
     case 422:
       return { ok: false, meaning: "URLs do not belong to the host, or the key does not match" };
     case 429:

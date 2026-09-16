@@ -27,6 +27,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { homedir } from "node:os";
 import {
+  INDEXNOW_KEY,
   INDEXNOW_ENDPOINT,
   INDEXNOW_MAX_URLS_PER_REQUEST,
   batchUrls,
@@ -47,6 +48,10 @@ const BASE = (opt("--base", process.env.ERRLOOKUP_SITE || "https://errors.standa
 const ALL = flag("--all");
 const DRY = flag("--dry-run");
 const MAX = Number(opt("--max", process.env.ERRLOOKUP_INDEXNOW_MAX_URLS ?? "10000"));
+// IndexNow binds a key to the host that first submitted with it: reusing
+// errlookup's key on dev.standardbeagle.com was rejected 403 even with the
+// file correctly served. Each property therefore carries its own key.
+const KEY = opt("--key", process.env.ERRLOOKUP_INDEXNOW_KEY || INDEXNOW_KEY);
 const LOG_DIR = process.env.ERRLOOKUP_LOG_DIR || resolve(homedir(), ".local/state/errlookup");
 const MARKER = resolve(LOG_DIR, "last-indexnow-marker");
 const UA = "errlookup-indexnow/1.0 (+https://errors.standardbeagle.com)";
@@ -59,17 +64,69 @@ async function getText(url) {
   return r.text();
 }
 
-/** Every <url> entry across every shard of the sitemap index. */
-async function sitemapEntries(base) {
-  const index = await getText(`${base}/sitemap-index.xml`);
-  const shards = [...index.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+/**
+ * Where this site publishes its sitemaps.
+ *
+ * robots.txt first, because it is the one place a site states this itself —
+ * guessing paths gets it wrong across hosts (errlookup serves
+ * /sitemap-index.xml, dev.standardbeagle.com a nested /sitemap.xml, WordPress
+ * /sitemap_index.xml). The guesses are a fallback for a robots.txt that names
+ * none.
+ */
+async function discoverSitemaps(base) {
+  try {
+    const robots = await getText(`${base}/robots.txt`);
+    const declared = [...robots.matchAll(/^\s*Sitemap:\s*(\S+)\s*$/gim)].map((m) => m[1]);
+    if (declared.length) return declared;
+  } catch {
+    // no robots.txt is not an error; fall through to the conventional paths
+  }
+  for (const guess of ["/sitemap-index.xml", "/sitemap_index.xml", "/sitemap.xml"]) {
+    try {
+      await getText(`${base}${guess}`);
+      return [`${base}${guess}`];
+    } catch {
+      /* try the next */
+    }
+  }
+  throw new Error(`no sitemap found for ${base} (robots.txt names none, and no conventional path answered)`);
+}
+
+/**
+ * Every <url> entry reachable from `roots`, following <sitemapindex> children.
+ *
+ * Depth-bounded and visit-tracked: a sitemap index that lists itself, directly
+ * or through a child, would otherwise fetch forever. Depth 3 covers
+ * index -> project index -> shard, which is the deepest real nesting here.
+ */
+async function sitemapEntries(roots, maxDepth = 3) {
   const entries = [];
-  for (const shard of shards) {
-    const xml = await getText(shard);
-    for (const m of xml.matchAll(/<url>\s*<loc>([^<]+)<\/loc>(?:\s*<lastmod>([^<]+)<\/lastmod>)?/g)) {
+  const seen = new Set();
+
+  async function walk(url, depth) {
+    if (depth > maxDepth || seen.has(url)) return;
+    seen.add(url);
+    let xml;
+    try {
+      xml = await getText(url);
+    } catch (e) {
+      // One unreachable child must not lose the sitemaps that did answer.
+      console.error(`  warn: ${e.message}`);
+      return;
+    }
+    // A <sitemapindex> nests; a <urlset> is a leaf. Test the root element
+    // rather than the presence of <loc>, which both documents carry.
+    if (/<sitemapindex[\s>]/i.test(xml)) {
+      const children = [...xml.matchAll(/<loc>\s*([^<]+?)\s*<\/loc>/g)].map((m) => m[1]);
+      for (const child of children) await walk(child, depth + 1);
+      return;
+    }
+    for (const m of xml.matchAll(/<url>[\s\S]*?<loc>\s*([^<]+?)\s*<\/loc>(?:[\s\S]*?<lastmod>\s*([^<]+?)\s*<\/lastmod>)?[\s\S]*?<\/url>/g)) {
       entries.push({ loc: m[1], lastmod: m[2] ?? null });
     }
   }
+
+  for (const r of roots) await walk(r, 0);
   return entries;
 }
 
@@ -90,15 +147,20 @@ async function submit(urls) {
   const r = await fetch(INDEXNOW_ENDPOINT, {
     method: "POST",
     headers: { "content-type": "application/json; charset=utf-8", "user-agent": UA },
-    body: JSON.stringify(buildPayload(BASE, urls)),
+    body: JSON.stringify({
+      host: new URL(BASE).hostname,
+      key: KEY,
+      keyLocation: `${BASE}/${KEY}.txt`,
+      urlList: [...urls],
+    }),
   });
-  return { status: r.status, ...describeStatus(r.status) };
+  return { status: r.status, ...describeStatus(r.status, KEY) };
 }
 
 async function main() {
   // A key that is not reachable fails every batch with 403. One cheap GET up
   // front turns that into one clear message instead of N rejected batches.
-  const keyUrl = keyLocation(BASE);
+  const keyUrl = `${BASE}/${KEY}.txt`;
   let keyOk = false;
   try {
     keyOk = (await getText(keyUrl)).trim().length > 0;
@@ -112,7 +174,9 @@ async function main() {
   }
   log(`key file: ${keyUrl} OK`);
 
-  const entries = await sitemapEntries(BASE);
+  const roots = await discoverSitemaps(BASE);
+  log(`sitemaps: ${roots.map((r) => r.replace(BASE, "")).join(", ")}`);
+  const entries = await sitemapEntries(roots);
   log(`sitemap: ${entries.length} URLs advertised`);
 
   const since = opt("--since", ALL ? null : readMarker());
