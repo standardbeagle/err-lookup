@@ -1,0 +1,23 @@
+// Sites submitted to IndexNow on a schedule by scripts/indexnow-sites.mjs.
+//
+// errors.standardbeagle.com is NOT listed: its publisher submits right after
+// each deploy, which is when its pages actually change.
+//
+// Each key must be served at <site>/<key>.txt — see docs/search-engine-setup.md
+// for where each file lives and how it gets there.
+
+site "https://dev.standardbeagle.com" {
+    // standardbeagle/standardbeagle.github.io repo root (GitHub Pages)
+    key "941ab5d89b8b298e70264fa3115b1484"
+}
+
+site "https://curvatureofthemind.com" {
+    // andylbrummer/cotm-site astro-site/public/ (deployed to prod2 by that
+    // repo's scripts/scheduled-publish.sh from beagle-ab)
+    key "4ee95a4a83f704bad6e2be336ecd3ea7"
+}
+
+site "https://standardbeagle.com" {
+    // Nexcess WordPress root, reachable only from beagle-ab2
+    key "d5dafb3278e61796d2f4ee5d2b6cb45f"
+}
