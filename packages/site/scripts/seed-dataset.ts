@@ -191,14 +191,16 @@ function write(rel, content) {
   else writeFileSync(abs, typeof content === "string" ? content : JSON.stringify(content), "utf8");
 }
 
-const indexJson = JSON.stringify({ schemaVersion: 2, datasetVersion, errors: indexErrors });
+// One part, same shape the exporter writes (pipeline exporter/index-parts.ts).
+const indexJson = JSON.stringify({ schemaVersion: 2, datasetVersion, part: 1, parts: 1, errors: indexErrors });
 const reposJson = JSON.stringify(repos);
 
-// Gzipped like production (the raw index outgrew Pages' 25 MiB file cap);
-// drop a stale plain index.json so tests can't accidentally read old data.
+// Gzipped parts like production (a single index outgrew Pages' 25 MiB file
+// cap); drop stale unsplit indexes so tests can't accidentally read old data.
 const indexGz = gzipSync(indexJson);
 rmSync(resolve(dataDir, "index.json"), { force: true });
-write("index.json.gz", indexGz);
+rmSync(resolve(dataDir, "index.json.gz"), { force: true });
+write("index-1.json.gz", indexGz);
 write("repos.json", reposJson);
 // Crawl-surface admission list (scheduled publishing): every fixture repo is
 // admitted, mirroring the exporter's bootstrap, so the build exercises the
@@ -269,8 +271,8 @@ const manifest = {
   datasetVersion,
   counts: { repos: repos.length, errors: errors.length },
   files: {
-    index: {
-      path: "/data/index.json.gz",
+    "index-1": {
+      path: "/data/index-1.json.gz",
       bytes: indexGz.byteLength,
       sha256: sha(indexGz),
       encoding: "gzip",

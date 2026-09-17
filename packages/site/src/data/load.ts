@@ -83,11 +83,37 @@ export function getPublishedRepoEntries(): RepoEntry[] {
   return published === null ? repos : repos.filter((r) => published.has(r.repo));
 }
 
+/**
+ * The compact search index, reassembled from its gzipped parts
+ * (index-1.json.gz, index-2.json.gz, …) in part order. Split because a single
+ * file passed Pages' 25 MiB per-file cap and failed every deploy.
+ *
+ * The manifest names the parts, so a stale part left in the directory can never
+ * be read, and a missing one fails the build instead of shipping a site built
+ * from part of the corpus.
+ *
+ * Build-time only — prerendered routes read it under node, never the worker.
+ */
 export function getIndex(): { schemaVersion: number; datasetVersion: string; errors: IndexError[] } {
-  // Gzipped in the dataset (the raw file broke Pages' 25 MiB per-file cap).
-  // Build-time only — prerendered routes read it under node, never the worker.
-  const gz = readFileSync(resolve(siteRoot, "public", "data", "index.json.gz"));
-  return JSON.parse(gunzipSync(gz).toString("utf8"));
+  const manifest = getManifest();
+  const parts = Object.values(manifest.files)
+    .map((f) => ({ path: f.path, n: Number(/^\/data\/index-(\d+)\.json\.gz$/.exec(f.path)?.[1]) }))
+    .filter((p) => Number.isInteger(p.n))
+    .sort((a, b) => a.n - b.n);
+  if (parts.length === 0) throw new Error("manifest.json lists no index-N.json.gz parts — re-run the export");
+  const errors: IndexError[] = [];
+  let meta: { schemaVersion: number; datasetVersion: string } | null = null;
+  parts.forEach((p, i) => {
+    const body = JSON.parse(
+      gunzipSync(readFileSync(resolve(siteRoot, "public", p.path.replace(/^\//, "")))).toString("utf8")
+    ) as { schemaVersion: number; datasetVersion: string; part: number; parts: number; errors: IndexError[] };
+    if (body.part !== i + 1 || body.parts !== parts.length) {
+      throw new Error(`index part ${p.path} says part ${body.part} of ${body.parts}; manifest lists ${parts.length} parts`);
+    }
+    meta ??= { schemaVersion: body.schemaVersion, datasetVersion: body.datasetVersion };
+    errors.push(...body.errors);
+  });
+  return { ...meta!, errors };
 }
 
 /** Info-page hub rows. A dataset published before the collector first ran has

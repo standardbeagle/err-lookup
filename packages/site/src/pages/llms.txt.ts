@@ -16,7 +16,9 @@ export const GET: APIRoute = () => {
   lines.push("");
   lines.push("## Dataset");
   lines.push("- [manifest](https://errors.standardbeagle.com/data/manifest.json): freshness + inventory");
-  lines.push("- [index](https://errors.standardbeagle.com/data/index.json.gz): compact search index (gzip)");
+  for (const f of Object.values(m.files).filter((f) => /^\/data\/index-\d+\.json\.gz$/.test(f.path))) {
+    lines.push(`- [${f.path.slice(6, -8)}](https://errors.standardbeagle.com${f.path}): compact search index part (gzip)`);
+  }
   lines.push("- [repos](https://errors.standardbeagle.com/data/repos.json): repo list");
   lines.push("- [schema](https://errors.standardbeagle.com/schema.json): JSON Schema (Draft-07)");
   lines.push("");
