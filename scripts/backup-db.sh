@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Daily offsite backup of the working scan DB to Backblaze B2.
 # The DB runs in WAL mode, so we take a consistent snapshot via `sqlite3 .backup`
-# (a raw copy could tear across db/-wal). Snapshot is gzipped, uploaded with a
-# UTC-dated name, and uploads older than the retention window are pruned.
+# (a raw copy could tear across db/-wal). Snapshot is gzipped and uploaded to one
+# fixed name, db/errlookup.db.gz: B2 keeps each day as a version of that file and
+# the bucket lifecycle rule for db/ expires superseded versions (14 days), so
+# this script does no pruning of its own.
 #
 # Credentials: ~/.config/errlookup/backblaze.env (chmod 600), NOT in the repo:
 #   B2_APPLICATION_KEY_ID=...
@@ -15,7 +17,6 @@ DB="$REPO_ROOT/packages/pipeline/data/errlookup.db"
 LOG_DIR="${ERRLOOKUP_LOG_DIR:-$HOME/.local/state/errlookup}"
 LOG="$LOG_DIR/backup.log"
 ENV_FILE="${ERRLOOKUP_B2_ENV:-$HOME/.config/errlookup/backblaze.env}"
-RETENTION_DAYS="${ERRLOOKUP_BACKUP_RETENTION_DAYS:-30}"
 
 mkdir -p "$LOG_DIR"
 exec 9>"$LOG_DIR/backup.lock"
@@ -67,12 +68,11 @@ snapshot="$tmp/errlookup-$stamp.db"
 sqlite3 "$DB" ".backup '$snapshot'" || fail "sqlite .backup"
 gzip "$snapshot" || fail "gzip"
 
-rclone copyto "$snapshot.gz" "$REMOTE/errlookup-$stamp.db.gz" || fail "rclone upload"
+rclone copyto "$snapshot.gz" "$REMOTE/errlookup.db.gz" || fail "rclone upload"
 
-# Verify the upload exists and prune expired snapshots.
-rclone lsf "$REMOTE/errlookup-$stamp.db.gz" | grep -q . || fail "upload verification"
-rclone delete --min-age "${RETENTION_DAYS}d" "$REMOTE" || fail "retention prune"
-
+# Verify the stored object is the file we sent.
 bytes=$(stat -c %s "$snapshot.gz")
-echo "$(date -u +%FT%TZ) OK: errlookup-$stamp.db.gz ($bytes bytes) → b2:$ERRLOOKUP_B2_BUCKET/db, retention ${RETENTION_DAYS}d" >>"$LOG"
-notify "${ERRLOOKUP_UPDATE_URL:-}" low "db backup OK on $(hostname): errlookup-$stamp.db.gz ($bytes bytes) → b2"
+remote_bytes=$(rclone lsf --format s "$REMOTE/errlookup.db.gz")
+[ "$remote_bytes" = "$bytes" ] || fail "upload verification: b2 has ${remote_bytes:-nothing}, sent $bytes bytes"
+echo "$(date -u +%FT%TZ) OK: errlookup.db.gz ($bytes bytes) → b2:$ERRLOOKUP_B2_BUCKET/db (snapshot $stamp)" >>"$LOG"
+notify "${ERRLOOKUP_UPDATE_URL:-}" low "db backup OK on $(hostname): errlookup.db.gz snapshot $stamp ($bytes bytes) → b2"
