@@ -53,7 +53,10 @@ const MAX = Number(opt("--max", process.env.ERRLOOKUP_INDEXNOW_MAX_URLS ?? "1000
 // file correctly served. Each property therefore carries its own key.
 const KEY = opt("--key", process.env.ERRLOOKUP_INDEXNOW_KEY || INDEXNOW_KEY);
 const LOG_DIR = process.env.ERRLOOKUP_LOG_DIR || resolve(homedir(), ".local/state/errlookup");
-const MARKER = resolve(LOG_DIR, "last-indexnow-marker");
+// One marker per host: the scheduled run drives several sites from one state
+// directory, and a shared marker would let one site's newest lastmod skip
+// another site's older changes.
+const MARKER = resolve(LOG_DIR, `last-indexnow-marker-${new URL(BASE).hostname}`);
 const UA = "errlookup-indexnow/1.0 (+https://errors.standardbeagle.com)";
 
 const log = (...a) => console.log(...a);
@@ -182,7 +185,11 @@ async function main() {
   const since = opt("--since", ALL ? null : readMarker());
   let selected = entries;
   if (since) {
-    selected = entries.filter((e) => e.lastmod !== null && e.lastmod >= since);
+    // Compare calendar dates, not raw strings. Sites mix `2026-09-15` with
+    // `2026-09-15T13:50:33-05:00`, and as strings a date-only lastmod sorts
+    // BEFORE a same-day timestamp marker, silently skipping that day's pages.
+    const sinceDay = since.slice(0, 10);
+    selected = entries.filter((e) => e.lastmod !== null && e.lastmod.slice(0, 10) >= sinceDay);
     log(`changed on/after ${since}: ${selected.length}`);
   } else if (ALL) {
     log("--all: submitting every advertised URL");
@@ -235,7 +242,7 @@ async function main() {
   }
   // Marker is the newest lastmod actually submitted, not today: a URL changed
   // after the export but before this run must still be picked up next time.
-  const newest = selected[0]?.lastmod;
+  const newest = selected[0]?.lastmod?.slice(0, 10);
   if (newest) {
     writeMarker(newest);
     log(`marker: ${newest}`);
