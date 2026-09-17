@@ -8,10 +8,11 @@ import {
   rmSync,
 } from "node:fs";
 import { join, dirname, resolve } from "node:path";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { repositories, errors, infoPages, publishedRepos } from "../db/schema.js";
 import { qualityRows, qualitySummary } from "./quality.js";
+import { assignSitemapShards } from "./sitemap-shards.js";
 import {
   CURRENT_SCHEMA_VERSION,
   INFO_PAGE_SCHEMA_VERSION,
@@ -20,6 +21,7 @@ import {
   validateInfoPageEntry,
   buildSearchIndex,
   indexableLastmod,
+  indexableSlugs,
   type ErrorEntry,
   type RepoEntry,
   type IndexError,
@@ -105,12 +107,13 @@ export function readDataset(db: Db): {
     .select()
     .from(repositories)
     .where(eq(repositories.status, "analyzed"))
+    .orderBy(asc(repositories.repo))
     .all()
     .filter((r) => r.analyzedSha !== null);
   const repos = repoRows.map(rowToRepoEntry);
   const errorsByRepo = new Map<string, ErrorEntry[]>();
   for (const repo of repos) {
-    const rows = db.select().from(errors).where(eq(errors.repo, repo.repo)).all();
+    const rows = db.select().from(errors).where(eq(errors.repo, repo.repo)).orderBy(asc(errors.slug)).all();
     errorsByRepo.set(repo.repo, rows.map(rowToErrorEntry));
   }
   return { repos, errorsByRepo };
@@ -187,6 +190,49 @@ export function admitReposForSite(db: Db, analyzed: RepoEntry[], now = new Date(
   );
 }
 
+/** Soft size of a sitemap shard in URLs. The site enforces the protocol's 50k ceiling. */
+function sitemapShardTarget(): number {
+  const n = Number(process.env.ERRLOOKUP_SITEMAP_URLS_PER_FILE ?? 10_000);
+  return Number.isFinite(n) && n > 0 ? n : 10_000;
+}
+
+/**
+ * Give every newly admitted repo its permanent sitemap shard, persist it on the
+ * published_repos ledger, and return the admitted repos' shards (sorted by repo,
+ * so equal assignments serialize to equal bytes).
+ *
+ * A repo's size is its sitemap URL count: the landing page plus the indexable
+ * error pages — the same set the site advertises (packages/schema indexing.ts).
+ */
+export function assignAndReadSitemapShards(
+  db: Db,
+  admitted: ReadonlySet<string>,
+  errorsByRepo: ReadonlyMap<string, ErrorEntry[]>
+): { target: number; repos: Record<string, number> } {
+  const target = sitemapShardTarget();
+  const ledger = db.select().from(publishedRepos).all();
+  const assigned = assignSitemapShards(
+    ledger,
+    admitted,
+    (repo) => 1 + indexableSlugs(errorsByRepo.get(repo) ?? []).size,
+    target
+  );
+  if (assigned.size > 0) {
+    // One transaction: a crash between rows must not leave half a batch
+    // assigned, which would let the rerun pack the rest differently.
+    db.transaction((tx) => {
+      for (const [repo, shard] of assigned) {
+        tx.update(publishedRepos).set({ sitemapShard: shard }).where(eq(publishedRepos.repo, repo)).run();
+      }
+    });
+  }
+  const repos: Record<string, number> = {};
+  for (const r of db.select().from(publishedRepos).orderBy(asc(publishedRepos.repo)).all()) {
+    if (admitted.has(r.repo) && r.sitemapShard !== null) repos[r.repo] = r.sitemapShard;
+  }
+  return { target, repos };
+}
+
 /**
  * Build the full static dataset (§5). Validates every record against the zod
  * schema; invalid records are dropped (and counted in `rejected`) rather than
@@ -256,6 +302,10 @@ export function buildDataset(
       content: JSON.stringify(valid),
     });
   }
+
+  // Permanent sitemap shards: assign newly admitted repos, never move old ones.
+  const sitemapShards = assignAndReadSitemapShards(db, sitePublished, validByRepo);
+  const sitemapShardsStr = JSON.stringify(sitemapShards);
 
   // index.json — compact search index (§5.2)
   const indexErrors: IndexError[] = allErrors.map((e) => ({
@@ -327,6 +377,7 @@ export function buildDataset(
     { relPath: "index.json.gz", content: indexGz },
     { relPath: "repos.json", content: reposStr },
     { relPath: "published.json", content: publishedJson },
+    { relPath: "sitemap-shards.json", content: sitemapShardsStr },
     { relPath: "tags.json", content: tagsStr },
     ...repoFiles,
     ...searchFiles,
@@ -345,6 +396,11 @@ export function buildDataset(
     },
     repos: { path: "/data/repos.json", bytes: Buffer.byteLength(reposStr), sha256: sha256(reposStr) },
     published: { path: "/data/published.json", bytes: Buffer.byteLength(publishedJson), sha256: sha256(publishedJson) },
+    sitemapShards: {
+      path: "/data/sitemap-shards.json",
+      bytes: Buffer.byteLength(sitemapShardsStr),
+      sha256: sha256(sitemapShardsStr),
+    },
     tags: { path: "/data/tags.json", bytes: Buffer.byteLength(tagsStr), sha256: sha256(tagsStr) },
     searchSummary: {
       path: "/data/search/summary.json",

@@ -279,6 +279,58 @@ describe("scheduled publishing (crawl-surface admission)", () => {
   });
 });
 
+describe("permanent sitemap shards", () => {
+  function repoRow(repo: string) {
+    return {
+      repo,
+      description: null,
+      language: "Go",
+      stars: 1,
+      defaultBranch: "main",
+      analyzedSha: "b".repeat(40),
+      analyzedAt: "2026-08-30T00:00:00Z",
+      errorCount: 0,
+      status: "analyzed" as const,
+    };
+  }
+  const shardsOf = (built: ReturnType<typeof buildDataset>) =>
+    JSON.parse(built.files.find((f) => f.relPath === "sitemap-shards.json")!.content as string) as {
+      target: number;
+      repos: Record<string, number>;
+    };
+
+  it("keeps every assigned repo in its shard while new repos fill the last one", () => {
+    const dbPath = tmpDbPath("export-sitemap-shards");
+    const { db, raw } = openDb(dbPath);
+    const prevTarget = process.env.ERRLOOKUP_SITEMAP_URLS_PER_FILE;
+    const prevDelay = process.env.ERRLOOKUP_PUBLISH_DELAY_DAYS;
+    // Each repo is one landing URL here, so a target of 2 closes a shard every two repos.
+    process.env.ERRLOOKUP_SITEMAP_URLS_PER_FILE = "2";
+    process.env.ERRLOOKUP_PUBLISH_DELAY_DAYS = "0";
+    try {
+      db.insert(repositories).values([repoRow("a/one"), repoRow("b/two"), repoRow("c/three")]).run();
+      const first = shardsOf(buildDataset(db));
+      expect(first.target).toBe(2);
+      expect(first.repos).toEqual({ "a/one": 1, "b/two": 1, "c/three": 2 });
+
+      // A newcomer that sorts FIRST by name — under the old slicing it would
+      // have shifted every other repo into a different file.
+      db.insert(repositories).values([repoRow("0/early-name")]).run();
+      const second = shardsOf(buildDataset(db));
+      expect(second.repos).toEqual({ "0/early-name": 2, "a/one": 1, "b/two": 1, "c/three": 2 });
+
+      // Re-exporting unchanged data yields byte-identical shard assignments.
+      expect(shardsOf(buildDataset(db))).toEqual(second);
+    } finally {
+      if (prevTarget === undefined) delete process.env.ERRLOOKUP_SITEMAP_URLS_PER_FILE;
+      else process.env.ERRLOOKUP_SITEMAP_URLS_PER_FILE = prevTarget;
+      if (prevDelay === undefined) delete process.env.ERRLOOKUP_PUBLISH_DELAY_DAYS;
+      else process.env.ERRLOOKUP_PUBLISH_DELAY_DAYS = prevDelay;
+      raw.close();
+    }
+  });
+});
+
 describe("default out dir", () => {
   it("resolves against the pnpm workspace root, not the package cwd", async () => {
     const { resolveDefaultOutDir } = await import("../src/exporter/index.js");

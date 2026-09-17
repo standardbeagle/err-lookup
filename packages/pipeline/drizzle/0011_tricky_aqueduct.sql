@@ -1,0 +1,1 @@
+ALTER TABLE `published_repos` ADD `sitemap_shard` integer;

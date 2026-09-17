@@ -211,6 +211,9 @@ export const phaseBatches = sqliteTable(
 export const publishedRepos = sqliteTable("published_repos", {
   repo: text("repo").primaryKey(),
   firstPublishedAt: text("first_published_at").notNull(),
+  // Permanent sitemap file number, set once at site admission and never
+  // changed (see exporter/sitemap-shards.ts). Null until the repo is admitted.
+  sitemapShard: integer("sitemap_shard"),
 });
 
 export type RepositoryRow = typeof repositories.$inferSelect;
