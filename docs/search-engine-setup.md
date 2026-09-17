@@ -35,7 +35,7 @@ Set up here:
   submission with 403 and nothing else would notice.
 - **Submitter** — `scripts/indexnow-submit.mjs`. Reads the live sitemap index,
   selects URLs whose `<lastmod>` is on or after the marker in
-  `~/.local/state/errlookup/last-indexnow-marker`, and posts them in batches of
+  `~/.local/state/errlookup/last-indexnow-marker-<host>`, and posts them in batches of
   10,000.
 - **Schedule** — `scripts/publish-if-changed.sh` runs it after a successful
   deploy. It is non-fatal: the pages are already live, so a rejected submission
@@ -68,7 +68,7 @@ indexes, because no two of these sites lay theirs out the same way.
 | --- | --- | --- | --- |
 | errors.standardbeagle.com | `packages/site/public/` | `/sitemap-index.xml` | 313,881 URLs submitted |
 | dev.standardbeagle.com | `standardbeagle.github.io` repo root | nested `/sitemap.xml` | 507 URLs submitted |
-| curvatureofthemind.com | `prod2:/var/www/curvatureofthemind.com-astro/` | `/sitemap.xml` | 196 URLs submitted |
+| curvatureofthemind.com | `andylbrummer/cotm-site` `astro-site/public/` | `/sitemap.xml` | 196 URLs submitted |
 | standardbeagle.com | Nexcess WordPress root (via beagle-ab2) | `/sitemap_index.xml` | 281 URLs submitted |
 
 ```bash
@@ -85,11 +85,20 @@ binding; that was wrong, and the retry disproved it.)
 Keys are per host anyway, which costs nothing and keeps the properties
 independent if one is ever handed to a client.
 
-**curvatureofthemind.com's key is not durable.** It sits in the deployed Astro
-artifact at `prod2:/var/www/curvatureofthemind.com-astro/`, which has no `.git`
-and no deploy script on the box — whatever builds that site will wipe the file
-on its next deploy. The key belongs in that site's source repo, which is not on
-this machine or in either GitHub org.
+**curvatureofthemind.com's key lives in its source repo.** The site is built from
+`andylbrummer/cotm-site` and rsynced to `prod2:/var/www/curvatureofthemind.com-astro`
+by that repo's `scripts/scheduled-publish.sh` on beagle-ab. A key file dropped
+straight into the web root was deleted by the next deploy about ten hours later,
+which is how it ended up in `astro-site/public/`.
+
+## Schedule
+
+`scripts/indexnow-sites.mjs` submits every site in `configs/indexnow-sites.kdl`
+daily from beagle-ab's crontab (06:23), with one per-host marker each under
+`~/.local/state/errlookup/`, logging to `indexnow-sites.log` there. It runs under
+the pipeline's tsx because the shared KDL parser uses TypeScript syntax Node's
+type stripping rejects. errors.standardbeagle.com is not in that list; its
+publisher submits after each deploy.
 
 **standardbeagle.com is reached through beagle-ab2.** It is WordPress on Nexcess,
 SSH user `a8277114_1@199.189.225.135`, and that account only holds beagle-ab2's
