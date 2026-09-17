@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { gzipSync } from "node:zlib";
 import {
   mkdirSync,
   writeFileSync,
@@ -13,6 +12,7 @@ import type { Db } from "../db/client.js";
 import { repositories, errors, infoPages, publishedRepos } from "../db/schema.js";
 import { qualityRows, qualitySummary } from "./quality.js";
 import { assignSitemapShards } from "./sitemap-shards.js";
+import { splitIndexParts } from "./index-parts.js";
 import {
   CURRENT_SCHEMA_VERSION,
   INFO_PAGE_SCHEMA_VERSION,
@@ -320,11 +320,6 @@ export function buildDataset(
     tags: e.tags,
     sev: e.severity,
   }));
-  const indexJson = {
-    schemaVersion: CURRENT_SCHEMA_VERSION,
-    datasetVersion,
-    errors: indexErrors,
-  };
 
   const reposJson: RepoEntry[] = validRepos.map((r) => ({
     ...r,
@@ -360,21 +355,18 @@ export function buildDataset(
   const tagsJson = buildTagsJson(allErrors, validInfoPages);
   const tagsStr = JSON.stringify(tagsJson);
 
-  // manifest.json — MCP freshness poll target (§5.1)
-  const indexStr = JSON.stringify(indexJson);
-  // Gzipped: the raw index crossed Cloudflare Pages' 25 MiB per-file cap at
-  // ~660 repos (38.4 MiB) and every deploy failed until the site froze. The
-  // manifest advertises the real path + encoding; the MCP follows it and
-  // gunzips. gzipSync writes no mtime, so equal input bytes → equal gz bytes
-  // and the sha stays deterministic.
-  const indexGz = gzipSync(indexStr);
+  // Search index in gzipped parts (index-parts.ts): one index.json.gz outgrew
+  // Pages' 25 MiB per-file cap and failed every deploy. Each part is listed in
+  // the manifest under its own key, which the MCP's generic path -> sha256 map
+  // already follows.
+  const indexParts = splitIndexParts({ schemaVersion: CURRENT_SCHEMA_VERSION, datasetVersion }, indexErrors);
   const reposStr = JSON.stringify(reposJson);
   // Sharded search index (§5.4): lets the site's API answer queries without
   // ever loading index.json — required once the corpus outgrows what a Pages
   // Function isolate can parse per request.
   const searchFiles = buildSearchIndex(indexErrors);
   const files: FileOut[] = [
-    { relPath: "index.json.gz", content: indexGz },
+    ...indexParts.map((p) => ({ relPath: p.relPath, content: p.gz })),
     { relPath: "repos.json", content: reposStr },
     { relPath: "published.json", content: publishedJson },
     { relPath: "sitemap-shards.json", content: sitemapShardsStr },
@@ -386,14 +378,19 @@ export function buildDataset(
 
   const summaryStr = searchFiles.find((f) => f.relPath === "search/summary.json")!.content;
   const inventory: Record<string, { path: string; bytes: number; sha256: string; encoding?: string; rawBytes?: number; rawSha256?: string }> = {
-    index: {
-      path: "/data/index.json.gz",
-      bytes: indexGz.byteLength,
-      sha256: sha256(indexGz),
-      encoding: "gzip",
-      rawBytes: Buffer.byteLength(indexStr),
-      rawSha256: sha256(indexStr),
-    },
+    ...Object.fromEntries(
+      indexParts.map((p) => [
+        p.relPath.replace(/\.json\.gz$/, ""),
+        {
+          path: `/data/${p.relPath}`,
+          bytes: p.gz.byteLength,
+          sha256: sha256(p.gz),
+          encoding: "gzip",
+          rawBytes: Buffer.byteLength(p.raw),
+          rawSha256: sha256(p.raw),
+        },
+      ])
+    ),
     repos: { path: "/data/repos.json", bytes: Buffer.byteLength(reposStr), sha256: sha256(reposStr) },
     published: { path: "/data/published.json", bytes: Buffer.byteLength(publishedJson), sha256: sha256(publishedJson) },
     sitemapShards: {
@@ -409,6 +406,7 @@ export function buildDataset(
     },
   };
 
+  // manifest.json — MCP freshness poll target (§5.1)
   const manifest = {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     datasetVersion,

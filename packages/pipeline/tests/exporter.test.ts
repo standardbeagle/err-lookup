@@ -71,7 +71,7 @@ describe("exporter", () => {
     // All expected files present
     for (const rel of [
       "manifest.json",
-      "index.json.gz",
+      "index-1.json.gz",
       "repos.json",
       "repos/axios/axios.json",
     ]) {
@@ -88,11 +88,17 @@ describe("exporter", () => {
     // Scheduled publishing: the crawl-surface admission list ships with the data.
     const published = JSON.parse(readFileSync(resolve(outDir, "published.json"), "utf8"));
     expect(published).toEqual(["axios/axios"]);
-    expect(m.files.index.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(m.files["index-1"].sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(m.files["index-1"].path).toBe("/data/index-1.json.gz");
+    // The single index.json.gz outgrew Pages' 25 MiB per-file cap and failed
+    // every deploy; it must not come back.
+    expect(existsSync(resolve(outDir, "index.json.gz")), "unsplit index").toBe(false);
     expect((manifest as { datasetVersion: string }).datasetVersion).toBeTruthy();
 
     // index validates
-    const index = JSON.parse(gunzipSync(readFileSync(resolve(outDir, "index.json.gz"))).toString("utf8"));
+    const index = JSON.parse(gunzipSync(readFileSync(resolve(outDir, "index-1.json.gz"))).toString("utf8"));
+    expect(index.part).toBe(1);
+    expect(index.parts).toBe(1);
     expect(index.errors).toHaveLength(1);
     expect(index.errors[0].code).toBe("ERR_BAD_RESPONSE");
 
@@ -276,6 +282,50 @@ describe("scheduled publishing (crawl-surface admission)", () => {
     } finally {
       raw.close();
     }
+  });
+});
+
+describe("splitIndexParts", () => {
+  const entry = (i: number) => ({
+    id: i.toString(16).padStart(16, "0"),
+    repo: "a/b",
+    slug: `s-${i}`,
+    code: null,
+    // Distinct, poorly compressible text so parts have real gzip size.
+    msg: `message ${i} ${Math.sin(i).toString(36)} ${Math.cos(i * 7).toString(36)}`,
+    pattern: `message ${i}`,
+    type: "runtime",
+    cls: null,
+    tags: [],
+    sev: "error",
+  });
+
+  it("keeps every part under the cap and every error exactly once, in order", async () => {
+    const { splitIndexParts } = await import("../src/exporter/index-parts.js");
+    const errors = Array.from({ length: 3000 }, (_, i) => entry(i));
+    const cap = 20_000;
+    const parts = splitIndexParts({ schemaVersion: 2, datasetVersion: "v" }, errors, cap);
+    expect(parts.length).toBeGreaterThan(1);
+    const seen: string[] = [];
+    parts.forEach((p, i) => {
+      expect(p.gz.byteLength, `part ${i + 1}`).toBeLessThanOrEqual(cap);
+      expect(p.relPath).toBe(`index-${i + 1}.json.gz`);
+      const body = JSON.parse(gunzipSync(p.gz).toString("utf8"));
+      expect(body).toMatchObject({ schemaVersion: 2, datasetVersion: "v", part: i + 1, parts: parts.length });
+      seen.push(...body.errors.map((e: { id: string }) => e.id));
+    });
+    expect(seen).toEqual(errors.map((e) => e.id));
+  });
+
+  it("writes one part when everything fits", async () => {
+    const { splitIndexParts } = await import("../src/exporter/index-parts.js");
+    const parts = splitIndexParts({ schemaVersion: 2, datasetVersion: "v" }, [entry(1)], 1_000_000);
+    expect(parts.map((p) => p.relPath)).toEqual(["index-1.json.gz"]);
+  });
+
+  it("fails loudly when a single error cannot fit under the cap", async () => {
+    const { splitIndexParts } = await import("../src/exporter/index-parts.js");
+    expect(() => splitIndexParts({ schemaVersion: 2, datasetVersion: "v" }, [entry(1)], 10)).toThrow(/cap/);
   });
 });
 
