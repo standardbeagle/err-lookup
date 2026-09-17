@@ -14,6 +14,8 @@ Usage:
   gsc.py sitemaps                   submitted sitemaps, with last-download state
   gsc.py submit <sitemap-url>       (re)submit a sitemap
   gsc.py delete <sitemap-url>       remove a sitemap submission
+  gsc.py sync-sitemaps              submit every sitemap the live index lists
+                                    that Search Console does not have yet
   gsc.py analytics [days]           clicks/impressions by day (default 28)
   gsc.py inspect <page-url>         per-URL index status and coverage verdict
 """
@@ -108,6 +110,23 @@ def main() -> None:
         target = urllib.parse.quote(sys.argv[2], safe="")
         call(f"/webmasters/v3/sites/{enc}/sitemaps/{target}", method="DELETE")
         print(f"  deleted {sys.argv[2]}")
+    elif cmd == "sync-sitemaps":
+        # Sitemap shards are permanent and only ever appended (pipeline
+        # exporter/sitemap-shards.ts), so a new file appears roughly daily as
+        # the open shard fills. Submitting each file directly is what gets its
+        # URLs associated with a sitemap; waiting for Google to rediscover it
+        # through the index has not worked on this host.
+        import re
+        base = SITE.replace("sc-domain:", "https://")
+        req = urllib.request.Request(f"{base}/sitemap-index.xml", headers={"User-Agent": "errlookup-gsc/1.0"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            live = [f"{base}/sitemap-index.xml"] + re.findall(r"<loc>([^<]+)</loc>", resp.read().decode())
+        have = {s["path"] for s in call(f"/webmasters/v3/sites/{enc}/sitemaps").get("sitemap", [])}
+        missing = [u for u in live if u not in have]
+        for u in missing:
+            call(f"/webmasters/v3/sites/{enc}/sitemaps/{urllib.parse.quote(u, safe='')}", method="PUT")
+            print(f"  submitted {u}")
+        print(f"  {len(live)} live sitemaps, {len(missing)} newly submitted")
     elif cmd == "analytics":
         days = int(sys.argv[2]) if len(sys.argv) > 2 else 28
         import datetime

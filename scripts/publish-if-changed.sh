@@ -80,6 +80,11 @@ RUN_LOG="$LOG_DIR/publish-$(date -u +%Y%m%d-%H%M%S).log"
   # is actually reading the corpus (see scripts/indexnow-submit.mjs).
   node "$REPO_ROOT/scripts/indexnow-submit.mjs" \
     || echo "indexnow: submission failed (non-fatal, will retry next publish)"
+  # Submit any sitemap shard Search Console does not have yet — shards are
+  # permanent and a new one opens about daily as the corpus grows. Non-fatal
+  # for the same reason as IndexNow: the deploy already succeeded.
+  python3 "$REPO_ROOT/scripts/gsc.py" sync-sitemaps \
+    || echo "gsc: sitemap sync failed (non-fatal, will retry next publish)"
   printf '%s' "$latest" > "$STATE_FILE"
   echo "=== publish done $(date -u +%FT%TZ)"
 ) >>"$RUN_LOG" 2>&1
