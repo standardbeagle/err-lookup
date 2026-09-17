@@ -111,7 +111,9 @@ export function getIndex(): { schemaVersion: number; datasetVersion: string; err
       throw new Error(`index part ${p.path} says part ${body.part} of ${body.parts}; manifest lists ${parts.length} parts`);
     }
     meta ??= { schemaVersion: body.schemaVersion, datasetVersion: body.datasetVersion };
-    errors.push(...body.errors);
+    // Not push(...body.errors): spreading a ~220k-record part into call
+    // arguments overflows the stack.
+    for (const e of body.errors) errors.push(e);
   });
   return { ...meta!, errors };
 }

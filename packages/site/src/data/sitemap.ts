@@ -53,7 +53,7 @@ export function groupSitemapShards(
       throw new Error(`published repo ${repo} has no sitemap shard in sitemap-shards.json — re-run the export`);
     }
     const list = shards.get(shard) ?? [];
-    list.push(...urls);
+    for (const u of urls) list.push(u);
     shards.set(shard, list);
   }
   for (const [shard, list] of shards) {
