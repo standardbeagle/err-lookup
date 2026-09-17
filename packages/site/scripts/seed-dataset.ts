@@ -204,6 +204,15 @@ write("repos.json", reposJson);
 // admitted, mirroring the exporter's bootstrap, so the build exercises the
 // file-present code path rather than the legacy-dataset fallback.
 write("published.json", JSON.stringify(repos.map((r) => r.repo).sort()));
+// Permanent sitemap shards, as the exporter assigns them. The two fixture repos
+// get different shards so the build renders more than one shard file.
+write(
+  "sitemap-shards.json",
+  JSON.stringify({
+    target: 10000,
+    repos: Object.fromEntries(repos.map((r, i) => [r.repo, i + 1]).sort(([a], [b]) => String(a).localeCompare(String(b)))),
+  })
+);
 for (const r of repos) {
   const [owner, name] = r.repo.split("/");
   write(`repos/${owner}/${name}.json`, errors.filter((e) => e.repo === r.repo));

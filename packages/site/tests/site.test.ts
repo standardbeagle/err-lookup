@@ -270,6 +270,19 @@ describe("site build (§8.3)", () => {
     }
   });
 
+  it("renders every repo into the shard sitemap-shards.json assigns it", () => {
+    // Shard membership is permanent (pipeline exporter/sitemap-shards.ts); the
+    // site must follow the dataset, never re-slice, or URLs move between files.
+    const { repos } = JSON.parse(readFileSync(resolve(dist, "data", "sitemap-shards.json"), "utf8")) as {
+      repos: Record<string, number>;
+    };
+    expect(new Set(Object.values(repos)).size, "fixture should span more than one shard").toBeGreaterThan(1);
+    for (const [repo, shard] of Object.entries(repos)) {
+      const body = readFileSync(resolve(dist, "sitemaps", `urls-${shard}.xml`), "utf8");
+      expect(body, `${repo} not in urls-${shard}.xml`).toContain(`<loc>https://errors.standardbeagle.com/${repo}/</loc>`);
+    }
+  });
+
   it("loses no URL and repeats none when packing shards", () => {
     // The failure mode of packing is a slice boundary that drops or doubles a
     // URL, and it would be invisible — the index still looks right.

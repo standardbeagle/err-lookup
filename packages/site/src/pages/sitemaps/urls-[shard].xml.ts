@@ -1,23 +1,14 @@
 import type { APIRoute } from "astro";
-import {
-  allSitemapUrls,
-  sitemapShard,
-  sitemapShardCount,
-  urlsetXml,
-  xmlResponse,
-} from "../../data/sitemap.js";
+import { sitemapShards, urlsetXml, xmlResponse } from "../../data/sitemap.js";
 
-// One shard per 50,000 URLs — the protocol's own per-file ceiling. Replaces
-// the file-per-repo layout, which produced 1,658 children with a median of 49
-// URLs each and cost Googlebot roughly a month of its 35-94 requests a day
-// just to read the sitemaps. See data/sitemap.ts for the full reasoning.
+// One file per permanent shard (pipeline exporter/sitemap-shards.ts). Shard
+// numbers come from the dataset, so a number with no admitted repos left simply
+// has no file — and no entry in the index pointing at one.
 export function getStaticPaths() {
-  const total = sitemapShardCount(allSitemapUrls().length);
-  return Array.from({ length: total }, (_, i) => ({
-    params: { shard: String(i + 1) },
-    props: { shard: i + 1 },
+  return [...sitemapShards().keys()].map((shard) => ({
+    params: { shard: String(shard) },
+    props: { shard },
   }));
 }
 
-export const GET: APIRoute = ({ props }) =>
-  xmlResponse(urlsetXml(sitemapShard(allSitemapUrls(), props.shard as number)));
+export const GET: APIRoute = ({ props }) => xmlResponse(urlsetXml(sitemapShards().get(props.shard as number) ?? []));

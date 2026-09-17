@@ -62,6 +62,20 @@ export function getPublishedRepos(): Set<string> | null {
   return existsSync(p) ? new Set(JSON.parse(readFileSync(p, "utf8")) as string[]) : null;
 }
 
+/**
+ * Permanent sitemap shard per admitted repo (the exporter's
+ * sitemap-shards.json). Required: the sitemap has no correct shape without it,
+ * and re-slicing as a stand-in is exactly the churn the file exists to end.
+ */
+export function getSitemapShards(): Map<string, number> {
+  const p = resolve(siteRoot, "public", "data", "sitemap-shards.json");
+  if (!existsSync(p)) {
+    throw new Error(`${p} is missing — re-run the export; sitemaps cannot be built without shard assignments`);
+  }
+  const { repos } = JSON.parse(readFileSync(p, "utf8")) as { repos: Record<string, number> };
+  return new Map(Object.entries(repos));
+}
+
 /** Repos the crawlable site lists and sitemaps: admitted ones only. */
 export function getPublishedRepoEntries(): RepoEntry[] {
   const published = getPublishedRepos();
