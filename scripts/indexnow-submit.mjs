@@ -6,24 +6,27 @@
  * deploy, so the deployed sitemap is the only list that is certainly true, and
  * reading it over HTTP keeps this decoupled from whether a route prerenders.
  *
- * Which URLs: those whose <lastmod> is on or after the marker date (the last
- * successful submission), newest first. Sitemap lastmod is date-granular, so a
- * same-day rerun resubmits that day's URLs — harmless (IndexNow is idempotent)
- * and the safe direction to err in.
+ * Which URLs: every advertised (URL, lastmod) pair the per-host ledger does
+ * not hold yet — new pages, pages whose lastmod moved, and a capped run's
+ * remainder — newest first. The ledger records only accepted batches; see
+ * ledgerLine in packages/site/src/data/indexnow.ts for why it is not a date.
  *
  * Usage:
- *   indexnow-submit.mjs [--all] [--dry-run] [--since YYYY-MM-DD]
- *                       [--max N] [--base URL]
+ *   indexnow-submit.mjs [--all] [--record-only] [--dry-run]
+ *                       [--max N] [--base URL] [--key KEY]
  *
- *   --all       ignore the marker and submit every advertised URL. For the
- *               initial seed; paced in protocol-sized batches.
- *   --dry-run   resolve and count URLs, print the plan, submit nothing.
- *   --max N     ceiling on URLs submitted this run (default 10000, 0 = no cap).
- *               Without --all this also bounds a first run that has no marker.
+ *   --all          ignore the ledger and submit every advertised URL. For the
+ *                  initial seed; paced in protocol-sized batches.
+ *   --record-only  write every advertised URL into the ledger without
+ *                  submitting — for URLs already sent by other means.
+ *   --dry-run      resolve and count URLs, print the plan, submit nothing.
+ *   --max N        ceiling on URLs submitted this run (default 10000, 0 = no
+ *                  cap). The rest stay pending for the next run.
  *
- * Exit 0 on success or nothing-to-do; non-zero if any batch was rejected.
+ * Exit 0 on success or nothing-to-do; non-zero if any batch was rejected
+ * (accepted batches are still recorded).
  */
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { homedir } from "node:os";
 import {
@@ -31,10 +34,10 @@ import {
   INDEXNOW_ENDPOINT,
   INDEXNOW_MAX_URLS_PER_REQUEST,
   batchUrls,
-  buildPayload,
   describeStatus,
-  keyLocation,
+  nextLedger,
   offHostUrls,
+  pendingEntries,
 } from "../packages/site/src/data/indexnow.ts";
 
 const argv = process.argv.slice(2);
@@ -46,17 +49,18 @@ const opt = (name, fallback) => {
 
 const BASE = (opt("--base", process.env.ERRLOOKUP_SITE || "https://errors.standardbeagle.com")).replace(/\/$/, "");
 const ALL = flag("--all");
+const RECORD_ONLY = flag("--record-only");
 const DRY = flag("--dry-run");
 const MAX = Number(opt("--max", process.env.ERRLOOKUP_INDEXNOW_MAX_URLS ?? "10000"));
-// IndexNow binds a key to the host that first submitted with it: reusing
-// errlookup's key on dev.standardbeagle.com was rejected 403 even with the
-// file correctly served. Each property therefore carries its own key.
+// Each property carries its own key (configs/indexnow-sites.kdl), served from
+// its own origin. A freshly published key answers 403 for a few minutes even
+// while the file serves 200 — that is IndexNow catching up, so retry rather
+// than rotating the key.
 const KEY = opt("--key", process.env.ERRLOOKUP_INDEXNOW_KEY || INDEXNOW_KEY);
 const LOG_DIR = process.env.ERRLOOKUP_LOG_DIR || resolve(homedir(), ".local/state/errlookup");
-// One marker per host: the scheduled run drives several sites from one state
-// directory, and a shared marker would let one site's newest lastmod skip
-// another site's older changes.
-const MARKER = resolve(LOG_DIR, `last-indexnow-marker-${new URL(BASE).hostname}`);
+// One ledger per host: the scheduled run drives several sites from one state
+// directory.
+const LEDGER = resolve(LOG_DIR, `indexnow-sent-${new URL(BASE).hostname}.tsv`);
 const UA = "errlookup-indexnow/1.0 (+https://errors.standardbeagle.com)";
 
 const log = (...a) => console.log(...a);
@@ -133,17 +137,24 @@ async function sitemapEntries(roots, maxDepth = 3) {
   return entries;
 }
 
-function readMarker() {
+/** Ledger lines, or an empty set when this host has never submitted. */
+function readLedger() {
+  let text;
   try {
-    return readFileSync(MARKER, "utf8").trim() || null;
-  } catch {
-    return null;
+    text = readFileSync(LEDGER, "utf8");
+  } catch (e) {
+    if (e.code === "ENOENT") return new Set();
+    throw e;
   }
+  return new Set(text.split("\n").filter(Boolean));
 }
 
-function writeMarker(value) {
-  mkdirSync(dirname(MARKER), { recursive: true });
-  writeFileSync(MARKER, value);
+/** Write-then-rename, so a crash mid-write cannot leave a truncated ledger. */
+function writeLedger(lines) {
+  mkdirSync(dirname(LEDGER), { recursive: true });
+  const tmp = `${LEDGER}.tmp`;
+  writeFileSync(tmp, lines.length ? `${lines.join("\n")}\n` : "");
+  renameSync(tmp, LEDGER);
 }
 
 async function submit(urls) {
@@ -182,36 +193,32 @@ async function main() {
   const entries = await sitemapEntries(roots);
   log(`sitemap: ${entries.length} URLs advertised`);
 
-  const since = opt("--since", ALL ? null : readMarker());
-  let selected = entries;
-  if (since) {
-    // Compare calendar dates, not raw strings. Sites mix `2026-09-15` with
-    // `2026-09-15T13:50:33-05:00`, and as strings a date-only lastmod sorts
-    // BEFORE a same-day timestamp marker, silently skipping that day's pages.
-    const sinceDay = since.slice(0, 10);
-    selected = entries.filter((e) => e.lastmod !== null && e.lastmod.slice(0, 10) >= sinceDay);
-    log(`changed on/after ${since}: ${selected.length}`);
-  } else if (ALL) {
-    log("--all: submitting every advertised URL");
-  } else {
-    log("no marker yet: treating this as a first run");
-  }
-
-  // Newest first, so a capped run spends its budget on the freshest pages.
-  selected = [...selected].sort((a, b) => (b.lastmod ?? "").localeCompare(a.lastmod ?? ""));
-
-  const bad = offHostUrls(BASE, selected.map((e) => e.loc));
+  const bad = offHostUrls(BASE, entries.map((e) => e.loc));
   if (bad.length) {
     console.error(`error: ${bad.length} URLs are not on ${new URL(BASE).hostname}, e.g. ${bad[0]}`);
     console.error("       IndexNow rejects the whole request for one off-host URL; refusing to send.");
     process.exit(1);
   }
 
-  let urls = selected.map((e) => e.loc);
-  if (MAX > 0 && urls.length > MAX) {
-    log(`capping at --max ${MAX} (${urls.length - MAX} left for the next run)`);
-    urls = urls.slice(0, MAX);
+  const sent = readLedger();
+  if (RECORD_ONLY) {
+    const lines = nextLedger(entries, sent, entries);
+    if (DRY) {
+      log(`--record-only --dry-run: would record ${lines.length} URLs in ${LEDGER}`);
+      return 0;
+    }
+    writeLedger(lines);
+    log(`--record-only: recorded ${lines.length} URLs in ${LEDGER}, submitted nothing`);
+    return 0;
   }
+  let selected = pendingEntries(entries, ALL ? new Set() : sent);
+  log(`${ALL ? "--all: every advertised URL" : `not yet sent at this lastmod (ledger ${sent.size})`}: ${selected.length}`);
+
+  if (MAX > 0 && selected.length > MAX) {
+    log(`capping at --max ${MAX} (${selected.length - MAX} stay pending for the next run)`);
+    selected = selected.slice(0, MAX);
+  }
+  const urls = selected.map((e) => e.loc);
 
   if (urls.length === 0) {
     log("nothing to submit");
@@ -227,25 +234,29 @@ async function main() {
   }
 
   let failed = 0;
+  let accepted = [];
   for (const [i, batch] of batches.entries()) {
     const r = await submit(batch);
     log(`  batch ${i + 1}/${batches.length} (${batch.length} URLs): ${r.status} ${r.meaning}`);
-    if (!r.ok) failed++;
+    // Batches are consecutive slices of `selected`, so batch i is this range.
+    // concat, not push(...): a 10k-element spread is how the index export
+    // blew the stack.
+    const from = i * INDEXNOW_MAX_URLS_PER_REQUEST;
+    if (r.ok) accepted = accepted.concat(selected.slice(from, from + batch.length));
+    else failed++;
     // The protocol asks for restraint between bulk submissions; one second
     // between batches keeps a 32-batch seed well clear of the 429 threshold.
     if (i < batches.length - 1) await new Promise((res) => setTimeout(res, 1000));
   }
 
+  // Record accepted batches even when another was rejected: the rejected
+  // URLs stay pending, the accepted ones must not go out twice.
+  const lines = nextLedger(entries, sent, accepted);
+  writeLedger(lines);
+  log(`ledger: ${lines.length} URLs recorded`);
   if (failed > 0) {
     console.error(`${failed} of ${batches.length} batches rejected`);
     return 1;
-  }
-  // Marker is the newest lastmod actually submitted, not today: a URL changed
-  // after the export but before this run must still be picked up next time.
-  const newest = selected[0]?.lastmod?.slice(0, 10);
-  if (newest) {
-    writeMarker(newest);
-    log(`marker: ${newest}`);
   }
   return 0;
 }
