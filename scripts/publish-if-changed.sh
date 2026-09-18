@@ -75,8 +75,8 @@ RUN_LOG="$LOG_DIR/publish-$(date -u +%Y%m%d-%H%M%S).log"
   "$REPO_ROOT/scripts/deploy-site.sh" || exit 1
   # Tell IndexNow (Bing, Yandex) what changed. Deliberately non-fatal: the
   # deploy has already succeeded and the pages are live, so a rejected
-  # submission must not mark the publish failed — the next run resubmits from
-  # the same marker. Googlebot ignores IndexNow; this is for the crawler that
+  # submission must not mark the publish failed — rejected URLs stay out of
+  # the ledger, so the next run sends them again. Googlebot ignores IndexNow; this is for the crawler that
   # is actually reading the corpus (see scripts/indexnow-submit.mjs).
   node "$REPO_ROOT/scripts/indexnow-submit.mjs" \
     || echo "indexnow: submission failed (non-fatal, will retry next publish)"

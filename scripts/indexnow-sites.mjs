@@ -3,7 +3,7 @@
  * Submit every site in configs/indexnow-sites.kdl to IndexNow.
  *
  * Runs scripts/indexnow-submit.mjs once per site, so each site gets the same
- * guards (key reachable, no off-host URLs) and its own per-host marker. One
+ * guards (key reachable, no off-host URLs) and its own per-host ledger. One
  * failing site does not stop the others; the exit code is non-zero if any site
  * failed, so cron mail or a wrapper sees it.
  *

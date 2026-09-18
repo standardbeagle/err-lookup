@@ -34,20 +34,27 @@ Set up here:
   constant and the file together, because a rename on one side alone fails every
   submission with 403 and nothing else would notice.
 - **Submitter** — `scripts/indexnow-submit.mjs`. Reads the live sitemap index,
-  selects URLs whose `<lastmod>` is on or after the marker in
-  `~/.local/state/errlookup/last-indexnow-marker-<host>`, and posts them in batches of
-  10,000.
+  selects every URL whose (path, lastmod) pair is not yet in the ledger
+  `~/.local/state/errlookup/indexnow-sent-<host>.tsv`, and posts them newest first
+  in batches of 10,000. The ledger holds one `path<TAB>lastmod` line per URL
+  IndexNow accepted. It replaced a "last submitted" date marker, which had three
+  faults: it resent a whole day's URLs on every same-day publish (lastmod is
+  day-granular), it skipped a capped run's remainder, and it never submitted
+  newly admitted repos, because a repo joins the sitemap
+  `ERRLOOKUP_PUBLISH_DELAY_DAYS` after export and so carries lastmods older than
+  any marker.
 - **Schedule** — `scripts/publish-if-changed.sh` runs it after a successful
   deploy. It is non-fatal: the pages are already live, so a rejected submission
-  must not mark the publish failed. The next run resubmits from the same marker.
+  must not mark the publish failed. Rejected URLs stay out of the ledger, so the
+  next run sends them again.
 
 Run it by hand:
 
 ```bash
 scripts/indexnow-submit.mjs --dry-run          # resolve and count, send nothing
-scripts/indexnow-submit.mjs                    # changed since the marker, max 10k
+scripts/indexnow-submit.mjs                    # not yet sent at this lastmod, max 10k
 scripts/indexnow-submit.mjs --all --max 0      # every advertised URL, uncapped
-scripts/indexnow-submit.mjs --since 2026-09-01 # explicit window
+scripts/indexnow-submit.mjs --record-only      # mark everything as sent, send nothing
 ```
 
 The script refuses to start if `/<key>.txt` is not readable over HTTP, and
@@ -55,8 +62,8 @@ refuses to send if any URL is off-host — IndexNow rejects an entire request fo
 one foreign URL, so one stray link would drop 9,999 good ones with it.
 
 A first `--all --max 0` run submits about 32 batches with a one-second pause
-between them. That is a deliberate one-off; the marker keeps subsequent runs to
-the pages that actually changed.
+between them. That is a deliberate one-off; the ledger keeps subsequent runs to
+the pages that are new or changed.
 
 ## Other Standard Beagle properties
 
@@ -94,7 +101,7 @@ which is how it ended up in `astro-site/public/`.
 ## Schedule
 
 `scripts/indexnow-sites.mjs` submits every site in `configs/indexnow-sites.kdl`
-daily from beagle-ab's crontab (06:23), with one per-host marker each under
+daily from beagle-ab's crontab (06:23), with one per-host ledger each under
 `~/.local/state/errlookup/`, logging to `indexnow-sites.log` there. It runs under
 the pipeline's tsx because the shared KDL parser uses TypeScript syntax Node's
 type stripping rejects. errors.standardbeagle.com is not in that list; its
