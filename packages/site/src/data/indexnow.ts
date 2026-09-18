@@ -108,3 +108,61 @@ export function describeStatus(status: number, key: string = INDEXNOW_KEY): { ok
       return { ok: false, meaning: `unexpected status ${status}` };
   }
 }
+
+/** One `<url>` from a sitemap. `lastmod` is whatever the site wrote, if any. */
+export interface SitemapEntry {
+  loc: string;
+  lastmod: string | null;
+}
+
+/**
+ * The ledger line recording that `entry` was accepted: its path and the
+ * lastmod it was sent with, tab-separated.
+ *
+ * Why a ledger of (URL, lastmod) pairs and not a date marker: errlookup's
+ * lastmod is a record's contentChangedAt, but a repo only enters the sitemap
+ * ERRLOOKUP_PUBLISH_DELAY_DAYS after its first export, so it arrives with
+ * lastmods already older than any "last submitted" date — a date filter
+ * skipped every newly admitted repo. Asking "was THIS pair sent?" catches
+ * those, never resends a same-day URL (sitemap dates are day-granular), and
+ * leaves a capped run's remainder pending instead of jumping past it.
+ *
+ * Path rather than full URL: the ledger holds every advertised page (~335k)
+ * and the origin is the same on every line.
+ */
+export function ledgerLine(entry: SitemapEntry): string {
+  const u = new URL(entry.loc);
+  return `${u.pathname}${u.search}\t${entry.lastmod ?? ""}`;
+}
+
+/**
+ * Entries whose current (path, lastmod) pair the ledger does not hold —
+ * never sent, or changed since — newest lastmod first, so a capped run spends
+ * its budget on the freshest pages. Undated entries sort last.
+ */
+export function pendingEntries(
+  entries: readonly SitemapEntry[],
+  sent: ReadonlySet<string>
+): SitemapEntry[] {
+  return entries
+    .filter((e) => !sent.has(ledgerLine(e)))
+    .sort((a, b) => (b.lastmod ?? "").localeCompare(a.lastmod ?? ""));
+}
+
+/**
+ * The ledger after a run: every advertised entry that was already recorded or
+ * was just accepted, sorted so the file diffs cleanly.
+ *
+ * Keyed on what is advertised NOW, so a page whose lastmod moved drops its old
+ * line and a page gone from the sitemap drops out entirely — the ledger stays
+ * the size of the sitemap instead of growing with every change.
+ */
+export function nextLedger(
+  entries: readonly SitemapEntry[],
+  sent: ReadonlySet<string>,
+  accepted: readonly SitemapEntry[]
+): string[] {
+  const keep = new Set(sent);
+  for (const e of accepted) keep.add(ledgerLine(e));
+  return [...new Set(entries.map(ledgerLine))].filter((l) => keep.has(l)).sort();
+}
