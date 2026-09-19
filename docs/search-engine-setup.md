@@ -141,8 +141,16 @@ The token is committed rather than kept in the environment for the same reason
 as the IndexNow key: it is public by design, and a build that silently lost it
 would un-verify the property without failing anything.
 
-## What is still Google-only
+## Measuring each engine
 
 `scripts/gsc.py` (Search Console: sitemaps, search analytics, URL inspection)
-measures Google. There is no equivalent wired up for Bing yet; Bing Webmaster
-Tools has an API and claiming the property is the prerequisite for using it.
+measures Google. `scripts/bing.py` measures Bing: daily traffic, crawl status
+mix, top queries and pages, submission quota. Its API key is the devkey entry
+`bing-webmaster`, and Bing takes it as a URL parameter, so the script never
+prints request URLs:
+
+    devkey run bing-webmaster -- scripts/bing.py crawl
+
+Bing builds stats for a new property slowly. errors.standardbeagle.com, imported
+on 2026-09-16, still returned no rows on 2026-09-19, while standardbeagle.com
+returned full history with the same key.
