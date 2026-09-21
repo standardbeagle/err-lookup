@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { groupSitemapShards, type SitemapUrl } from "../src/data/sitemap.js";
 
 const urls = (repo: string, n: number): SitemapUrl[] =>
@@ -37,5 +39,26 @@ describe("groupSitemapShards", () => {
         10
       )
     ).toThrow(/shard 1/);
+  });
+});
+
+describe("retired per-repo sitemap route", () => {
+  // Shards replaced `/sitemaps/<owner>/<repo>.xml` on 2026-09-16, but crawlers
+  // kept fetching the children from their own copy of the old index — ~2,600
+  // 404s a day, flat for six days, because a 404 means "maybe later". Pin both
+  // halves of the fix: 410 says stop, and `output: "static"` would turn a
+  // prerendered route into a 200 file, which is how BingSiteAuth.xml once
+  // shipped `200 not configured`.
+  const src = readFileSync(
+    resolve(import.meta.dirname, "..", "src", "pages", "sitemaps", "[owner]", "[repo].xml.ts"),
+    "utf8"
+  );
+
+  it("is on demand, so the status code is the one the worker sends", () => {
+    expect(src).toMatch(/export const prerender = false/);
+  });
+
+  it("answers 410 Gone, not 404", () => {
+    expect(src).toMatch(/status:\s*410/);
   });
 });
