@@ -83,6 +83,9 @@ if [ -n "$repo" ]; then
   # Packed shards, not one file per repo: the per-repo layout cost Googlebot
   # ~1,658 fetches a day of budget it does not have (see data/sitemap.ts).
   expect "sitemap-shard" 200 "$BASE/sitemaps/urls-1.xml" "<urlset"
+  # The per-repo sitemaps shards replaced. 410, not 404: crawlers held the old
+  # index and retried the children ~2,600 times a day without decaying.
+  expect "retired-repo-sitemap-410" 410 "$BASE/sitemaps/$repo.xml"
 else
   echo "FAIL dataset: could not read a repo from published.json"; failures+=("dataset")
 fi
