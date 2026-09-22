@@ -3,6 +3,8 @@
 # analysis landed since the last publish. Safe alongside a running batch —
 # export is an atomic WAL reader, deploys are atomic per Pages deployment.
 # Own lock; skips silently when nothing changed. ~120 deploys/month worst case.
+# Fast-forwards the checkout to origin/$ERRLOOKUP_PUBLISH_BRANCH (default main)
+# first, and refuses to publish a tree it cannot attribute to a commit.
 set -u -o pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -65,6 +67,47 @@ RUN_LOG="$LOG_DIR/publish-$(date -u +%Y%m%d-%H%M%S).log"
 (
   echo "=== publish start $(date -u +%FT%TZ) (new analysis up to $latest)"
   cd "$REPO_ROOT"
+
+  # Deploy the code we were told to deploy. Until 2026-09-21 there was no sync
+  # step here at all, so the host shipped whatever its checkout happened to
+  # hold: the 410 answer for retired per-repo sitemaps sat undeployed for a day
+  # while ~2,600 of bingbot's ~7,400 daily pages kept hitting the 404s it was
+  # written to stop. Nothing reported it, because publishing itself succeeded.
+  #
+  # Fatal rather than best-effort. Shipping stale code silently every 4h is the
+  # failure being fixed, and the failure-streak alert below is the only thing
+  # that makes a wedged tree visible; degrading to "publish anyway" would
+  # restore the silence. The dataset is not lost by stopping — it ships on the
+  # next run once the tree is unwedged.
+  BRANCH="${ERRLOOKUP_PUBLISH_BRANCH:-main}"
+  on="$(git rev-parse --abbrev-ref HEAD)"
+  if [ "$on" != "$BRANCH" ]; then
+    echo "ERROR: checkout is on '$on', expected '$BRANCH' — refusing to publish"
+    exit 1
+  fi
+  # Untracked files are excluded on purpose: generated artifacts live in the
+  # tree (public/data, public/og). Modified *tracked* files mean the deployed
+  # code would not match any commit, so there is nothing to attribute a bad
+  # deploy to.
+  if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+    echo "ERROR: tracked files modified in $REPO_ROOT — refusing to publish an unknown tree"
+    git status --short --untracked-files=no
+    exit 1
+  fi
+  before="$(git rev-parse HEAD)"
+  git fetch --quiet origin "$BRANCH" || exit 1
+  # ff-only: a publish host must never resolve a merge. Divergence here means
+  # someone committed on this checkout, which is a person's problem to settle.
+  git merge --ff-only "origin/$BRANCH" || exit 1
+  if [ "$before" != "$(git rev-parse HEAD)" ]; then
+    echo "code: fast-forwarded $(git rev-parse --short "$before") -> $(git rev-parse --short HEAD)"
+    # A fast-forward can move the lockfile; install before anything builds
+    # against it.
+    pnpm install --frozen-lockfile || exit 1
+  else
+    echo "code: already at $(git rev-parse --short HEAD)"
+  fi
+
   # Export and the site build both resolve @errlookup/schema to its dist — a
   # pull alone leaves that stale (install does not build workspace deps).
   pnpm --filter @errlookup/schema build || exit 1
