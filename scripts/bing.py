@@ -17,6 +17,15 @@ Usage (always under devkey):
   bing.py queries [limit]       top search queries, summed over Bing's window (default 25)
   bing.py pages [limit]         top pages, summed over Bing's window (default 25)
   bing.py quota                 URL submission quota left
+  bing.py sitemaps              feeds Bing holds for the site: status, last crawl, URL count
+  bing.py submit-sitemap [url]  (re)submit a sitemap; default is the site's sitemap index
+  bing.py submit-url <url>      ask Bing to fetch one URL now (spends the daily quota)
+
+Bing's per-URL "not in any sitemap" verdict reflects the last time Bing read
+the shards, not the live files: on 2026-09-22 it said that of a URL present in
+/sitemaps/urls-23.xml while `sitemaps` showed the index submitted on 09-16 and
+last crawled on 09-19. `submit-sitemap` asks for a fresh read; check the feed
+before assuming the site left a URL out.
 
 Stats stay empty for a few days after a site is added: errors.standardbeagle.com
 was imported from Search Console on 2026-09-16 and still returned [] on
@@ -62,6 +71,25 @@ def call(method: str, **params):
     try:
         with urllib.request.urlopen(f"{API}/{method}?{query}", timeout=60) as resp:
             return json.load(resp)["d"]
+    except urllib.error.HTTPError as e:
+        sys.stderr.write(f"{method}: HTTP {e.code}: {e.read().decode()[:600]}\n")
+        raise SystemExit(1)
+
+
+def post(method: str, body: dict) -> None:
+    """Write calls take a JSON body and the key in the query, and answer {"d": null}."""
+    key = os.environ.get("BING_WEBMASTER_API_KEY")
+    if not key:
+        sys.stderr.write("BING_WEBMASTER_API_KEY not set — run under: devkey run bing-webmaster -- ...\n")
+        raise SystemExit(2)
+    req = urllib.request.Request(
+        f"{API}/{method}?apikey={key}",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json; charset=utf-8"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60):
+            return
     except urllib.error.HTTPError as e:
         sys.stderr.write(f"{method}: HTTP {e.code}: {e.read().decode()[:600]}\n")
         raise SystemExit(1)
@@ -124,6 +152,24 @@ def main() -> None:
     elif cmd == "quota":
         q = call("GetUrlSubmissionQuota", siteUrl=SITE)
         print(f"  daily={q['DailyQuota']}  monthly={q['MonthlyQuota']}")
+    elif cmd == "sitemaps":
+        feeds = call("GetFeeds", siteUrl=SITE)
+        if not feeds:
+            print("  no feeds — nothing has been submitted for this site")
+        for f in feeds:
+            crawled = day(f["LastCrawled"]) if f.get("LastCrawled") else "never"
+            print(f"  {f['Type']:14} urls={f['UrlCount']:7}  submitted={day(f['Submitted'])}  "
+                  f"lastCrawled={crawled}  status={f['Status']!r}  {f['Url']}")
+    elif cmd == "submit-sitemap":
+        feed = sys.argv[2] if len(sys.argv) > 2 else f"{SITE}sitemap-index.xml"
+        post("SubmitFeed", {"siteUrl": SITE, "feedUrl": feed})
+        print(f"  submitted {feed}")
+    elif cmd == "submit-url":
+        if len(sys.argv) < 3:
+            print(__doc__)
+            raise SystemExit(2)
+        post("SubmitUrl", {"siteUrl": SITE, "url": sys.argv[2]})
+        print(f"  submitted {sys.argv[2]}")
     else:
         print(__doc__)
         raise SystemExit(2)
