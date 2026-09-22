@@ -16,6 +16,7 @@ const dataDir = resolve(root, "public", "data");
 
 const shaAxios = "2e88108521a8e1c0b9b0ed8f5a04b29c21c2e9fc";
 const shaIs = "7821031c66cdeb7256a0feb2d506535f9e84fcaf";
+const shaChalk = "5e6f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f";
 
 const errors = [
   {
@@ -137,6 +138,39 @@ const errors = [
     analyzedAt: "2026-07-14T00:00:00Z",
     schemaVersion: 2,
   },
+  {
+    id: "d4e5f60718293041",
+    repo: "chalk/chalk",
+    slug: "unknown-color-model",
+    errorCode: null,
+    errorMessage: "Unknown color model: {model}",
+    messagePattern: "Unknown color model: (.+?)",
+    errorType: "exception",
+    errorClass: "Error",
+    httpStatus: null,
+    severity: "error",
+    filePath: "source/index.js",
+    lineNumber: 44,
+    sourceCode: "if (!(model in styles)) throw new Error(`Unknown color model: ${model}`);",
+    sourceCodeStart: 40,
+    sourceCodeEnd: 48,
+    githubUrl: `https://github.com/chalk/chalk/blob/${shaChalk}/source/index.js#L44`,
+    documentation:
+      "chalk throws when asked to build a colour from a model it does not implement; only rgb, hex and ansi256 are supported.",
+    triggerScenarios: "Calling `chalk.hsl(...)` or another model chalk dropped in v5.",
+    commonSituations: "Upgrading from chalk 4, where more models were available.",
+    solutions: ["Convert the colour to rgb or hex first.", "Pin chalk 4 if the model is required."],
+    exampleFix: "chalk.rgb(255, 136, 0)('text')",
+    handlingStrategy: "validate-input",
+    validationCode: null,
+    typeGuard: null,
+    tryCatchPattern: null,
+    preventionTips: ["Check the supported model list for your chalk major."],
+    tags: ["validation", "terminal"],
+    analyzedSha: shaChalk,
+    analyzedAt: "2026-07-14T00:00:00Z",
+    schemaVersion: 2,
+  },
 ];
 
 // contentChangedAt is the sitemap-index lastmod, rolled up from each repo's
@@ -161,6 +195,16 @@ const repos = [
     stars: 1900,
     defaultBranch: "main",
     analyzedSha: shaIs,
+    analyzedAt: "2026-07-14T00:00:00Z",
+    errorCount: 1,
+  },
+  {
+    repo: "chalk/chalk",
+    description: "Terminal string styling done right",
+    language: "JavaScript",
+    stars: 22000,
+    defaultBranch: "main",
+    analyzedSha: shaChalk,
     analyzedAt: "2026-07-14T00:00:00Z",
     errorCount: 1,
   },
@@ -202,17 +246,23 @@ rmSync(resolve(dataDir, "index.json"), { force: true });
 rmSync(resolve(dataDir, "index.json.gz"), { force: true });
 write("index-1.json.gz", indexGz);
 write("repos.json", reposJson);
-// Crawl-surface admission list (scheduled publishing): every fixture repo is
-// admitted, mirroring the exporter's bootstrap, so the build exercises the
-// file-present code path rather than the legacy-dataset fallback.
-write("published.json", JSON.stringify(repos.map((r) => r.repo).sort()));
-// Permanent sitemap shards, as the exporter assigns them. The two fixture repos
-// get different shards so the build renders more than one shard file.
+// Crawl-surface admission list (scheduled publishing). chalk/chalk is exported
+// but NOT admitted — the state every repo is in for its first
+// ERRLOOKUP_PUBLISH_DELAY_DAYS. It exists so the build proves the listing
+// pages, sitemaps and shards draw from the admitted set: with every fixture
+// repo admitted, a page that listed all repos was indistinguishable from one
+// that listed the published ones, and /repos/N/ did exactly that in
+// production (91 pages against the home page's 76).
+const UNADMITTED = new Set(["chalk/chalk"]);
+const published = repos.map((r) => r.repo).filter((repo) => !UNADMITTED.has(repo)).sort();
+write("published.json", JSON.stringify(published));
+// Permanent sitemap shards, as the exporter assigns them — admitted repos only,
+// each in its own shard so the build renders more than one shard file.
 write(
   "sitemap-shards.json",
   JSON.stringify({
     target: 10000,
-    repos: Object.fromEntries(repos.map((r, i) => [r.repo, i + 1]).sort(([a], [b]) => String(a).localeCompare(String(b)))),
+    repos: Object.fromEntries(published.map((repo, i) => [repo, i + 1])),
   })
 );
 for (const r of repos) {

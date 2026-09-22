@@ -135,13 +135,16 @@ describe("rendered repo pager", () => {
   const publicData = resolve(siteRoot, "public", "data");
   let home = "";
   let pageTwo = "";
+  /** Admitted repos — the listing's population. One per page in this build. */
+  let published: string[] = [];
   let repoCount = 0;
 
   // tests/global-setup.ts builds the site once for the whole suite, with one
   // repo, one error and one article per page so this deliberately tiny
   // fixture still produces multi-page output. Nothing to build here.
   beforeAll(() => {
-    repoCount = (JSON.parse(readFileSync(resolve(publicData, "repos.json"), "utf8")) as unknown[]).length;
+    published = JSON.parse(readFileSync(resolve(publicData, "published.json"), "utf8")) as string[];
+    repoCount = published.length;
     home = readFileSync(resolve(dist, "index.html"), "utf8");
     pageTwo = readFileSync(resolve(dist, "repos", "2", "index.html"), "utf8");
   });
@@ -149,9 +152,26 @@ describe("rendered repo pager", () => {
   it("generates a route per page beyond the first, and none for page 1", () => {
     expect(existsSync(resolve(dist, "repos", "2", "index.html"))).toBe(true);
     expect(existsSync(resolve(dist, "repos", String(repoCount), "index.html"))).toBe(true);
+    // The population is the ADMITTED repos, the same set the home page and
+    // the sitemap use. Pages 2+ used to paginate every exported repo instead:
+    // in production the home page said "page 1 of 76" while /repos/2/ said
+    // "Page 2 of 91", the two orderings disagreed about which repo was 26th,
+    // and pages 77-91 existed outside the sitemap, linking repos that render
+    // noindex. The fixture keeps one unadmitted repo so this can fail.
+    const exported = (JSON.parse(readFileSync(resolve(publicData, "repos.json"), "utf8")) as unknown[]).length;
+    expect(exported, "fixture needs an unadmitted repo to prove the population").toBeGreaterThan(repoCount);
     expect(existsSync(resolve(dist, "repos", String(repoCount + 1)))).toBe(false);
     // Page 1 is the home page; a /repos/1/ would duplicate it.
     expect(existsSync(resolve(dist, "repos", "1"))).toBe(false);
+  });
+
+  it("agrees with the home page about the page count and lists only admitted repos", () => {
+    const total = pageTwo.match(/Page 2 of (\d+)\./)?.[1];
+    expect(total).toBe(String(repoCount));
+    expect(home).toContain(`page 1 of ${repoCount}`);
+    const rows = [...pageTwo.matchAll(/<td><a href="\/([^"]+)\/">/g)].map((m) => m[1]!);
+    expect(rows).toHaveLength(1);
+    for (const repo of rows) expect(published, `${repo} is listed but not admitted`).toContain(repo);
   });
 
   it("shows only one page of repos on the home page", () => {
