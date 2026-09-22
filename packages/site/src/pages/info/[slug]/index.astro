@@ -2,6 +2,7 @@
 import Base from "../../../layouts/Base.astro";
 import { getInfoIndex, getInfoPage, getIndex } from "../../../data/load.js";
 import { guideBySlug, guideHref } from "../../../data/guides.js";
+import { truncateAtWord } from "../../../data/seo.js";
 
 export function getStaticPaths() {
   return getInfoIndex().map((p) => ({ params: { slug: p.slug } }));
@@ -27,7 +28,9 @@ const ld = JSON.stringify({
   url: `${SITE}/info/${page.slug}/`,
 });
 ---
-<Base title={`${page.title} — ErrLookup`} description={page.summary.slice(0, 155)}>
+{/* Same word-boundary cut the error pages use: a summary sliced mid-word
+    reads as machine output in the one line a searcher sees. */}
+<Base title={`${page.title} — ErrLookup`} description={truncateAtWord(page.summary, 160)}>
   <script slot="head" type="application/ld+json" set:html={ld} />
   <p class="muted"><a href="/">ErrLookup</a> › <a href="/info/">Background articles</a> › {page.title}</p>
   <h1>{page.title}</h1>
