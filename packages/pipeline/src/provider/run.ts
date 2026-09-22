@@ -1,6 +1,6 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import type { ErrlookupConfig } from "../config/index.js";
+import type { ErrlookupConfig, ProviderPhase } from "../config/index.js";
 import type { LlmProvider, InvokeOptions, ProviderResult } from "./types.js";
 import { ProviderError } from "./types.js";
 import { DIRECT_MODE } from "../phase/prompts.js";
@@ -166,7 +166,7 @@ function withOutputInstruction(prompt: string, outputFile: string): string {
  */
 export function watchdogBudgetMs(
   cfg: ErrlookupConfig,
-  phase?: "scope" | "discovery" | "enrichment" | "defense" | "verify" | "verify-escalate" | "review"
+  phase?: ProviderPhase
 ): number {
   const primaryName = (phase && cfg.phaseProviders?.[phase]) || cfg.defaults.primary;
   return (cfg.providers[primaryName]?.timeoutMs ?? 600_000) * 4;
@@ -192,7 +192,7 @@ export async function runProvider(
   opts: InvokeOptions,
   providers: Record<string, LlmProvider>,
   cfg: ErrlookupConfig,
-  phase?: "scope" | "discovery" | "enrichment" | "defense" | "verify" | "verify-escalate" | "review",
+  phase?: ProviderPhase,
   sleep: (ms: number) => Promise<void> = realSleep
 ): Promise<RunResult> {
   const primaryName = (phase && cfg.phaseProviders?.[phase]) || cfg.defaults.primary;

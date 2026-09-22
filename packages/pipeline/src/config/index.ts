@@ -72,6 +72,14 @@ export interface ProxyConfig {
   snapshotPath: string;
 }
 
+/**
+ * The roles a provider can be routed to with `phase-providers` and
+ * `phase-fallbacks`. One list, so a new role is added in one place and the
+ * parser, the config type and runProvider cannot disagree about it.
+ */
+export const PROVIDER_PHASES = ["scope", "discovery", "enrichment", "defense", "verify", "verify-escalate", "review"] as const;
+export type ProviderPhase = (typeof PROVIDER_PHASES)[number];
+
 export interface ErrlookupConfig {
   providers: Record<string, ProviderConfig>;
   defaults: {
@@ -125,13 +133,13 @@ export interface ErrlookupConfig {
    * Per-phase provider overrides (model routing): cheap models for bulk
    * phases, a stronger model for verify. Falls back to defaults.primary.
    */
-  phaseProviders?: Partial<Record<"scope" | "discovery" | "enrichment" | "defense" | "verify" | "verify-escalate" | "review", string>>;
+  phaseProviders?: Partial<Record<ProviderPhase, string>>;
   /**
    * Per-phase fallback overrides, tried before defaults.fallback. Exists so
    * verify can degrade k3 → glm53 (slower, still verified) when k3's billing
    * cycle is spent, without giving the bulk phases a fallback they don't want.
    */
-  phaseFallbacks?: Partial<Record<"scope" | "discovery" | "enrichment" | "defense" | "verify" | "verify-escalate" | "review", string>>;
+  phaseFallbacks?: Partial<Record<ProviderPhase, string>>;
   proxy: ProxyConfig;
 }
 
@@ -253,13 +261,13 @@ export function mapConfig(doc: KdlDocument): ErrlookupConfig {
       };
     } else if (node.name === "phase-providers") {
       cfg.phaseProviders = {};
-      for (const phase of ["scope", "discovery", "enrichment", "defense", "verify", "verify-escalate", "review"] as const) {
+      for (const phase of PROVIDER_PHASES) {
         const v = childByName(node, phase)?.values[0];
         if (typeof v === "string" && v) cfg.phaseProviders[phase] = v;
       }
     } else if (node.name === "phase-fallbacks") {
       cfg.phaseFallbacks = {};
-      for (const phase of ["scope", "discovery", "enrichment", "defense", "verify", "verify-escalate", "review"] as const) {
+      for (const phase of PROVIDER_PHASES) {
         const v = childByName(node, phase)?.values[0];
         if (typeof v === "string" && v) cfg.phaseFallbacks[phase] = v;
       }
