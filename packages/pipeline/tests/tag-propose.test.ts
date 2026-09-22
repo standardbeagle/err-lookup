@@ -17,6 +17,7 @@ import {
   type CellDraft,
   type PooledFamily,
 } from "../src/phase/tag-propose.js";
+import { errorRow } from "./error-row.js";
 import { tmpDbPath } from "./setup.js";
 
 const RUBRIC = "A required environment variable is unset or empty when it is read. For a variable that is set but unusable use invalid-env-var-value.";
@@ -164,45 +165,10 @@ describe("consolidation", () => {
 
 // ---- end to end, with a scripted model ----------------------------------
 
-let idSeq = 0;
 function seed(db: ReturnType<typeof openDb>["db"], proposal: string, count: number, backgroundTag: string | null = null) {
   for (let i = 0; i < count; i++) {
-    const n = idSeq++;
     db.insert(errors)
-      .values({
-        id: n.toString(16).padStart(16, "0"),
-        repo: `org/repo-${i % 3}`,
-        slug: `boom-${n}`,
-        errorCode: null,
-        errorMessage: `${proposal} is required`,
-        messagePattern: "m",
-        errorType: "exception",
-        errorClass: null,
-        httpStatus: null,
-        severity: "error",
-        filePath: "src/a.js",
-        lineNumber: 1,
-        sourceCode: null,
-        sourceCodeStart: null,
-        sourceCodeEnd: null,
-        githubUrl: "https://github.com/a/b/blob/x/src/a.js#L1",
-        documentation: "d",
-        triggerScenarios: "t",
-        commonSituations: "",
-        solutions: ["s"],
-        exampleFix: null,
-        handlingStrategy: null,
-        validationCode: null,
-        typeGuard: null,
-        tryCatchPattern: null,
-        preventionTips: [],
-        tags: [],
-        backgroundTag,
-        backgroundTagRaw: proposal,
-        analyzedSha: "a".repeat(40),
-        analyzedAt: "2026-08-11T00:00:00Z",
-        schemaVersion: 2,
-      })
+      .values(errorRow({ repo: `org/repo-${i % 3}`, errorMessage: `${proposal} is required`, backgroundTag, backgroundTagRaw: proposal }))
       .run();
   }
 }

@@ -2,55 +2,21 @@ import { describe, it, expect } from "vitest";
 import { openDb } from "../src/db/client.js";
 import { errors, infoPages } from "../src/db/schema.js";
 import { buildCells, sampleCell, cellEvidence } from "../src/phase/tag-cells.js";
+import { errorRow } from "./error-row.js";
 import { tmpDbPath } from "./setup.js";
 
-let idSeq = 0;
 type TestDb = ReturnType<typeof openDb>["db"];
 
 function seed(db: TestDb, proposal: string, count: number, message = `boom about ${proposal}`, repos = 1) {
   for (let i = 0; i < count; i++) {
-    const n = idSeq++;
     db.insert(errors)
-      .values({
-        id: n.toString(16).padStart(16, "0"),
-        repo: `org/repo-${i % repos}`,
-        slug: `boom-${n}`,
-        errorCode: null,
-        errorMessage: message,
-        messagePattern: message,
-        errorType: "exception",
-        errorClass: "ValueError",
-        httpStatus: null,
-        severity: "error",
-        filePath: "src/a.js",
-        lineNumber: 1,
-        sourceCode: null,
-        sourceCodeStart: null,
-        sourceCodeEnd: null,
-        githubUrl: "https://github.com/a/b/blob/x/src/a.js#L1",
-        documentation: "d",
-        triggerScenarios: "t",
-        commonSituations: "",
-        solutions: ["s"],
-        exampleFix: null,
-        handlingStrategy: null,
-        validationCode: null,
-        typeGuard: null,
-        tryCatchPattern: null,
-        preventionTips: [],
-        tags: [],
-        backgroundTag: null,
-        backgroundTagRaw: proposal,
-        analyzedSha: "a".repeat(40),
-        analyzedAt: "2026-08-11T00:00:00Z",
-        schemaVersion: 2,
-      })
+      .values(errorRow({ repo: `org/repo-${i % repos}`, errorMessage: message, errorClass: "ValueError", backgroundTagRaw: proposal }))
       .run();
   }
 }
 
 function withDb(fn: (db: TestDb) => void) {
-  const { db, raw } = openDb(tmpDbPath());
+  const { db, raw } = openDb(tmpDbPath("cells"));
   try {
     fn(db);
   } finally {

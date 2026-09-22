@@ -13,6 +13,7 @@ import {
   NO_FAMILY,
   type Page,
 } from "../src/phase/tag-page.js";
+import { errorRow } from "./error-row.js";
 import { tmpDbPath } from "./setup.js";
 
 const page = (id: string, over: Partial<Page> = {}): Page => ({
@@ -117,44 +118,7 @@ describe("samplePages", () => {
   it("draws the same pages for the same seed, and others for another", () => {
     const { db, raw } = openDb(tmpDbPath("sample"));
     try {
-      for (let i = 0; i < 50; i++) {
-        db.insert(errors)
-          .values({
-            id: i.toString(16).padStart(16, "0"),
-            repo: "org/lib",
-            slug: `s-${i}`,
-            errorCode: null,
-            errorMessage: `m ${i}`,
-            messagePattern: "m",
-            errorType: "exception",
-            errorClass: null,
-            httpStatus: null,
-            severity: "error",
-            filePath: "a",
-            lineNumber: 1,
-            sourceCode: null,
-            sourceCodeStart: null,
-            sourceCodeEnd: null,
-            githubUrl: "u",
-            documentation: "d",
-            triggerScenarios: "t",
-            commonSituations: "",
-            solutions: [],
-            exampleFix: null,
-            handlingStrategy: null,
-            validationCode: null,
-            typeGuard: null,
-            tryCatchPattern: null,
-            preventionTips: [],
-            tags: [],
-            backgroundTag: null,
-            backgroundTagRaw: null,
-            analyzedSha: "a".repeat(40),
-            analyzedAt: "2026-08-11T00:00:00Z",
-            schemaVersion: 2,
-          })
-          .run();
-      }
+      for (let i = 0; i < 50; i++) db.insert(errors).values(errorRow()).run();
       const a = samplePages(db, 10, 7).map((p) => p.id);
       expect(samplePages(db, 10, 7).map((p) => p.id)).toEqual(a);
       expect(samplePages(db, 10, 8).map((p) => p.id)).not.toEqual(a);
