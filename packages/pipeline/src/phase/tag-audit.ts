@@ -150,3 +150,60 @@ export async function labelPages(
   }
   return labels;
 }
+
+export interface AuditDisagreement {
+  id: string;
+  repo: string;
+  message: string;
+  published: string | null;
+  labelled: string | null;
+  certainty: Certainty;
+}
+
+export interface AuditReport {
+  pages: number;
+  /** Pages the labeller could place with confidence (clear or likely). */
+  judged: number;
+  agree: number;
+  /** Agreement over judged pages: the published families' measured accuracy. */
+  agreement: number;
+  /** Pages the labeller itself called unclear — not scored either way. */
+  unclear: number;
+  /** Judged pages with no decision at the current taxonomy yet. */
+  undecided: number;
+  disagreements: AuditDisagreement[];
+}
+
+/**
+ * Check published families against the reference labeller on a random
+ * sample. This is the standing version of the ablation: run after a classify
+ * pass or a taxonomy change, it says how often a page's family is the one a
+ * careful reader would give it, and lists the pages where they differ.
+ */
+export function compareToLabels(
+  pages: readonly Page[],
+  labels: Map<string, Label>,
+  published: Map<string, string | null>
+): AuditReport {
+  let judged = 0;
+  let agree = 0;
+  let unclear = 0;
+  let undecided = 0;
+  const disagreements: AuditDisagreement[] = [];
+  for (const p of pages) {
+    const l = labels.get(p.id);
+    if (!l || l.certainty === "unclear") {
+      unclear++;
+      continue;
+    }
+    if (!published.has(p.id)) {
+      undecided++;
+      continue;
+    }
+    judged++;
+    const fam = published.get(p.id) ?? null;
+    if (fam === l.family) agree++;
+    else disagreements.push({ id: p.id, repo: p.repo, message: p.errorMessage.slice(0, 160), published: fam, labelled: l.family, certainty: l.certainty });
+  }
+  return { pages: pages.length, judged, agree, agreement: agree / Math.max(judged, 1), unclear, undecided, disagreements };
+}

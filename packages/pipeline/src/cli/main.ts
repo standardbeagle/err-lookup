@@ -16,7 +16,9 @@ import { runReviewOne, parseReviewTarget } from "../phase/review.js";
 import { collectInfoPages } from "../info/collector.js";
 import { tagVocabulary } from "../phase/tag-vocabulary.js";
 import { planTagBackfill, applyTagBackfill } from "../phase/tag-backfill.js";
-import { classifyPendingPages, unplacedPages } from "../phase/tag-classify.js";
+import { classifyPendingPages, unplacedPages, pageFamiliesFor, taxonomyVersion } from "../phase/tag-classify.js";
+import { samplePages } from "../phase/tag-page.js";
+import { labelPages, compareToLabels } from "../phase/tag-audit.js";
 import { proposeTaxonomy } from "../phase/tag-propose.js";
 import { TypeSafeClient, JEV_MODEL, jevCostUsd } from "../provider/typesafe.js";
 import { CANONICAL_FAMILIES } from "@errlookup/schema";
@@ -190,6 +192,7 @@ async function main(): Promise<void> {
         limit: { type: "string", default: "40" },
         "max-pages": { type: "string" },
         gate: { type: "string" },
+        seed: { type: "string", default: "7" },
         out: { type: "string", default: "data/tag-proposal" },
         "cell-min": { type: "string" },
         "max-cells": { type: "string" },
@@ -256,6 +259,29 @@ async function main(): Promise<void> {
         return;
       }
 
+      if (sub === "audit") {
+        // The standing check on published families: a careful reader's label
+        // against what each sampled page publishes.
+        const cfg = loadConfig();
+        const n = Number.parseInt(String(values["max-pages"] ?? "100"), 10);
+        const seed = Number.parseInt(String(values.seed), 10);
+        const pages = samplePages(db, n, seed);
+        const outDir = resolve(String(values.out), "audit");
+        mkdirSync(outDir, { recursive: true });
+        const labels = await labelPages(buildProviders(cfg), cfg, pages, CANONICAL_FAMILIES, {
+          checkpointFile: join(outDir, `labels-${taxonomyVersion()}-seed${seed}-n${n}.json`),
+          onLog: (m) => console.log(`  ${m}`),
+        });
+        const r = compareToLabels(pages, labels, pageFamiliesFor(db, pages.map((p) => p.id)));
+        console.log(
+          `audit of ${r.pages} random pages: ${r.agree}/${r.judged} published families match the labeller (${(r.agreement * 100).toFixed(1)}%); ${r.unclear} unclear to the labeller, ${r.undecided} undecided`
+        );
+        for (const d of r.disagreements.slice(0, limit)) {
+          console.log(`  ${d.repo}: ${d.message}\n      published ${d.published ?? "(none)"}, labelled ${d.labelled ?? "(none)"} (${d.certainty})`);
+        }
+        return;
+      }
+
       if (sub === "candidates") {
         const rows = unplacedPages(db, limit);
         console.log(`pages that publish no family, by the name their model proposed (${rows.length} groups, largest first):`);
@@ -269,7 +295,7 @@ async function main(): Promise<void> {
       }
 
       if (sub !== "report") {
-        console.error(`unknown tags subcommand "${sub}" — expected report, classify, candidates or propose`);
+        console.error(`unknown tags subcommand "${sub}" — expected report, classify, candidates, audit or propose`);
         process.exit(1);
       }
 
@@ -629,6 +655,7 @@ async function main(): Promise<void> {
   console.error("  errlookup tags [--apply] [--gate 0.55] [--limit 40]   report or apply the page family decisions");
   console.error("  errlookup tags classify [--max-pages N]  # decide pending pages (needs TYPESAFE_API_KEY)");
   console.error("  errlookup tags candidates [--limit 40]  # pages that publish no family, by proposed name");
+  console.error("  errlookup tags audit [--max-pages 100] [--seed 7]   # label a random sample, compare to published families");
   console.error("  errlookup tags propose [--out data/tag-proposal] [--cell-min 100] [--max-cells N] [--fresh]");
   console.error("      # model-checked taxonomy proposal from the corpus's own names; writes a file, adopts nothing");
   console.error("  errlookup reset [--failed] [--dry-run] [owner/repo ...]");

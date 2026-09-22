@@ -7,7 +7,7 @@ import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
 import type { LlmProvider, InvokeOptions, ProviderResult } from "../src/provider/types.js";
 import type { Page } from "../src/phase/tag-page.js";
-import { validateLabels, labelPages } from "../src/phase/tag-audit.js";
+import { validateLabels, labelPages, compareToLabels } from "../src/phase/tag-audit.js";
 
 const page = (id: string): Page => ({
   id,
@@ -64,5 +64,27 @@ describe("reference labels", () => {
 
     await labelPages({ bulk: provider }, cfg, pages, FAMILIES, { checkpointFile });
     expect(calls).toBe(2);
+  });
+});
+
+describe("audit", () => {
+  it("scores published families against confident labels only, and lists the misses", () => {
+    const pages = ["a", "b", "c", "d", "e"].map((id) => page(id));
+    const labels = new Map([
+      ["a", { id: "a", family: "missing-env-var", certainty: "clear" as const }],
+      ["b", { id: "b", family: "file-not-found", certainty: "likely" as const }],
+      ["c", { id: "c", family: "file-not-found", certainty: "unclear" as const }],
+      ["d", { id: "d", family: null, certainty: "clear" as const }],
+      ["e", { id: "e", family: "file-not-found", certainty: "clear" as const }],
+    ]);
+    const published = new Map<string, string | null>([
+      ["a", "missing-env-var"],
+      ["b", "missing-env-var"],
+      ["c", "missing-env-var"],
+      ["d", null],
+    ]);
+    const r = compareToLabels(pages, labels, published);
+    expect(r).toMatchObject({ pages: 5, judged: 3, agree: 2, unclear: 1, undecided: 1 });
+    expect(r.disagreements.map((d) => [d.id, d.published, d.labelled])).toEqual([["b", "missing-env-var", "file-not-found"]]);
   });
 });
