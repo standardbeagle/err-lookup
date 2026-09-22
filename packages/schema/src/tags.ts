@@ -113,6 +113,13 @@ const EXPANSIONS: Record<string, string> = {
  * Add an entry only when the two names would produce the same article. The
  * three "missing-required-*" forms were 3,368 records split across three
  * pages, each diluting the others' internal links.
+ *
+ * An alias pre-empts the classifier: a proposal it names never reaches a
+ * judgment. The "*-argument-type" entries were removed on 2026-09-22 for that
+ * reason — they routed wrong-type errors into the wrong-value family, while
+ * the taxonomy declares `type-mismatch` and the classifier picks it from the
+ * message at full confidence. Write an alias for spelling, not for a call the
+ * evidence can make.
  */
 export const TAG_ALIASES: Record<string, string> = {
   "missing-required-field": "missing-required-argument",
@@ -120,10 +127,7 @@ export const TAG_ALIASES: Record<string, string> = {
   "missing-required-property": "missing-required-argument",
   "missing-argument": "missing-required-argument",
   "required-argument-missing": "missing-required-argument",
-  "invalid-argument-type": "invalid-argument-value",
-  "invalid-parameter-value": "invalid-argument-value",
   "invalid-field-value": "invalid-argument-value",
-  "wrong-argument-type": "invalid-argument-value",
   "config-validation-failed": "invalid-config-value",
   "configuration-validation-failed": "invalid-config-value",
   "invalid-configuration-value": "invalid-config-value",

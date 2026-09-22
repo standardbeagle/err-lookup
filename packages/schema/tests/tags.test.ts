@@ -28,7 +28,15 @@ describe("normalizeTag", () => {
 
   it("applies the hand-maintained aliases", () => {
     expect(normalizeTag("missing-required-field")).toBe("missing-required-argument");
-    expect(normalizeTag("Invalid Argument Type")).toBe("invalid-argument-value");
+    expect(normalizeTag("no-such-file")).toBe("file-not-found");
+  });
+
+  it("leaves a judgment the classifier can make out of the alias list", () => {
+    // An alias pre-empts classification. "invalid-argument-type" used to be
+    // merged into the wrong-VALUE family; the taxonomy now declares
+    // type-mismatch and the classifier picks it from the message itself.
+    expect(normalizeTag("invalid-argument-type")).toBe("invalid-argument-type");
+    expect(normalizeTag("wrong-argument-type")).toBe("wrong-argument-type");
   });
 
   it("every alias target is a spelling the corpus actually uses", () => {

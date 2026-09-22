@@ -135,6 +135,11 @@ describe("classifyCluster", () => {
     samples: [{ message: "peer reset the session", repo: "a/one" }],
   };
 
+  it("records no runner-up when nothing came close", async () => {
+    const d = await classifyCluster(scripted([{ choice: "connection-reset", confidence: 1 }]), cluster);
+    expect(d.runnerUp).toBeNull();
+  });
+
   it("takes a confident answer and records what came second", async () => {
     const d = await classifyCluster(
       scripted([{ choice: "connection-reset", confidence: 0.82, second: "connection-refused" }]),

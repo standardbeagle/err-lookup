@@ -136,7 +136,7 @@ export const CANONICAL_FAMILIES: readonly CanonicalFamily[] = [
   {
     tag: "invalid-config-value",
     criteria:
-      "A configuration value is present but unusable: wrong type, unsupported setting, a value the loader validates and rejects, or two settings that contradict each other in one file.",
+      "A single configuration value is present but unusable: wrong type, unsupported setting, or a value the loader validates and rejects. Two settings that contradict each other are mutually-exclusive-options.",
   },
   {
     tag: "unknown-config-key",
@@ -173,7 +173,7 @@ export const CANONICAL_FAMILIES: readonly CanonicalFamily[] = [
   {
     tag: "type-mismatch",
     criteria:
-      "A value is the wrong type for where it is used — a string where a number is required, a list where an object is, a wrong class or interface. About the type, not about the content of a right-typed value.",
+      "A value is the wrong type for where it is used — a string where a number is required, a list where an object is, a wrong class or interface, or input of a kind a documented API refuses. About the type, not about the content of a right-typed value.",
   },
   {
     tag: "type-conversion-failed",
@@ -184,11 +184,6 @@ export const CANONICAL_FAMILIES: readonly CanonicalFamily[] = [
     tag: "incompatible-source-type",
     criteria:
       "The kind of source, input or backend supplied is not one this operation handles at all — a directory where a file reader was invoked, a stream where a buffer is required, an unsupported input modality.",
-  },
-  {
-    tag: "invalid-input-type",
-    criteria:
-      "A public API was handed input of a type it does not accept and says so before any conversion is attempted — closer to a documented type contract than to an internal mismatch (type-mismatch).",
   },
 
   // ── Serialization and parsing ───────────────────────────────────────────
@@ -269,7 +264,7 @@ export const CANONICAL_FAMILIES: readonly CanonicalFamily[] = [
   {
     tag: "http-error-response",
     criteria:
-      "A remote service answered with an error status — any non-2xx, including 4xx from the caller's own bad request and 5xx from the server. The call completed; the answer was an error. Not for rate limiting (rate-limit-exceeded) or auth (authentication-required, permission-denied).",
+      "A remote service answered with an error status — any non-2xx, including a 4xx the caller provoked (400, 404 from an API, 405 method not allowed) and a 5xx from the server. The call completed; the answer was an error. Not rate limiting (rate-limit-exceeded) and not auth (authentication-required, permission-denied).",
   },
   {
     tag: "http-request-failed",
@@ -279,7 +274,7 @@ export const CANONICAL_FAMILIES: readonly CanonicalFamily[] = [
   {
     tag: "unexpected-response-shape",
     criteria:
-      "A response arrived and parsed, but its content is not what the caller requires: a missing field, a null where an object was promised, a different schema version. The transport succeeded and the JSON was valid.",
+      "A successful response arrived and parsed, but its content is not what the caller requires: a missing field, a null where an object was promised, a different schema version. The status was a success and the body was valid — an error status is http-error-response.",
   },
   {
     tag: "empty-api-response",
@@ -379,6 +374,11 @@ export const CANONICAL_FAMILIES: readonly CanonicalFamily[] = [
       "The filesystem already holds a file or directory at the destination and the operation refuses to overwrite it. For a uniqueness conflict in a data store use resource-already-exists.",
   },
   {
+    tag: "file-open-failed",
+    criteria:
+      "Acquiring a handle failed although the path was reachable: opening an archive, mapping a buffer, creating a temporary file, a sidecar or socket file that would not open. The failure is in the open itself; failing while reading bytes afterwards is file-read-failed.",
+  },
+  {
     tag: "file-read-failed",
     criteria: "Opening or reading a file failed for a reason other than absence or permissions — I/O error, unreadable device, decode failure while reading.",
   },
@@ -473,7 +473,7 @@ export const CANONICAL_FAMILIES: readonly CanonicalFamily[] = [
   {
     tag: "unsupported-operation",
     criteria:
-      "This operation is not available at all on this type, backend or build: not implemented, abstract method not overridden, unsupported query operator, read-only implementation. Not about a state (invalid-state-transition) or a licence/flag (feature-not-enabled).",
+      "The operation itself does not exist here: not implemented, abstract method not overridden, unsupported query operator, read-only implementation. Not a wrong-typed argument to an operation that does exist (type-mismatch), not a state (invalid-state-transition), not a licence or flag (feature-not-enabled), not an HTTP 405 from a server (http-error-response).",
   },
   {
     tag: "feature-not-enabled",

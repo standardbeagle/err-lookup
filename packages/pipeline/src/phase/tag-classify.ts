@@ -51,8 +51,16 @@ export const NO_FAMILY = "none-of-these";
  */
 export const CONFIDENCE_THRESHOLD = 0.55;
 
-/** Error messages shown per proposal. The name alone is often ambiguous. */
-export const SAMPLES_PER_PROPOSAL = 4;
+/**
+ * Error messages shown per proposal, each from a different repository.
+ *
+ * The name alone is often ambiguous, and a proposal can span hundreds of
+ * repos, so the sample is the whole basis for the judgment. Raising it from
+ * four costs about 4% more tokens — the 112 rubrics dominate every request —
+ * and it is the only defence against a family being judged on an unlucky
+ * handful of messages.
+ */
+export const SAMPLES_PER_PROPOSAL = 8;
 
 /** Concurrent classifications. Jev allows 1,200 requests/minute. */
 export const CLASSIFY_CONCURRENCY = 8;
@@ -141,8 +149,12 @@ export async function classifyCluster(
   const answer = res.answers.family;
   if (!answer) throw new Error(`no answer for proposal "${cluster.proposal}"`);
 
+  // Only a contender counts as a runner-up. Every option carries a
+  // probability, so the second entry of a distribution that put everything on
+  // one family is an arbitrary zero — recording it would make a certain
+  // answer look like a close call in every report that reads this column.
   const ranked = Object.entries(answer.probabilities).sort((a, b) => b[1] - a[1]);
-  const runnerUp = ranked[1]?.[0] ?? null;
+  const runnerUp = (ranked[1]?.[1] ?? 0) > 0 ? ranked[1]![0] : null;
   const accepted =
     answer.choice !== NO_FAMILY &&
     answer.confidence >= CONFIDENCE_THRESHOLD &&
