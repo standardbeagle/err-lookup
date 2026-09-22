@@ -71,26 +71,26 @@ describe("analysisPrompt background families", () => {
   const errors = [{ message: "config missing", type: "exception", file: "src/a.go", line: 12 }];
   const need = { enrichment: true, defense: true };
 
-  it("offers the established families and asks for the exact string", () => {
+  it("offers the declared families and asks for one of the exact strings", () => {
     const prompt = analysisPrompt(errors, 0, need, ["src"], [null], [
       "missing-env-var",
       "schema-validation-failed",
     ]);
-    expect(prompt).toContain("ESTABLISHED backgroundTag FAMILIES (2");
+    expect(prompt).toContain("backgroundTag FAMILIES (2, the complete list)");
     expect(prompt).toContain("missing-env-var, schema-validation-failed");
-    expect(prompt).toContain("Reuse the exact");
+    expect(prompt).toContain("Answer with one of these");
   });
 
   it("says nothing about families on an empty corpus", () => {
     // The first repo ever analyzed has no vocabulary to reuse; an empty list
     // would read as "no family fits" and teach the model to coin every time.
     const prompt = analysisPrompt(errors, 0, need, ["src"], [null], []);
-    expect(prompt).not.toContain("ESTABLISHED backgroundTag FAMILIES");
+    expect(prompt).not.toContain("backgroundTag FAMILIES");
   });
 
   it("keeps the families out of a defense-only call", () => {
     const prompt = analysisPrompt(errors, 0, need2(), ["src"], [null], ["missing-env-var"]);
-    expect(prompt).not.toContain("ESTABLISHED backgroundTag FAMILIES");
+    expect(prompt).not.toContain("backgroundTag FAMILIES");
   });
 });
 

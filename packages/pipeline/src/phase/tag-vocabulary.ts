@@ -1,24 +1,15 @@
 import { sql } from "drizzle-orm";
-import { buildTagIndex, type TagFamily } from "@errlookup/schema";
+import { CANONICAL_FAMILIES, type TagFamily } from "@errlookup/schema";
 import type { Db } from "../db/client.js";
 
 /**
- * The background-family vocabulary, read straight off the corpus.
+ * What the corpus currently says about the background families.
  *
- * Deriving it from `errors` rather than keeping a registry table means it
- * cannot drift from what the records actually say — a registry would need its
- * own reconciliation the first time a repo is re-analyzed and its tags change.
+ * The vocabulary used to be derived from the records — whatever names they
+ * carried WAS the vocabulary — which is why it grew to 56,960 entries. The
+ * list of permitted families now lives in `@errlookup/schema`'s taxonomy, and
+ * this module only reports how the corpus fills it.
  */
-
-/**
- * Families offered to the model in an analysis prompt. Enough to cover the
- * ground a batch is likely to land on, small enough that the list does not
- * crowd out the source regions the same prompt carries.
- */
-export const PROMPT_FAMILY_LIMIT = 120;
-
-/** A family must be this established before it is offered as a choice. */
-export const PROMPT_FAMILY_MIN_ERRORS = 8;
 
 interface VocabRow {
   tag: string;
@@ -27,7 +18,7 @@ interface VocabRow {
   info_slug: string | null;
 }
 
-/** Families in the corpus, largest first. */
+/** Families the records carry, largest first, with the article covering each. */
 export function tagVocabulary(
   db: Db,
   opts: { minErrors?: number; limit?: number } = {}
@@ -49,15 +40,15 @@ export function tagVocabulary(
   return rows.map((r) => ({ tag: r.tag, errorCount: r.n, repoCount: r.r, infoSlug: r.info_slug }));
 }
 
-/** Resolution index over the whole vocabulary — every family, however small. */
-export function tagIndexFor(db: Db): Map<string, string> {
-  return buildTagIndex(tagVocabulary(db));
-}
-
-/** The shortlist an analysis prompt offers, largest families first. */
-export function promptFamilies(db: Db): string[] {
-  return tagVocabulary(db, {
-    minErrors: PROMPT_FAMILY_MIN_ERRORS,
-    limit: PROMPT_FAMILY_LIMIT,
-  }).map((f) => f.tag);
+/**
+ * The families an analysis prompt offers.
+ *
+ * Every declared family, not the corpus's most popular names: a name the
+ * prompt suggests is one the classifier will fold for free, so suggesting the
+ * whole taxonomy is what keeps the expensive half of the pipeline small. The
+ * list is ordered as the taxonomy declares it, which groups it by domain and
+ * reads better than a frequency ranking.
+ */
+export function promptFamilies(): string[] {
+  return CANONICAL_FAMILIES.map((f) => f.tag);
 }

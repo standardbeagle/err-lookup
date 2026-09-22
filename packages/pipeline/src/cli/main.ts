@@ -16,6 +16,9 @@ import { runReviewOne, parseReviewTarget } from "../phase/review.js";
 import { collectInfoPages } from "../info/collector.js";
 import { tagVocabulary } from "../phase/tag-vocabulary.js";
 import { planTagBackfill, applyTagBackfill } from "../phase/tag-backfill.js";
+import { classifyPending, candidateProposals } from "../phase/tag-classify.js";
+import { TypeSafeClient, JEV_MODEL, jevCostUsd } from "../provider/typesafe.js";
+import { CANONICAL_FAMILIES } from "@errlookup/schema";
 import { printStatus } from "./status.js";
 import { runProxy } from "./proxy.js";
 
@@ -180,26 +183,79 @@ async function main(): Promise<void> {
   }
 
   if (cmd === "tags") {
-    const { values } = parseArgs({
+    const { values, positionals } = parseArgs({
       options: {
         apply: { type: "boolean", default: false },
         limit: { type: "string", default: "40" },
+        "min-errors": { type: "string", default: "1" },
+        "max-proposals": { type: "string" },
       },
       allowPositionals: true,
       args: rest,
     });
+    const sub = positionals[0] ?? "report";
+    const limit = Number.parseInt(String(values.limit), 10);
     const { db, raw } = openDb(dbPath());
     try {
+      if (sub === "classify") {
+        // The classifier is the only part of this that costs money and time,
+        // so it is its own verb: it writes decisions and touches no record.
+        const client = new TypeSafeClient();
+        const started = Date.now();
+        const res = await classifyPending(db, client, {
+          minErrors: Number.parseInt(String(values["min-errors"]), 10),
+          ...(values["max-proposals"] ? { limit: Number.parseInt(String(values["max-proposals"]), 10) } : {}),
+          onProgress: (p) => {
+            if (p.decided % 250 === 0 || p.decided === p.pending) {
+              console.log(`  classified ${p.decided}/${p.pending} (${p.proposal} → ${p.canonical ?? "—"})`);
+            }
+          },
+        });
+        const mins = ((Date.now() - started) / 60000).toFixed(1);
+        console.log(
+          `classified: ${res.byRule} by spelling, ${res.byModel} by ${JEV_MODEL}, ${res.unmatched} left as candidates`
+        );
+        console.log(
+          `${res.recordsDecided} records now have a family; ${res.calls} calls, ${res.inputTokens} input tokens, $${jevCostUsd(res.inputTokens).toFixed(2)}, ${mins} min`
+        );
+        console.log("run `errlookup tags` to see what applying the decisions would do");
+        return;
+      }
+
+      if (sub === "candidates") {
+        const rows = candidateProposals(db, limit);
+        console.log(`proposals no declared family covers (${rows.length} shown, largest first):`);
+        for (const c of rows) {
+          const conf = c.confidence === null ? "rule" : c.confidence.toFixed(2);
+          console.log(
+            `  ${c.errorCount.toString().padStart(6)} records ${c.repoCount.toString().padStart(4)} repos  ${c.proposal}  (confidence ${conf}, nearest ${c.runnerUp ?? "—"})`
+          );
+        }
+        console.log("promote one by adding it to CANONICAL_FAMILIES, then re-run classify");
+        return;
+      }
+
+      if (sub !== "report") {
+        console.error(`unknown tags subcommand "${sub}" — expected report, classify or candidates`);
+        process.exit(1);
+      }
+
       const vocabulary = tagVocabulary(db);
       const covered = vocabulary.filter((f) => f.infoSlug !== null).length;
-      const plan = planTagBackfill(db, vocabulary);
+      const plan = planTagBackfill(db);
       console.log(
-        `families: ${plan.familiesBefore} (${covered} with an article) → ${plan.familiesAfter} after folding`
+        `taxonomy: ${CANONICAL_FAMILIES.length} declared families; corpus carries ${plan.familiesBefore} (${covered} with an article) → ${plan.familiesAfter} after applying decisions`
       );
-      console.log(`records that would change family: ${plan.recordsAffected}`);
-      const limit = Number.parseInt(String(values.limit), 10);
+      console.log(
+        `records that would change family: ${plan.recordsAffected} (${plan.recordsUnassigned} of them losing a family no taxonomy entry covers)`
+      );
+      if (plan.undecidedProposals > 0) {
+        console.log(
+          `undecided: ${plan.undecidedProposals} proposals / ${plan.undecidedRecords} records — run \`errlookup tags classify\``
+        );
+      }
       for (const m of plan.merges.slice(0, limit)) {
-        console.log(`  ${m.errorCount.toString().padStart(6)}  ${m.from} → ${m.to}`);
+        console.log(`  ${m.errorCount.toString().padStart(6)}  ${m.from} → ${m.to ?? "(no family)"}`);
       }
       if (plan.merges.length > limit) console.log(`  … ${plan.merges.length - limit} more`);
       if (plan.infoPageMoves.length > 0) {
@@ -535,7 +591,10 @@ async function main(): Promise<void> {
   console.error("  errlookup reverify <owner/repo>...   # verify pass over published records");
   console.error("  errlookup ping [--provider <name>]    # does the provider answer right now?");
   console.error("  errlookup collect-info [--max-pages 5] [--min-errors 5] [--min-repos 2]");
-  console.error("  errlookup tags [--apply] [--limit 40]   report or fold the background-family vocabulary");
+  console.error("  errlookup tags [--apply] [--limit 40]   report or apply the background-family decisions");
+  console.error("  errlookup tags classify [--min-errors 1] [--max-proposals N]");
+  console.error("      # map proposed family names onto the taxonomy (needs TYPESAFE_API_KEY)");
+  console.error("  errlookup tags candidates [--limit 40]  # proposals no declared family covers");
   console.error("  errlookup reset [--failed] [--dry-run] [owner/repo ...]");
   console.error("  errlookup export [--out-dir <path>]");
   console.error("  errlookup quality [--flag thin|short-doc|no-solutions|generic-slug|opaque-slug|duplicate|no-source] [--limit N] [--summary]");

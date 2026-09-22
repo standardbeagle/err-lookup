@@ -24,7 +24,8 @@ import type { ScanScope } from "./candidates.js";
 import { runAnalysis } from "./analysis.js";
 import { runVerify, applyPatches, missingCore } from "./verify.js";
 import { collectCallFacts } from "./callgraph.js";
-import { promptFamilies, tagIndexFor } from "./tag-vocabulary.js";
+import { promptFamilies } from "./tag-vocabulary.js";
+import { decisionMap } from "./tag-classify.js";
 import { assemble } from "./assembler.js";
 import type { DiscoveredErrorJson, EnrichedErrorJson, DefenseStrategyJson } from "./prompts.js";
 
@@ -379,7 +380,7 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         (d, t) => log(`phase analysis: ${d}/${t} batches`),
         (m) => log(`phase analysis: ${m}`),
         phaseBatchCheckpoint(db, repo, sha, "analysis"),
-        promptFamilies(db)
+        promptFamilies()
       );
       // Analysis indexed the `fresh` sub-list; assembly indexes `discovered`.
       const toDiscoveredIndex = <T>(m: Map<number, T>): Map<number, T> =>
@@ -459,9 +460,10 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         // survivors, so a fresh record deriving a survivor's slug would hit
         // the unique (repo, slug) index and fail the whole integration.
         existingSlugOwners: new Map(errorsForRepo(db, repo).map((r) => [r.slug, r.id])),
-        // Fold a coined family name onto the established spelling at the
-        // write boundary — the prompt asks for reuse, this is what enforces it.
-        tagIndex: tagIndexFor(db),
+        // Decisions already made about coined names. A proposal the map does
+        // not answer for is stored raw and tagged by the next classify run —
+        // the write path never invents a family of its own.
+        decisions: decisionMap(db),
       });
 
 
@@ -661,6 +663,7 @@ function toRow(e: import("@errlookup/schema").ErrorEntry) {
     preventionTips: e.preventionTips,
     tags: e.tags,
     backgroundTag: e.backgroundTag,
+    backgroundTagRaw: e.backgroundTagRaw ?? null,
     analyzedSha: e.analyzedSha,
     analyzedAt: e.analyzedAt,
     schemaVersion: e.schemaVersion,

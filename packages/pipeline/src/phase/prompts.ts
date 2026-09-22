@@ -204,25 +204,24 @@ const ENRICHMENT_FIELDS = `- documentation: what this error means and why this l
 - severity: one of critical|error|warning|info.
 - tags: lowercase kebab-case array (e.g. ["network","typescript"]).
 - backgroundTag: ONE lowercase kebab-case tag naming the cross-library error FAMILY this
-  belongs to, phrased the way a developer would search it (e.g. "connection-refused",
-  "jwt-token-expired", "missing-env-var", "schema-validation-failed"). Specific enough
+  belongs to, taken from the FAMILIES list below whenever one of them fits. Specific enough
   that a background article could cover the family; NEVER a generic word like "error",
   "exception", or "failure". null only when no family fits.`;
 
 /**
- * The established families, offered so the model reuses a name instead of
- * coining one. Reuse is the whole point of the field: a family with one record
- * cannot carry an article, and the corpus reached 55,568 distinct tags — two
- * thirds of them used once — while this list was absent from the prompt.
+ * The declared families, offered so the model picks one instead of coining a
+ * name. A pick costs nothing downstream; anything else has to be classified
+ * against the taxonomy afterwards, one call per distinct name, so this list is
+ * what keeps that pass small.
  */
 function familiesBlock(families: readonly string[]): string {
   if (families.length === 0) return "";
   return `
 
-ESTABLISHED backgroundTag FAMILIES (${families.length}, most used first). Reuse the exact
-string when one of them names this error's family — even when you would have phrased it
-differently. Coin a new tag only when no family here fits; a new tag is a claim that this
-error family is genuinely absent from the corpus so far.
+backgroundTag FAMILIES (${families.length}, the complete list). Answer with one of these
+exact strings whenever one names this error's family — even when you would have phrased it
+differently. Write your own name only when none of them fits; it will be reviewed against
+this list rather than published as-is, so a near-synonym of a family above helps nobody.
 ${families.join(", ")}`;
 }
 
@@ -254,7 +253,7 @@ export function analysisPrompt(
   sources?: (string | null)[],
   /** Per-error enclosing function and callers, from lci; aligned with `batch`. */
   facts?: (CallFacts | null)[],
-  /** Established background families to reuse, largest first. */
+  /** The declared background families the model must choose from. */
   families: readonly string[] = []
 ): string {
   const list = batch

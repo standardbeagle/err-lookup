@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { assemble } from "../src/phase/assembler.js";
-import { buildTagIndex } from "@errlookup/schema";
+
 
 function enrichedWithTag(tag: unknown) {
   return new Map([
@@ -21,43 +21,59 @@ function enrichedWithTag(tag: unknown) {
   ]);
 }
 
-function assembleWithTag(tag: unknown, index = new Map<string, string>()) {
+function assembleWithTag(tag: unknown, decisions = new Map<string, string | null>()) {
   const out = assemble({
     repo: "acme/lib",
     sha: "a".repeat(40),
     repoPath: "/nonexistent",
     discovered: [discovered(null, "connection refused by peer", "src/net.ts")],
     enriched: enrichedWithTag(tag),
-    tagIndex: index,
+    decisions,
   });
-  return out.records[0]?.backgroundTag ?? null;
+  return out.records[0] ?? null;
 }
 
-describe("assemble: backgroundTag reaches the record as a family name", () => {
-  it("sanitizes case, spaces, and stray punctuation", () => {
-    expect(assembleWithTag(" JWT Token Expired! ")).toBe("jwt-token-expired");
+describe("assemble: backgroundTag reaches the record as a declared family", () => {
+  it("sanitizes case, spaces, and stray punctuation into the proposal", () => {
+    const r = assembleWithTag(" Connection Refused! ");
+    expect(r?.backgroundTagRaw).toBe("connection-refused");
+    expect(r?.backgroundTag).toBe("connection-refused");
   });
 
   it("nulls generic families and garbage — auxiliary field, never a record reject", () => {
     for (const bad of ["error", "Exception", "---", null, undefined]) {
-      expect(assembleWithTag(bad)).toBeNull();
+      const r = assembleWithTag(bad);
+      expect(r?.backgroundTag ?? null).toBeNull();
+      expect(r?.backgroundTagRaw ?? null).toBeNull();
     }
   });
 
-  it("folds a coined name onto the established family", () => {
-    // The prompt asks the model to reuse a family; this is what makes the
-    // stored record honour it when the model phrases it its own way.
-    const index = buildTagIndex([
-      { tag: "missing-env-var", errorCount: 945, repoCount: 40, infoSlug: "missing-env-var" },
-    ]);
-    expect(assembleWithTag("environment-variable-missing", index)).toBe("missing-env-var");
+  it("folds a coined spelling onto the declared family without asking anyone", () => {
+    // The spelling fold is exact, so it costs no classification: every
+    // rephrasing of a declared family lands on it at the write boundary.
+    const r = assembleWithTag("environment-variable-missing");
+    expect(r?.backgroundTag).toBe("missing-env-var");
+    expect(r?.backgroundTagRaw).toBe("environment-variable-missing");
   });
 
-  it("keeps a family the corpus has never seen", () => {
-    const index = buildTagIndex([
-      { tag: "missing-env-var", errorCount: 945, repoCount: 40, infoSlug: null },
-    ]);
-    expect(assembleWithTag("bgp-session-flapping", index)).toBe("bgp-session-flapping");
+  it("publishes a decided proposal under the family it was decided into", () => {
+    const r = assembleWithTag("bgp-session-flapping", new Map([["bgp-session-flapping", "connection-reset"]]));
+    expect(r?.backgroundTag).toBe("connection-reset");
+    expect(r?.backgroundTagRaw).toBe("bgp-session-flapping");
+  });
+
+  it("stores an undecided proposal without publishing a family for it", () => {
+    // The old write path kept whatever the model coined, which is how one
+    // corpus grew 56,960 families. An unknown name now waits for a decision.
+    const r = assembleWithTag("bgp-session-flapping");
+    expect(r?.backgroundTag).toBeNull();
+    expect(r?.backgroundTagRaw).toBe("bgp-session-flapping");
+  });
+
+  it("keeps a proposal the classifier placed nowhere out of the published families", () => {
+    const r = assembleWithTag("bgp-session-flapping", new Map([["bgp-session-flapping", null]]));
+    expect(r?.backgroundTag).toBeNull();
+    expect(r?.backgroundTagRaw).toBe("bgp-session-flapping");
   });
 });
 

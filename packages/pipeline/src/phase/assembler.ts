@@ -1,9 +1,10 @@
 import {
   validateErrorEntry,
-  resolveTag,
+  normalizeTagShape,
   type ErrorEntry,
   CURRENT_SCHEMA_VERSION,
 } from "@errlookup/schema";
+import { ruleFold } from "./tag-classify.js";
 import type { DiscoveredErrorJson, EnrichedErrorJson, DefenseStrategyJson } from "./prompts.js";
 import {
   computeErrorId,
@@ -38,11 +39,14 @@ export interface AssembleInput {
    */
   existingSlugOwners?: Map<string, string>;
   /**
-   * Established background families, keyed for resolution. A coined name that
-   * spells an existing family differently is folded onto it here — the prompt
-   * asks for reuse, this is what makes reuse true of the stored record.
+   * Decisions already made about proposed family names: proposal → canonical
+   * family, or → null where the classifier found no family that fits. A
+   * proposal the map does not answer for is stored as a proposal and left
+   * untagged until `errlookup tags classify` rules on it. The write path never
+   * publishes a family the taxonomy has not declared, which is what bounds how
+   * many family pages can exist.
    */
-  tagIndex?: Map<string, string>;
+  decisions?: Map<string, string | null>;
 }
 
 export interface AssembleOutput {
@@ -55,7 +59,21 @@ export interface AssembleOutput {
  * validated ErrorEntry records (§3.1). GitHub permalinks pinned to the analyzed
  * SHA (never branch-relative — fixes v1 bug). messagePattern derived per §4.3.
  */
-const EMPTY_TAG_INDEX = new Map<string, string>();
+const NO_DECISIONS = new Map<string, string | null>();
+
+/** The proposal as stored, and the family it is published under (if any). */
+function resolveFamily(
+  raw: string | null | undefined,
+  decisions: Map<string, string | null>
+): { proposal: string | null; family: string | null } {
+  const proposal = normalizeTagShape(raw);
+  if (!proposal) return { proposal: null, family: null };
+  // The spelling fold is exact and free, so it runs before the decision cache
+  // and covers every proposal that is a listed family under another spelling.
+  const folded = ruleFold(proposal);
+  if (folded) return { proposal, family: folded };
+  return { proposal, family: decisions.get(proposal) ?? null };
+}
 
 export function assemble(input: AssembleInput): AssembleOutput {
   const { repo, sha, repoPath, discovered, enriched, defense } = input;
@@ -119,6 +137,8 @@ export function assemble(input: AssembleInput): AssembleOutput {
     }
     usedSlugs.add(slug);
 
+    const family = resolveFamily(e?.backgroundTag, input.decisions ?? NO_DECISIONS);
+
     const record = {
       id,
       repo,
@@ -153,7 +173,8 @@ export function assemble(input: AssembleInput): AssembleOutput {
       tryCatchPattern: def?.tryCatchPattern ?? null,
       preventionTips: def?.preventionTips ?? [],
       tags: (e?.tags ?? []).map((t) => t.toLowerCase()),
-      backgroundTag: resolveTag(e?.backgroundTag, input.tagIndex ?? EMPTY_TAG_INDEX),
+      backgroundTag: family.family,
+      backgroundTagRaw: family.proposal,
       analyzedSha: sha,
       analyzedAt,
       schemaVersion: CURRENT_SCHEMA_VERSION,
