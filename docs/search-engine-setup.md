@@ -154,3 +154,27 @@ prints request URLs:
 Bing builds stats for a new property slowly. errors.standardbeagle.com, imported
 on 2026-09-16, still returned no rows on 2026-09-19, while standardbeagle.com
 returned full history with the same key.
+
+### Read the crawl row carefully
+
+`GetCrawlStats` returns one row per day, but only `CrawledPages` and `Code4xx`
+are daily numbers. `Code2xx`, `Code301`, `Code5xx`, `AllOtherCodes` and
+`InIndex` are a single cumulative site-wide figure copied onto every row, and it
+refreshes lazily: standardbeagle.com reported `2xx=77038` and `5xx=423`
+unchanged on 2026-09-18, -19 and -20 while `CrawledPages` went 4,436 → 4,772 →
+7,597. The same row also carried `Code2xx=76388` against `CrawledPages=7403`,
+which cannot both describe one day.
+
+`bing.py crawl` now prints the daily series first and the cumulative figures
+once, labelled. Before it did, `5xx=423` on the 2026-09-20 row was read as 423
+server errors that day. There were none: Analytics Engine held no response
+above 499 anywhere in its 90-day window, the hourly `alert-5xx.sh` had never
+fired, and 878 live URLs fetched as Bingbot all returned 200. The 423 are the
+retired-slug 500s that `ac60875` fixed on 2026-09-03, still sitting in a
+lifetime counter.
+
+Treat a subdomain property and its parent as overlapping, not independent. On
+2026-09-20 errors.standardbeagle.com read `2xx=76388` / `inIndex=52671` and
+standardbeagle.com read `77038` / `53167`; the parent property is domain-wide,
+so the difference is the parent's own content and the bulk belongs to the
+subdomain.
