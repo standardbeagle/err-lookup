@@ -1,270 +1,179 @@
 import { describe, it, expect } from "vitest";
+import { CANONICAL_FAMILIES } from "@errlookup/schema";
 import { openDb } from "../src/db/client.js";
-import { errors, tagDecisions, infoPages } from "../src/db/schema.js";
+import { errors, pageTagDecisions } from "../src/db/schema.js";
+import { TypeSafeClient } from "../src/provider/typesafe.js";
 import {
   ruleFold,
-  familyQuestion,
-  clusterState,
-  classifyCluster,
-  pendingProposals,
-  classifyPending,
-  candidateProposals,
-  decisionMap,
-  NO_FAMILY,
+  ruleDecision,
+  taxonomyVersion,
+  publishedFamily,
+  classifyPendingPages,
+  pendingCount,
+  pageFamiliesFor,
+  unplacedPages,
+  storePageDecisions,
   CONFIDENCE_THRESHOLD,
 } from "../src/phase/tag-classify.js";
-import { TypeSafeClient } from "../src/provider/typesafe.js";
-import { CANONICAL_FAMILIES } from "@errlookup/schema";
+import { NO_FAMILY } from "../src/phase/tag-page.js";
+import { errorRow } from "./error-row.js";
 import { tmpDbPath } from "./setup.js";
 
-let idSeq = 0;
-function seed(
-  db: ReturnType<typeof openDb>["db"],
-  repo: string,
-  proposal: string,
-  message: string,
-  count = 1
-) {
-  for (let i = 0; i < count; i++) {
-    const n = idSeq++;
-    db.insert(errors)
-      .values({
-        id: n.toString(16).padStart(16, "0"),
-        repo,
-        slug: `boom-${n}`,
-        errorCode: null,
-        errorMessage: message,
-        messagePattern: message,
-        errorType: "exception",
-        errorClass: null,
-        httpStatus: null,
-        severity: "error",
-        filePath: "src/a.js",
-        lineNumber: 1,
-        sourceCode: null,
-        sourceCodeStart: null,
-        sourceCodeEnd: null,
-        githubUrl: "https://github.com/a/b/blob/x/src/a.js#L1",
-        documentation: "d",
-        triggerScenarios: "t",
-        commonSituations: "",
-        solutions: ["s"],
-        exampleFix: null,
-        handlingStrategy: null,
-        validationCode: null,
-        typeGuard: null,
-        tryCatchPattern: null,
-        preventionTips: [],
-        tags: [],
-        backgroundTag: null,
-        backgroundTagRaw: proposal,
-        analyzedSha: "a".repeat(40),
-        analyzedAt: "2026-08-11T00:00:00Z",
-        schemaVersion: 2,
-      })
-      .run();
-  }
-}
+type TestDb = ReturnType<typeof openDb>["db"];
 
-/** A client whose every answer is scripted, so the gate can be tested exactly. */
-function scripted(answers: { choice: string; confidence: number; second?: string }[]) {
-  let i = 0;
-  const fetchImpl = async (): Promise<Response> => {
-    const a = answers[Math.min(i++, answers.length - 1)]!;
-    return new Response(
-      JSON.stringify({
-        model: "jev-1.13.0",
-        answers: {
-          family: {
-            type: "choice",
-            choice: a.choice,
-            probabilities: { [a.choice]: a.confidence, [a.second ?? NO_FAMILY]: 1 - a.confidence },
-            confidence: a.confidence,
-          },
-        },
-        usage: { input_tokens: 3000, output_tokens: 20 },
-      }),
-      { status: 200 }
-    );
+function withDb(name: string, fn: (db: TestDb) => Promise<void> | void) {
+  return async () => {
+    const { db, raw } = openDb(tmpDbPath(name));
+    try {
+      await fn(db);
+    } finally {
+      raw.close();
+    }
   };
-  return new TypeSafeClient({ apiKey: "k", fetchImpl: fetchImpl as unknown as typeof fetch });
 }
 
-describe("ruleFold", () => {
-  it("lands a rephrasing of a declared family on it, for free", () => {
+/** A Jev stand-in answering every page with one scripted choice and confidence. */
+function jev(choice: string, confidence: number) {
+  let calls = 0;
+  const fetchImpl = async (_u: unknown, init: RequestInit): Promise<Response> => {
+    calls++;
+    const body = JSON.parse(String(init.body)) as { questions: Record<string, unknown> };
+    const answers = Object.fromEntries(
+      Object.keys(body.questions).map((k) => [
+        k,
+        { type: "choice", choice, confidence, probabilities: { [choice]: confidence, [NO_FAMILY]: 1 - confidence } },
+      ])
+    );
+    return new Response(JSON.stringify({ model: "jev-1.13.0", answers, usage: { input_tokens: 5000, output_tokens: 1 } }));
+  };
+  const client = new TypeSafeClient({ apiKey: "k", fetchImpl: fetchImpl as unknown as typeof fetch });
+  return { client, calls: () => calls };
+}
+
+describe("rules", () => {
+  it("folds a proposal by spelling onto a declared family", () => {
     expect(ruleFold("environment-variable-missing")).toBe("missing-env-var");
-    expect(ruleFold("Missing Environment Variables")).toBe("missing-env-var");
-    expect(ruleFold("missing-required-field")).toBe("missing-required-argument");
-  });
-
-  it("returns nothing for a name the taxonomy does not declare", () => {
-    // This is the case that costs a classification — and the only one.
     expect(ruleFold("bgp-session-flapping")).toBeNull();
-    expect(ruleFold("error")).toBeNull();
+  });
+
+  it("settles a page from a precise content signal, and nothing else settles it", () => {
+    const page = {
+      id: "x",
+      repo: "r",
+      errorMessage: "boom",
+      errorClass: "System.ArgumentNullException",
+      errorCode: null,
+      httpStatus: null,
+      errorType: "exception",
+      documentation: null,
+      triggerScenarios: null,
+      commonSituations: null,
+      proposal: "missing-env-var",
+    };
+    expect(ruleDecision(page)).toEqual({ choice: "null-argument", method: "rule-content" });
+    // The proposed name is not a rule on its own: the ablation decides that.
+    expect(ruleDecision({ ...page, errorClass: "ValueError" })).toBeNull();
   });
 });
 
-describe("the question", () => {
-  it("offers every declared family and a way out of them", () => {
-    const q = familyQuestion();
-    expect(Object.keys(q.criteria)).toHaveLength(CANONICAL_FAMILIES.length + 1);
-    expect(q.criteria[NO_FAMILY]).toBeTruthy();
-    // Every option must be answerable from its rubric alone.
-    for (const f of CANONICAL_FAMILIES) expect(q.criteria[f.tag]).toBe(f.criteria);
-  });
-
-  it("shows the errors themselves, and the article when one exists", () => {
-    const state = clusterState({
-      proposal: "env-var-missing",
-      errorCount: 9,
-      repoCount: 2,
-      samples: [{ message: "FOO is not set", repo: "a/one" }],
-      article: { slug: "s", title: "Missing env var", summary: "about env vars" },
-    });
-    expect(state.example_errors).toEqual(["a/one: FOO is not set"]);
-    expect(state.proposed_family_name).toBe("env-var-missing");
-    expect(state.existing_article).toMatchObject({ title: "Missing env var" });
+describe("taxonomy version", () => {
+  it("is stable for one taxonomy and moves with any rubric edit", () => {
+    expect(taxonomyVersion()).toBe(taxonomyVersion([...CANONICAL_FAMILIES]));
+    const edited = CANONICAL_FAMILIES.map((f, i) => (i === 0 ? { ...f, criteria: `${f.criteria} Edited.` } : f));
+    expect(taxonomyVersion(edited)).not.toBe(taxonomyVersion());
   });
 });
 
-describe("classifyCluster", () => {
-  const cluster = {
-    proposal: "bgp-session-flapping",
-    errorCount: 9,
-    repoCount: 2,
-    samples: [{ message: "peer reset the session", repo: "a/one" }],
-  };
-
-  it("records no runner-up when nothing came close", async () => {
-    const d = await classifyCluster(scripted([{ choice: "connection-reset", confidence: 1 }]), cluster);
-    expect(d.runnerUp).toBeNull();
+describe("publishedFamily", () => {
+  it("publishes rules as made and model choices only above the gate", () => {
+    expect(publishedFamily({ choice: "file-not-found", method: "rule-content", confidence: null })).toBe("file-not-found");
+    expect(publishedFamily({ choice: "file-not-found", method: "model", confidence: CONFIDENCE_THRESHOLD })).toBe("file-not-found");
+    expect(publishedFamily({ choice: "file-not-found", method: "model", confidence: CONFIDENCE_THRESHOLD - 0.01 })).toBeNull();
+    expect(publishedFamily({ choice: null, method: "model", confidence: 0.99 })).toBeNull();
   });
 
-  it("takes a confident answer and records what came second", async () => {
-    const d = await classifyCluster(
-      scripted([{ choice: "connection-reset", confidence: 0.82, second: "connection-refused" }]),
-      cluster
-    );
-    expect(d).toMatchObject({
-      proposal: "bgp-session-flapping",
-      canonical: "connection-reset",
-      method: "model",
-      runnerUp: "connection-refused",
-      model: "jev-1.13.0",
-    });
-  });
-
-  it("parks an answer under the gate instead of guessing with it", async () => {
-    // A wrong fold is worse than no fold: it files the record under an article
-    // that does not describe it, and nothing downstream asks again.
-    const d = await classifyCluster(
-      scripted([{ choice: "connection-reset", confidence: CONFIDENCE_THRESHOLD - 0.01 }]),
-      cluster
-    );
-    expect(d.canonical).toBeNull();
-    expect(d.confidence).toBeCloseTo(CONFIDENCE_THRESHOLD - 0.01, 5);
-  });
-
-  it("parks a confident no-match, which is how the taxonomy learns it is short", async () => {
-    const d = await classifyCluster(scripted([{ choice: NO_FAMILY, confidence: 0.95 }]), cluster);
-    expect(d.canonical).toBeNull();
+  it("re-reads the same decision at another gate without asking again", () => {
+    const d = { choice: "file-not-found", method: "model" as const, confidence: 0.5 };
+    expect(publishedFamily(d, 0.55)).toBeNull();
+    expect(publishedFamily(d, 0.45)).toBe("file-not-found");
   });
 });
 
-describe("classifyPending", () => {
-  it("spends calls only on proposals the spelling fold cannot place", async () => {
-    const { db, raw } = openDb(tmpDbPath());
-    try {
-      seed(db, "a/one", "environment-variable-missing", "FOO is not set", 4);
-      seed(db, "a/one", "bgp-session-flapping", "peer reset the session", 9);
-      const client = scripted([{ choice: "connection-reset", confidence: 0.8 }]);
+describe("classifyPendingPages", () => {
+  it(
+    "settles by rule for free and asks the model about the rest",
+    withDb("classify-pages", async (db) => {
+      db.insert(errors).values(errorRow({ errorClass: "FileNotFoundError" })).run();
+      for (let i = 0; i < 3; i++) db.insert(errors).values(errorRow({ errorMessage: "peer reset the session" })).run();
+      const { client, calls } = jev("connection-reset", 0.8);
 
-      const res = await classifyPending(db, client, {});
+      const res = await classifyPendingPages(db, client);
 
-      expect(res.byRule).toBe(1);
-      expect(res.byModel).toBe(1);
-      expect(res.calls).toBe(1);
-      expect(res.recordsDecided).toBe(13);
-      expect(decisionMap(db)).toEqual(
-        new Map([
-          ["environment-variable-missing", "missing-env-var"],
-          ["bgp-session-flapping", "connection-reset"],
-        ])
-      );
-    } finally {
-      raw.close();
-    }
-  });
-
-  it("does not re-decide a proposal it has already ruled on", async () => {
-    const { db, raw } = openDb(tmpDbPath());
-    try {
-      seed(db, "a/one", "bgp-session-flapping", "peer reset the session", 9);
-      db.insert(tagDecisions)
-        .values({
-          proposal: "bgp-session-flapping",
-          canonical: "connection-reset",
-          method: "manual",
-          confidence: null,
-          runnerUp: null,
-          model: null,
-          decidedAt: "2026-09-22T00:00:00Z",
-        })
-        .run();
-
-      expect(pendingProposals(db)).toEqual([]);
-      const res = await classifyPending(db, scripted([{ choice: "file-not-found", confidence: 1 }]), {});
-      expect(res.calls).toBe(0);
-      expect(decisionMap(db).get("bgp-session-flapping")).toBe("connection-reset");
-    } finally {
-      raw.close();
-    }
-  });
-
-  it("shows the classifier the article written about the proposal", async () => {
-    const { db, raw } = openDb(tmpDbPath());
-    try {
-      seed(db, "a/one", "bgp-session-flapping", "peer reset the session", 9);
-      db.insert(infoPages)
-        .values({
-          slug: "bgp-session-flapping",
-          clusterKey: "tag:bgp-session-flapping",
-          title: "BGP sessions that flap",
-          summary: "A peer drops an established session",
-          background: "b",
-          commonCauses: [],
-          fixes: [],
-          guideSlugs: [],
-          errorIds: [],
-          errorCount: 9,
-          repoCount: 1,
-          generatedAt: "2026-09-05T00:00:00Z",
-        })
-        .run();
-
-      const cluster = pendingProposals(db)[0]!;
-      expect(cluster.article?.title).toBe("BGP sessions that flap");
-    } finally {
-      raw.close();
-    }
-  });
-
-  it("reports what it could not place, weighted by how much rides on it", async () => {
-    const { db, raw } = openDb(tmpDbPath());
-    try {
-      seed(db, "a/one", "bgp-session-flapping", "peer reset the session", 9);
-      seed(db, "b/two", "quantum-decoherence", "state collapsed", 2);
-
-      await classifyPending(db, scripted([{ choice: NO_FAMILY, confidence: 0.9, second: "connection-reset" }]), {});
-
-      const candidates = candidateProposals(db);
-      expect(candidates.map((c) => [c.proposal, c.errorCount])).toEqual([
-        ["bgp-session-flapping", 9],
-        ["quantum-decoherence", 2],
+      expect(res).toMatchObject({ byRule: 1, byModel: 3, unplaced: 0 });
+      expect(calls()).toBe(1); // three pages packed into one request
+      const rows = db.select().from(pageTagDecisions).all();
+      expect(rows.map((r) => [r.method, r.choice]).sort()).toEqual([
+        ["model", "connection-reset"],
+        ["model", "connection-reset"],
+        ["model", "connection-reset"],
+        ["rule-content", "file-not-found"],
       ]);
-      expect(candidates[0]!.runnerUp).toBe("connection-reset");
-    } finally {
-      raw.close();
-    }
-  });
+      expect(rows.every((r) => r.taxonomyVersion === taxonomyVersion())).toBe(true);
+    })
+  );
+
+  it(
+    "resumes: a decided page is never asked about again",
+    withDb("classify-resume", async (db) => {
+      for (let i = 0; i < 20; i++) db.insert(errors).values(errorRow()).run();
+      await classifyPendingPages(db, jev("connection-reset", 0.8).client, { limit: 8 });
+      expect(pendingCount(db, taxonomyVersion())).toBe(12);
+      const second = jev("connection-reset", 0.8);
+      await classifyPendingPages(db, second.client);
+      expect(pendingCount(db, taxonomyVersion())).toBe(0);
+      expect(second.calls()).toBe(2); // the 12 left, eight per request
+    })
+  );
+
+  it(
+    "treats a decision against another taxonomy as no decision",
+    withDb("classify-version", async (db) => {
+      const row = errorRow();
+      db.insert(errors).values(row).run();
+      storePageDecisions(db, "old-version", [
+        { errorId: row.id, choice: "file-not-found", method: "model", confidence: 0.9, runnerUp: null, model: "jev-1.13.0" },
+      ]);
+      expect(pendingCount(db, taxonomyVersion())).toBe(1);
+      await classifyPendingPages(db, jev("connection-reset", 0.8).client);
+      expect(pageFamiliesFor(db, [row.id]).get(row.id)).toBe("connection-reset");
+    })
+  );
+
+  it(
+    "counts what it could not place, and leaves it unpublished",
+    withDb("classify-unplaced", async (db) => {
+      const row = errorRow();
+      db.insert(errors).values(row).run();
+      const res = await classifyPendingPages(db, jev("connection-reset", 0.3).client);
+      expect(res.unplaced).toBe(1);
+      expect(pageFamiliesFor(db, [row.id]).get(row.id)).toBeNull();
+    })
+  );
+});
+
+describe("unplacedPages", () => {
+  it(
+    "groups pages with no family by the name their model proposed, with the nearest choice",
+    withDb("unplaced", async (db) => {
+      for (let i = 0; i < 3; i++) db.insert(errors).values(errorRow({ backgroundTagRaw: "bgp-session-flapping", repo: `o/r${i}` })).run();
+      db.insert(errors).values(errorRow({ backgroundTagRaw: "quantum-decoherence" })).run();
+      await classifyPendingPages(db, jev("connection-reset", 0.3).client);
+
+      const groups = unplacedPages(db);
+      expect(groups).toEqual([
+        { proposal: "bgp-session-flapping", pages: 3, repos: 3, nearest: "connection-reset" },
+        { proposal: "quantum-decoherence", pages: 1, repos: 1, nearest: "connection-reset" },
+      ]);
+    })
+  );
 });

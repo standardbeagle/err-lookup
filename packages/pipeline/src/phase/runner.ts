@@ -25,7 +25,7 @@ import { runAnalysis } from "./analysis.js";
 import { runVerify, applyPatches, missingCore } from "./verify.js";
 import { collectCallFacts } from "./callgraph.js";
 import { promptFamilies } from "./tag-vocabulary.js";
-import { decisionMap } from "./tag-classify.js";
+import { pageFamiliesFor } from "./tag-classify.js";
 import { assemble } from "./assembler.js";
 import type { DiscoveredErrorJson, EnrichedErrorJson, DefenseStrategyJson } from "./prompts.js";
 
@@ -445,6 +445,7 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
     }
     kept = keptRows(plan, repo, sha, repoPath);
   }
+  const published = verifyOnly ? [] : errorsForRepo(db, repo);
   const assembled = verifyOnly
     ? { records: publishedRecords, rejects: [] }
     : assemble({
@@ -459,11 +460,10 @@ export async function runPhases(opts: RunPhasesOptions): Promise<RunPhasesResult
         // Every slug currently published for the repo: integrate never deletes
         // survivors, so a fresh record deriving a survivor's slug would hit
         // the unique (repo, slug) index and fail the whole integration.
-        existingSlugOwners: new Map(errorsForRepo(db, repo).map((r) => [r.slug, r.id])),
-        // Decisions already made about coined names. A proposal the map does
-        // not answer for is stored raw and tagged by the next classify run —
-        // the write path never invents a family of its own.
-        decisions: decisionMap(db),
+        existingSlugOwners: new Map(published.map((r) => [r.slug, r.id])),
+        // Families already decided for this repo's pages, so a re-analysis
+        // keeps them instead of blanking them until the next classify run.
+        pageFamilies: pageFamiliesFor(db, published.map((r) => r.id)),
       });
 
 

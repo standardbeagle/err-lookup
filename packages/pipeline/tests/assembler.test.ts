@@ -21,23 +21,36 @@ function enrichedWithTag(tag: unknown) {
   ]);
 }
 
-function assembleWithTag(tag: unknown, decisions = new Map<string, string | null>()) {
+function assembleWithTag(
+  tag: unknown,
+  opts: { pageFamilies?: Map<string, string | null>; errorClass?: string | null; message?: string } = {}
+) {
   const out = assemble({
     repo: "acme/lib",
     sha: "a".repeat(40),
     repoPath: "/nonexistent",
-    discovered: [discovered(null, "connection refused by peer", "src/net.ts")],
+    discovered: [{ ...discovered(null, opts.message ?? "connection refused by peer", "src/net.ts"), errorClass: opts.errorClass ?? null }],
     enriched: enrichedWithTag(tag),
-    decisions,
+    ...(opts.pageFamilies ? { pageFamilies: opts.pageFamilies } : {}),
   });
   return out.records[0] ?? null;
 }
 
-describe("assemble: backgroundTag reaches the record as a declared family", () => {
-  it("sanitizes case, spaces, and stray punctuation into the proposal", () => {
-    const r = assembleWithTag(" Connection Refused! ");
+describe("assemble: the family a page is published under", () => {
+  it("stores the proposal in tag shape, without publishing it", () => {
+    // The old write path kept whatever the model coined, which is how one
+    // corpus grew 56,960 families. A proposal now waits for a decision.
+    const r = assembleWithTag(" BGP Session Flapping! ");
+    expect(r?.backgroundTagRaw).toBe("bgp-session-flapping");
+    expect(r?.backgroundTag).toBeNull();
+  });
+
+  it("does not publish a declared family's name just because the model proposed it", () => {
+    // Whether a proposed name can be trusted as a rule is measured, not
+    // assumed; until then the page waits for the classifier like any other.
+    const r = assembleWithTag("connection-refused");
+    expect(r?.backgroundTag).toBeNull();
     expect(r?.backgroundTagRaw).toBe("connection-refused");
-    expect(r?.backgroundTag).toBe("connection-refused");
   });
 
   it("nulls generic families and garbage — auxiliary field, never a record reject", () => {
@@ -48,32 +61,23 @@ describe("assemble: backgroundTag reaches the record as a declared family", () =
     }
   });
 
-  it("folds a coined spelling onto the declared family without asking anyone", () => {
-    // The spelling fold is exact, so it costs no classification: every
-    // rephrasing of a declared family lands on it at the write boundary.
-    const r = assembleWithTag("environment-variable-missing");
-    expect(r?.backgroundTag).toBe("missing-env-var");
-    expect(r?.backgroundTagRaw).toBe("environment-variable-missing");
+  it("settles a new page from a precise content rule", () => {
+    const r = assembleWithTag("whatever", { errorClass: "ConnectionRefusedError" });
+    expect(r?.backgroundTag).toBe("connection-refused");
   });
 
-  it("publishes a decided proposal under the family it was decided into", () => {
-    const r = assembleWithTag("bgp-session-flapping", new Map([["bgp-session-flapping", "connection-reset"]]));
-    expect(r?.backgroundTag).toBe("connection-reset");
-    expect(r?.backgroundTagRaw).toBe("bgp-session-flapping");
+  it("keeps the family a re-analysed page was already given", () => {
+    const first = assembleWithTag("bgp-session-flapping")!;
+    const again = assembleWithTag("bgp-session-flapping", { pageFamilies: new Map([[first.id, "connection-reset"]]) });
+    expect(again?.backgroundTag).toBe("connection-reset");
   });
 
-  it("stores an undecided proposal without publishing a family for it", () => {
-    // The old write path kept whatever the model coined, which is how one
-    // corpus grew 56,960 families. An unknown name now waits for a decision.
-    const r = assembleWithTag("bgp-session-flapping");
-    expect(r?.backgroundTag).toBeNull();
-    expect(r?.backgroundTagRaw).toBe("bgp-session-flapping");
-  });
-
-  it("keeps a proposal the classifier placed nowhere out of the published families", () => {
-    const r = assembleWithTag("bgp-session-flapping", new Map([["bgp-session-flapping", null]]));
-    expect(r?.backgroundTag).toBeNull();
-    expect(r?.backgroundTagRaw).toBe("bgp-session-flapping");
+  it("keeps a page the classifier placed nowhere unpublished, even against a rule", () => {
+    // The decision is the later, better-informed judgment; a rule does not
+    // overturn it on re-analysis.
+    const first = assembleWithTag("x", { errorClass: "ConnectionRefusedError" })!;
+    const again = assembleWithTag("x", { errorClass: "ConnectionRefusedError", pageFamilies: new Map([[first.id, null]]) });
+    expect(again?.backgroundTag).toBeNull();
   });
 });
 

@@ -1,69 +1,57 @@
 import { describe, it, expect } from "vitest";
+import { CANONICAL_FAMILIES } from "@errlookup/schema";
 import { openDb } from "../src/db/client.js";
-import { errors, infoPages, tagDecisions } from "../src/db/schema.js";
+import { errors, infoPages } from "../src/db/schema.js";
 import { tagVocabulary, promptFamilies } from "../src/phase/tag-vocabulary.js";
 import { planTagBackfill, applyTagBackfill } from "../src/phase/tag-backfill.js";
-import { CANONICAL_FAMILIES } from "@errlookup/schema";
+import { storePageDecisions, taxonomyVersion } from "../src/phase/tag-classify.js";
+import { errorRow } from "./error-row.js";
 import { tmpDbPath } from "./setup.js";
-
-let idSeq = 0;
-function row(repo: string, proposal: string | null, family: string | null) {
-  const n = idSeq++;
-  return {
-    id: n.toString(16).padStart(16, "0"),
-    repo,
-    slug: `boom-${n}`,
-    errorCode: null,
-    errorMessage: `boom ${n}`,
-    messagePattern: `boom ${n}`,
-    errorType: "exception",
-    errorClass: null,
-    httpStatus: null,
-    severity: "error",
-    filePath: "src/a.js",
-    lineNumber: 1,
-    sourceCode: null,
-    sourceCodeStart: null,
-    sourceCodeEnd: null,
-    githubUrl: "https://github.com/a/b/blob/x/src/a.js#L1",
-    documentation: "d",
-    triggerScenarios: "t",
-    commonSituations: "",
-    solutions: ["s"],
-    exampleFix: null,
-    handlingStrategy: null,
-    validationCode: null,
-    typeGuard: null,
-    tryCatchPattern: null,
-    preventionTips: [],
-    tags: [],
-    backgroundTag: family,
-    backgroundTagRaw: proposal,
-    analyzedSha: "a".repeat(40),
-    analyzedAt: "2026-08-11T00:00:00Z",
-    schemaVersion: 2,
-  };
-}
 
 type TestDb = ReturnType<typeof openDb>["db"];
 
-/** `count` records whose proposal is `proposal` and which currently publish `family`. */
-function seed(db: TestDb, repo: string, proposal: string | null, family: string | null, count: number) {
-  for (let i = 0; i < count; i++) db.insert(errors).values(row(repo, proposal, family)).run();
+function withDb(name: string, fn: (db: TestDb) => void) {
+  return () => {
+    const { db, raw } = openDb(tmpDbPath(name));
+    try {
+      fn(db);
+    } finally {
+      raw.close();
+    }
+  };
 }
 
-function decide(db: TestDb, proposal: string, canonical: string | null) {
-  db.insert(tagDecisions)
-    .values({
-      proposal,
-      canonical,
-      method: "model",
-      confidence: 0.9,
+/**
+ * Seed `count` pages proposed as `proposal`, currently publishing `current`,
+ * each decided by the model as `choice` at `confidence`.
+ */
+function pages(
+  db: TestDb,
+  opts: { count: number; proposal?: string | null; current?: string | null; choice?: string | null; confidence?: number; repo?: string; decide?: boolean }
+): void {
+  const ids: string[] = [];
+  for (let i = 0; i < opts.count; i++) {
+    const row = errorRow({
+      repo: opts.repo ?? `org/r${i % 3}`,
+      backgroundTagRaw: opts.proposal ?? null,
+      backgroundTag: opts.current ?? null,
+    });
+    db.insert(errors).values(row).run();
+    ids.push(row.id);
+  }
+  if (opts.decide === false) return;
+  storePageDecisions(
+    db,
+    taxonomyVersion(),
+    ids.map((errorId) => ({
+      errorId,
+      choice: opts.choice ?? null,
+      method: "model" as const,
+      confidence: opts.confidence ?? 0.9,
       runnerUp: null,
       model: "jev-1.13.0",
-      decidedAt: "2026-09-22T00:00:00Z",
-    })
-    .run();
+    }))
+  );
 }
 
 function article(db: TestDb, slug: string, clusterKey: string) {
@@ -85,218 +73,124 @@ function article(db: TestDb, slug: string, clusterKey: string) {
     .run();
 }
 
-/**
- * A corpus mid-migration: 40 records already published under the declared
- * family, 10 still carrying proposals that name it differently, 9 under a
- * proposal nothing covers, and 5 with no family at all.
- */
-function fixture() {
-  const { db, raw } = openDb(tmpDbPath());
-  seed(db, "a/one", "missing-env-var", "missing-env-var", 30);
-  seed(db, "b/two", "missing-env-var", "missing-env-var", 10);
-  seed(db, "a/one", "environment-variable-missing", null, 6);
-  seed(db, "c/three", "missing-environment-variables", null, 4);
-  seed(db, "a/one", "bgp-session-flapping", null, 9);
-  seed(db, "a/one", null, null, 5);
-  decide(db, "missing-env-var", "missing-env-var");
-  decide(db, "environment-variable-missing", "missing-env-var");
-  decide(db, "missing-environment-variables", "missing-env-var");
-  decide(db, "bgp-session-flapping", null);
-  article(db, "missing-env-var", "tag:missing-env-var");
-  return { db, raw };
-}
-
 describe("tagVocabulary", () => {
-  it("counts the families the records actually publish, largest first", () => {
-    const { db, raw } = fixture();
-    try {
-      const v = tagVocabulary(db);
-      expect(v[0]).toEqual({
-        tag: "missing-env-var",
-        errorCount: 40,
-        repoCount: 2,
-        infoSlug: "missing-env-var",
-      });
-      // A proposal is not a family until a decision puts it in one.
-      expect(v.some((f) => f.tag === "bgp-session-flapping")).toBe(false);
-      expect(v.some((f) => f.tag === null || f.tag === "")).toBe(false);
-    } finally {
-      raw.close();
-    }
-  });
+  it(
+    "counts the families the records publish, largest first, with their article",
+    withDb("vocab", (db) => {
+      pages(db, { count: 5, current: "missing-env-var", decide: false });
+      pages(db, { count: 2, current: "file-not-found", decide: false });
+      article(db, "missing-env-var", "tag:missing-env-var");
+      expect(tagVocabulary(db)[0]).toEqual({ tag: "missing-env-var", errorCount: 5, repoCount: 3, infoSlug: "missing-env-var" });
+    })
+  );
 
-  it("offers the whole declared taxonomy to the prompt, not the corpus's habits", () => {
-    // Suggesting a name is what makes it fold for free, so every declared
-    // family is worth suggesting — including ones the corpus has never used.
-    const families = promptFamilies();
-    expect(families).toEqual(CANONICAL_FAMILIES.map((f) => f.tag));
-    expect(families).toContain("missing-env-var");
-    expect(families).not.toContain("bgp-session-flapping");
+  it("offers the whole declared taxonomy to the prompt", () => {
+    expect(promptFamilies()).toEqual(CANONICAL_FAMILIES.map((f) => f.tag));
   });
 });
 
 describe("tag backfill", () => {
-  it("plans from the decisions without touching the database", () => {
-    const { db, raw } = fixture();
-    try {
+  it(
+    "plans page transitions from the decisions without writing anything",
+    withDb("plan", (db) => {
+      pages(db, { count: 6, proposal: "environment-variable-missing", current: "environment-variable-missing", choice: "missing-env-var" });
+      pages(db, { count: 4, proposal: "missing-env-var", current: "missing-env-var", choice: "missing-env-var" });
       const plan = planTagBackfill(db);
-      expect(plan.merges.map((m) => [m.from, m.to])).toEqual([
-        ["environment-variable-missing", "missing-env-var"],
-        ["missing-environment-variables", "missing-env-var"],
-      ]);
-      expect(plan.recordsAffected).toBe(10);
-      expect(plan.recordsUnassigned).toBe(0);
-      expect(plan.familiesBefore).toBe(1);
-      expect(plan.familiesAfter).toBe(1);
-      expect(tagVocabulary(db)[0]!.errorCount).toBe(40);
-    } finally {
-      raw.close();
-    }
-  });
+      expect(plan.transitions).toEqual([{ from: "environment-variable-missing", to: "missing-env-var", pages: 6 }]);
+      expect(plan).toMatchObject({ recordsAffected: 6, recordsUnassigned: 0, familiesBefore: 2, familiesAfter: 1, undecided: 0 });
+      expect(tagVocabulary(db)).toHaveLength(2);
+    })
+  );
 
-  it("applying it moves the records onto the declared family", () => {
-    const { db, raw } = fixture();
-    try {
-      const res = applyTagBackfill(db, planTagBackfill(db));
-      expect(res.recordsRewritten).toBe(10);
-      const v = tagVocabulary(db);
-      expect(v.map((f) => f.tag)).toEqual(["missing-env-var"]);
-      expect(v[0]!.errorCount).toBe(50);
-      expect(v[0]!.repoCount).toBe(3);
-    } finally {
-      raw.close();
-    }
-  });
+  it(
+    "applies the plan and is idempotent",
+    withDb("apply", (db) => {
+      pages(db, { count: 6, proposal: "environment-variable-missing", current: "environment-variable-missing", choice: "missing-env-var" });
+      expect(applyTagBackfill(db, planTagBackfill(db)).recordsRewritten).toBe(6);
+      expect(tagVocabulary(db).map((f) => [f.tag, f.errorCount])).toEqual([["missing-env-var", 6]]);
+      const again = planTagBackfill(db);
+      expect(again.recordsAffected).toBe(0);
+      expect(applyTagBackfill(db, again).recordsRewritten).toBe(0);
+    })
+  );
 
-  it("takes a family away from records the taxonomy has no home for", () => {
-    // The published families are exactly the declared ones. A record whose
-    // proposal fits nothing carries no family rather than inventing one, and
-    // the plan says how many records that costs before anything is written.
-    const { db, raw } = openDb(tmpDbPath());
-    try {
-      seed(db, "a/one", "bgp-session-flapping", "bgp-session-flapping", 9);
-      decide(db, "bgp-session-flapping", null);
-
+  it(
+    "takes the family away from pages the model could not place, and says how many",
+    withDb("unassign", (db) => {
+      pages(db, { count: 3, current: "bgp-session-flapping", choice: "connection-reset", confidence: 0.3 });
       const plan = planTagBackfill(db);
-      expect(plan.recordsUnassigned).toBe(9);
-      expect(plan.merges).toEqual([
-        { from: "bgp-session-flapping", current: "bgp-session-flapping", to: null, errorCount: 9 },
-      ]);
+      expect(plan.recordsUnassigned).toBe(3);
       applyTagBackfill(db, plan);
       expect(tagVocabulary(db)).toEqual([]);
-    } finally {
-      raw.close();
-    }
-  });
+    })
+  );
 
-  it("says nothing about proposals nobody has ruled on", () => {
-    const { db, raw } = openDb(tmpDbPath());
-    try {
-      seed(db, "a/one", "bgp-session-flapping", "bgp-session-flapping", 9);
+  it(
+    "re-reads the decisions at another gate for free",
+    withDb("gate", (db) => {
+      pages(db, { count: 3, current: null, choice: "connection-reset", confidence: 0.5 });
+      expect(planTagBackfill(db, 0.55).recordsAffected).toBe(0);
+      expect(planTagBackfill(db, 0.45).transitions).toEqual([{ from: null, to: "connection-reset", pages: 3 }]);
+    })
+  );
 
+  it(
+    "leaves undecided pages as they are and counts them",
+    withDb("undecided", (db) => {
+      pages(db, { count: 4, current: "bgp-session-flapping", decide: false });
       const plan = planTagBackfill(db);
-      expect(plan.merges).toEqual([]);
-      expect(plan.undecidedProposals).toBe(1);
-      expect(plan.undecidedRecords).toBe(9);
-      // Undecided records keep what they carry — the backfill has no opinion,
-      // and guessing one is the behaviour the taxonomy replaced.
-      expect(applyTagBackfill(db, plan).recordsRewritten).toBe(0);
-      expect(tagVocabulary(db)[0]!.tag).toBe("bgp-session-flapping");
-    } finally {
-      raw.close();
-    }
-  });
+      expect(plan.undecided).toBe(4);
+      expect(plan.recordsAffected).toBe(0);
+    })
+  );
 
-  it("carries an article onto the family its records moved to", () => {
-    const { db, raw } = openDb(tmpDbPath());
-    try {
-      seed(db, "a/one", "missing-env-var", "missing-env-var", 30);
-      seed(db, "a/one", "environment-variable-missing", null, 6);
-      decide(db, "environment-variable-missing", "missing-env-var");
-      article(db, "environment-variable-missing", "tag:environment-variable-missing");
-
+  it(
+    "moves an article to the family most of its pages land in",
+    withDb("article-move", (db) => {
+      pages(db, { count: 7, proposal: "env-var-unset", current: "env-var-unset", choice: "missing-env-var" });
+      pages(db, { count: 3, proposal: "env-var-unset", current: "env-var-unset", choice: "missing-required-config" });
+      article(db, "env-var-unset", "tag:env-var-unset");
       const plan = planTagBackfill(db);
       expect(plan.infoPageMoves).toEqual([
-        {
-          slug: "environment-variable-missing",
-          from: "tag:environment-variable-missing",
-          to: "tag:missing-env-var",
-        },
+        { slug: "env-var-unset", from: "tag:env-var-unset", to: "tag:missing-env-var", share: 0.7 },
       ]);
-      const res = applyTagBackfill(db, plan);
-      expect(res.pagesMoved).toBe(1);
-      expect(res.conflicts).toEqual([]);
-      expect(tagVocabulary(db)[0]!.infoSlug).toBe("environment-variable-missing");
-    } finally {
-      raw.close();
-    }
-  });
+      expect(applyTagBackfill(db, plan).pagesMoved).toBe(1);
+    })
+  );
 
-  it("leaves both articles alone when two now describe one family", () => {
-    const { db, raw } = fixture(); // already carries an article on missing-env-var
-    try {
-      article(db, "environment-variable-missing", "tag:environment-variable-missing");
-
-      const res = applyTagBackfill(db, planTagBackfill(db));
-      expect(res.pagesMoved).toBe(0);
-      expect(res.conflicts.map((c) => [c.slug, c.conflictsWith])).toEqual([
-        ["environment-variable-missing", "missing-env-var"],
-      ]);
-      // Nothing was deleted: which article survives is an editorial call.
-      expect(db.select().from(infoPages).all()).toHaveLength(2);
-    } finally {
-      raw.close();
-    }
-  });
-
-  it("repairs an article stranded by an earlier fold", () => {
-    const { db, raw } = openDb(tmpDbPath());
-    try {
-      // The records already moved in a previous pass; the article did not, and
-      // its family has no records left to put it back in the vocabulary. The
-      // decision outlives the records, which is what makes the repair possible.
-      seed(db, "a/one", "missing-env-var", "missing-env-var", 30);
-      decide(db, "environment-variable-missing", "missing-env-var");
-      article(db, "environment-variable-missing", "tag:environment-variable-missing");
-
-      const plan = planTagBackfill(db);
-      expect(plan.merges).toEqual([]);
-      expect(plan.infoPageMoves).toHaveLength(1);
-      const res = applyTagBackfill(db, plan);
-      expect(res.recordsRewritten).toBe(0);
-      expect(res.pagesMoved).toBe(1);
-      expect(tagVocabulary(db)[0]!.infoSlug).toBe("environment-variable-missing");
-    } finally {
-      raw.close();
-    }
-  });
-
-  it("leaves an article alone when its family fits nothing in the taxonomy", () => {
-    // Clearing the key would hide the article from the collector's coverage
-    // check, which would then write a second article on the same cluster.
-    const { db, raw } = openDb(tmpDbPath());
-    try {
-      seed(db, "a/one", "bgp-session-flapping", null, 9);
-      decide(db, "bgp-session-flapping", null);
-      article(db, "bgp-session-flapping", "tag:bgp-session-flapping");
-
+  it(
+    "holds an article whose pages split, rather than filing most of them wrong",
+    withDb("article-split", (db) => {
+      pages(db, { count: 5, proposal: "upstream-api-error", choice: "http-error-response" });
+      pages(db, { count: 5, proposal: "upstream-api-error", choice: "unexpected-response-shape" });
+      article(db, "upstream-api-error", "tag:upstream-api-error");
       const plan = planTagBackfill(db);
       expect(plan.infoPageMoves).toEqual([]);
-    } finally {
-      raw.close();
-    }
-  });
+      expect(plan.infoPageHolds[0]).toMatchObject({ slug: "upstream-api-error", reason: expect.stringContaining("split") });
+    })
+  );
 
-  it("is idempotent — a second pass finds nothing to do", () => {
-    const { db, raw } = fixture();
-    try {
-      applyTagBackfill(db, planTagBackfill(db));
-      const second = planTagBackfill(db);
-      expect(second.merges).toEqual([]);
-      expect(second.recordsAffected).toBe(0);
-      expect(applyTagBackfill(db, second).recordsRewritten).toBe(0);
-    } finally {
-      raw.close();
-    }
-  });
+  it(
+    "reports two articles on one family instead of choosing between them",
+    withDb("article-conflict", (db) => {
+      pages(db, { count: 6, proposal: "env-var-unset", choice: "missing-env-var" });
+      article(db, "env-var-unset", "tag:env-var-unset");
+      article(db, "missing-env-var", "tag:missing-env-var");
+      const res = applyTagBackfill(db, planTagBackfill(db));
+      expect(res.pagesMoved).toBe(0);
+      expect(res.conflicts.map((c) => [c.slug, c.conflictsWith])).toEqual([["env-var-unset", "missing-env-var"]]);
+      expect(db.select().from(infoPages).all()).toHaveLength(2);
+    })
+  );
+
+  it(
+    "leaves an article on a declared family where it is",
+    withDb("article-declared", (db) => {
+      pages(db, { count: 6, proposal: "missing-env-var", choice: "missing-required-config" });
+      article(db, "missing-env-var", "tag:missing-env-var");
+      const plan = planTagBackfill(db);
+      expect(plan.infoPageMoves).toEqual([]);
+      expect(plan.infoPageHolds).toEqual([]);
+    })
+  );
 });

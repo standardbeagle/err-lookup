@@ -110,8 +110,8 @@ export const errors = sqliteTable(
     index("idx_errors_repo").on(table.repo),
     index("idx_errors_code").on(table.errorCode),
     index("idx_errors_background_tag").on(table.backgroundTag),
-    // The classifier groups proposals and the apply step rewrites by proposal;
-    // both scan this column over the whole corpus.
+    // Candidate cells and the unplaced-page report group the corpus by
+    // proposal; both scan this column over every record.
     index("idx_errors_background_tag_raw").on(table.backgroundTagRaw),
   ]
 );
@@ -233,28 +233,30 @@ export const publishedRepos = sqliteTable("published_repos", {
 });
 
 /**
- * One decision per distinct proposed family name: where it lands in the
- * canonical taxonomy, or that it lands nowhere.
+ * One family decision per page, made against one version of the taxonomy.
  *
- * Keyed by the proposal rather than by the record, because proposals repeat —
- * 496,100 records carry 56,960 distinct names — so deciding per proposal is
- * the difference between half a million classifications and fifty thousand,
- * and it means the same name can never be resolved two ways in one corpus.
+ * Pages are decided one by one, on their own content: a proposed name can
+ * cover unrelated errors, and a third of the corpus has none, so deciding per
+ * name both misfiles and misses pages.
  *
- * A row with `canonical` null is a candidate: the classifier read the errors
- * and said no declared family describes them. Those are the queue that
- * `errlookup tags candidates` reports, and the only way the taxonomy grows.
+ * The row keeps the classifier's top choice and its confidence rather than a
+ * verdict. Whether that choice is published is decided when a backfill is
+ * planned, against the confidence gate of the day, so re-tuning the gate
+ * re-reads this table instead of paying for the classifications again.
+ *
+ * `taxonomy_version` is what makes a changed taxonomy re-decide exactly the
+ * pages it affects: a decision made against another version is not a
+ * decision.
  */
-export const tagDecisions = sqliteTable(
-  "tag_decisions",
+export const pageTagDecisions = sqliteTable(
+  "page_tag_decisions",
   {
-    /** Normalized proposal, exactly as `background_tag_raw` stores it. */
-    proposal: text("proposal").primaryKey(),
-    /** Canonical family, or null when nothing in the taxonomy fits. */
-    canonical: text("canonical"),
-    /** rule = folded by spelling/alias; model = classified; manual = decided by hand. */
-    method: text("method", { enum: ["rule", "model", "manual"] }).notNull(),
-    /** Classifier confidence, null for rule and manual decisions. */
+    errorId: text("error_id").primaryKey(),
+    /** The chosen family, or null when the classifier said none fits. */
+    choice: text("choice"),
+    /** rule-content / rule-name = settled without a model; model = classified; manual = by hand. */
+    method: text("method", { enum: ["rule-content", "rule-name", "model", "manual"] }).notNull(),
+    /** Classifier confidence; null for rule and manual decisions, which are not probabilistic. */
     confidence: real("confidence"),
     /**
      * The option that came second. A gate set too low shows up here as a
@@ -264,9 +266,10 @@ export const tagDecisions = sqliteTable(
     runnerUp: text("runner_up"),
     /** Versioned model id that answered, so a recalibration can find its decisions. */
     model: text("model"),
+    taxonomyVersion: text("taxonomy_version").notNull(),
     decidedAt: text("decided_at").notNull(),
   },
-  (table) => [index("idx_tag_decisions_canonical").on(table.canonical)]
+  (table) => [index("idx_page_tag_decisions_version").on(table.taxonomyVersion)]
 );
 
 export type RepositoryRow = typeof repositories.$inferSelect;
@@ -279,5 +282,5 @@ export type QueueRow = typeof queue.$inferSelect;
 export type NewQueueRow = typeof queue.$inferInsert;
 export type InfoPageRow = typeof infoPages.$inferSelect;
 export type NewInfoPageRow = typeof infoPages.$inferInsert;
-export type TagDecisionRow = typeof tagDecisions.$inferSelect;
-export type NewTagDecisionRow = typeof tagDecisions.$inferInsert;
+export type PageTagDecisionRow = typeof pageTagDecisions.$inferSelect;
+export type NewPageTagDecisionRow = typeof pageTagDecisions.$inferInsert;

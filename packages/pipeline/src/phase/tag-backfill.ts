@@ -1,150 +1,169 @@
 import { sql } from "drizzle-orm";
+import { CANONICAL_TAGS } from "@errlookup/schema";
 import type { Db } from "../db/client.js";
+import { CONFIDENCE_THRESHOLD, publishedFamily, taxonomyVersion, type StoredDecision } from "./tag-classify.js";
 
 /**
- * Bring the corpus into line with the decisions in `tag_decisions`.
+ * Bring the corpus into line with the page decisions.
  *
- * The classifier decides where each proposed name belongs; this is the pass
- * that makes the stored records say so. Keeping the two apart is what makes
- * the expensive half re-runnable: a decision is written once per distinct
- * proposal and never re-derived, so re-planning is pure SQL over a table of
- * roughly fifty thousand rows, and the plan can be read before anything is
- * rewritten.
+ * The classifier decides; this is the pass that makes the stored records and
+ * the articles say so. Keeping the two apart is what makes the expensive half
+ * re-runnable and the cheap half re-tunable: a plan is pure SQL over the
+ * decision table, evaluated against whatever gate is passed, and it can be
+ * read in full before anything is rewritten.
  *
- * It is idempotent — a record already carrying its decided family produces no
- * merge — and it is the only writer of `errors.background_tag`.
+ * It is idempotent, and it is the only writer of `errors.background_tag`
+ * besides the write path's carry-over of decisions already made.
  */
 
-export interface TagMerge {
-  /** The proposal as the enrichment model wrote it. */
-  from: string;
-  /** Family the record carries today; null when it was already unassigned. */
-  current: string | null;
-  /** Family the decision puts it in; null when nothing in the taxonomy fits. */
+/** A family change shared by a group of pages. */
+export interface FamilyTransition {
+  from: string | null;
   to: string | null;
-  errorCount: number;
+  pages: number;
 }
 
-/** An article whose cluster key names a proposal that is being folded away. */
+/** An article whose family is not a declared one, and where its pages went. */
 export interface InfoPageMove {
   slug: string;
   from: string;
   to: string;
+  /** Share of the article's pages that land in `to`. */
+  share: number;
   /** Set when another article already covers the destination family. */
   conflictsWith?: string;
 }
 
-export interface BackfillPlan {
-  merges: TagMerge[];
-  /** Records that would change family. */
-  recordsAffected: number;
-  /** Records that would lose their family because no declared one fits. */
-  recordsUnassigned: number;
-  /** Distinct families carried by the records today, and after the plan runs. */
-  familiesBefore: number;
-  familiesAfter: number;
-  /** Proposals with no decision yet — records the plan cannot speak for. */
-  undecidedProposals: number;
-  undecidedRecords: number;
-  /**
-   * Articles that must follow their family. Folding the records alone strands
-   * them: the article keeps rendering while its cluster key names a family
-   * with no records left, no error page links to it any more, and
-   * findNewClusters stops recognising the destination as covered — which earns
-   * it a second, duplicate article on the next collector run.
-   */
-  infoPageMoves: InfoPageMove[];
+/** An article left where it is, and why. */
+export interface InfoPageHold {
+  slug: string;
+  family: string;
+  reason: string;
 }
 
-interface GroupRow {
-  proposal: string;
-  current: string | null;
-  decided: string | null;
-  hasDecision: number;
-  n: number;
+export interface BackfillPlan {
+  taxonomyVersion: string;
+  gate: number;
+  /** Pages whose published family would change, grouped by (from, to). */
+  transitions: FamilyTransition[];
+  recordsAffected: number;
+  /** Pages that would publish no family where they published one before. */
+  recordsUnassigned: number;
+  familiesBefore: number;
+  familiesAfter: number;
+  /** Pages with no decision at this taxonomy version — the plan cannot speak for them. */
+  undecided: number;
+  infoPageMoves: InfoPageMove[];
+  infoPageHolds: InfoPageHold[];
 }
 
 /**
- * What a backfill would do, read straight off the decisions.
+ * An article follows its family when a clear majority of its pages land in
+ * one place. Below that the article straddles several families, and moving
+ * it would file most of its readers' errors under the wrong page.
  */
-export function planTagBackfill(db: Db): BackfillPlan {
-  const rows = db.all<GroupRow>(sql`
-    SELECT e.background_tag_raw AS proposal,
-           e.background_tag AS current,
-           d.canonical AS decided,
-           (d.proposal IS NOT NULL) AS hasDecision,
-           count(*) AS n
+export const ARTICLE_MAJORITY = 0.5;
+
+interface PageRow {
+  current: string | null;
+  proposal: string | null;
+  choice: string | null;
+  method: StoredDecision["method"] | null;
+  confidence: number | null;
+}
+
+export function planTagBackfill(db: Db, gate = CONFIDENCE_THRESHOLD): BackfillPlan {
+  const version = taxonomyVersion();
+  const rows = db.all<PageRow>(sql`
+    SELECT e.background_tag AS current, e.background_tag_raw AS proposal,
+           d.choice, d.method, d.confidence
     FROM errors e
-    LEFT JOIN tag_decisions d ON d.proposal = e.background_tag_raw
-    WHERE e.background_tag_raw IS NOT NULL AND e.background_tag_raw != ''
-    GROUP BY e.background_tag_raw, e.background_tag
-    ORDER BY n DESC
+    LEFT JOIN page_tag_decisions d ON d.error_id = e.id AND d.taxonomy_version = ${version}
   `);
 
-  const merges: TagMerge[] = [];
+  const transitions = new Map<string, FamilyTransition>();
   const before = new Set<string>();
   const after = new Set<string>();
-  let recordsAffected = 0;
+  let undecided = 0;
   let recordsUnassigned = 0;
-  let undecidedRecords = 0;
-  const undecided = new Set<string>();
+  // proposal → where its pages publish now, for moving articles keyed to it.
+  const landing = new Map<string, Map<string | null, number>>();
 
-  for (const row of rows) {
-    if (row.current) before.add(row.current);
-    if (!row.hasDecision) {
-      // No decision means no opinion. The records keep whatever they carry.
-      undecided.add(row.proposal);
-      undecidedRecords += row.n;
-      if (row.current) after.add(row.current);
+  for (const r of rows) {
+    if (r.current) before.add(r.current);
+    if (!r.method) {
+      undecided++;
+      if (r.current) after.add(r.current);
       continue;
     }
-    if (row.decided) after.add(row.decided);
-    if (row.decided === row.current) continue;
-    merges.push({ from: row.proposal, current: row.current, to: row.decided, errorCount: row.n });
-    recordsAffected += row.n;
-    if (row.decided === null) recordsUnassigned += row.n;
+    const to = publishedFamily({ choice: r.choice, method: r.method, confidence: r.confidence }, gate);
+    if (to) after.add(to);
+    if (r.proposal) {
+      const m = landing.get(r.proposal) ?? new Map<string | null, number>();
+      m.set(to, (m.get(to) ?? 0) + 1);
+      landing.set(r.proposal, m);
+    }
+    if (to === r.current) continue;
+    const key = `${r.current ?? ""}\u0000${to ?? ""}`;
+    const t = transitions.get(key) ?? { from: r.current, to, pages: 0 };
+    t.pages++;
+    transitions.set(key, t);
+    if (to === null) recordsUnassigned++;
   }
 
-  merges.sort((a, b) => b.errorCount - a.errorCount || a.from.localeCompare(b.from));
-
-  const pages = db.all<{ slug: string; cluster_key: string }>(sql`
-    SELECT slug, cluster_key FROM info_pages WHERE cluster_key LIKE 'tag:%'
-  `);
-  const decisions = new Map(
-    db
-      .all<{ proposal: string; canonical: string | null }>(sql`SELECT proposal, canonical FROM tag_decisions`)
-      .map((d) => [d.proposal, d.canonical])
-  );
-  const coveredBy = new Map(pages.map((p) => [p.cluster_key, p.slug]));
-  const infoPageMoves: InfoPageMove[] = [];
-  for (const p of pages) {
-    const family = p.cluster_key.slice(4);
-    if (!decisions.has(family)) continue;
-    const to = decisions.get(family);
-    // An article about a family that fits nothing in the taxonomy keeps its
-    // key. Retiring it is an editorial call, and an unkeyed article would be
-    // invisible to the collector's coverage check.
-    if (!to || to === family) continue;
-    const destination = `tag:${to}`;
-    const holder = coveredBy.get(destination);
-    infoPageMoves.push({
-      slug: p.slug,
-      from: p.cluster_key,
-      to: destination,
-      ...(holder && holder !== p.slug ? { conflictsWith: holder } : {}),
-    });
-  }
-
+  const sorted = [...transitions.values()].sort((a, b) => b.pages - a.pages);
+  const { moves, holds } = planArticles(db, landing);
   return {
-    merges,
-    recordsAffected,
+    taxonomyVersion: version,
+    gate,
+    transitions: sorted,
+    recordsAffected: sorted.reduce((s, t) => s + t.pages, 0),
     recordsUnassigned,
     familiesBefore: before.size,
     familiesAfter: after.size,
-    undecidedProposals: undecided.size,
-    undecidedRecords,
-    infoPageMoves,
+    undecided,
+    infoPageMoves: moves,
+    infoPageHolds: holds,
   };
+}
+
+function planArticles(
+  db: Db,
+  landing: Map<string, Map<string | null, number>>
+): { moves: InfoPageMove[]; holds: InfoPageHold[] } {
+  const pages = db.all<{ slug: string; cluster_key: string }>(sql`
+    SELECT slug, cluster_key FROM info_pages WHERE cluster_key LIKE 'tag:%' ORDER BY slug
+  `);
+  const coveredBy = new Map(pages.map((p) => [p.cluster_key, p.slug]));
+  const moves: InfoPageMove[] = [];
+  const holds: InfoPageHold[] = [];
+  for (const p of pages) {
+    const family = p.cluster_key.slice(4);
+    // An article on a declared family is already where it belongs.
+    if (CANONICAL_TAGS.has(family)) continue;
+    const dist = landing.get(family);
+    const total = dist ? [...dist.values()].reduce((s, n) => s + n, 0) : 0;
+    const top = dist ? [...dist].filter(([f]) => f !== null).sort((a, b) => b[1] - a[1])[0] : undefined;
+    if (!top || total === 0) {
+      holds.push({ slug: p.slug, family, reason: "no decided pages carry its name" });
+      continue;
+    }
+    const share = top[1] / total;
+    if (share <= ARTICLE_MAJORITY) {
+      holds.push({ slug: p.slug, family, reason: `pages split — the largest share, ${top[0]}, is ${(share * 100).toFixed(0)}%` });
+      continue;
+    }
+    const destination = `tag:${top[0]}`;
+    const holder = coveredBy.get(destination);
+    moves.push({
+      slug: p.slug,
+      from: p.cluster_key,
+      to: destination,
+      share,
+      ...(holder && holder !== p.slug ? { conflictsWith: holder } : {}),
+    });
+  }
+  return { moves, holds };
 }
 
 export interface BackfillResult {
@@ -155,7 +174,10 @@ export interface BackfillResult {
 }
 
 /**
- * Apply a plan. Returns the number of rows rewritten.
+ * Apply the decisions at the plan's gate. Records are rewritten one id-prefix
+ * slice at a time, each its own transaction, so the corpus is never locked
+ * for one long write and a stop part-way leaves every slice either done or
+ * untouched.
  *
  * `content_hash` is deliberately NOT recomputed, even though backgroundTag
  * feeds it. The error's own explanation, solutions and source are untouched;
@@ -166,9 +188,23 @@ export interface BackfillResult {
  */
 export function applyTagBackfill(db: Db, plan: BackfillPlan): BackfillResult {
   let recordsRewritten = 0;
-  for (const m of plan.merges) {
-    const res = db.run(
-      sql`UPDATE errors SET background_tag = ${m.to} WHERE background_tag_raw = ${m.from}`
+  for (const prefix of "0123456789abcdef") {
+    const res = db.transaction((tx) =>
+      tx.run(sql`
+        UPDATE errors SET background_tag = pub.family
+        FROM (
+          SELECT d.error_id,
+                 CASE
+                   WHEN d.choice IS NULL THEN NULL
+                   WHEN d.method != 'model' THEN d.choice
+                   WHEN coalesce(d.confidence, 0) >= ${plan.gate} THEN d.choice
+                   ELSE NULL
+                 END AS family
+          FROM page_tag_decisions d
+          WHERE d.taxonomy_version = ${plan.taxonomyVersion} AND d.error_id LIKE ${`${prefix}%`}
+        ) AS pub
+        WHERE errors.id = pub.error_id AND errors.background_tag IS NOT pub.family
+      `)
     );
     recordsRewritten += Number(res.changes ?? 0);
   }

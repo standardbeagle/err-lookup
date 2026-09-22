@@ -4,7 +4,7 @@ import {
   type ErrorEntry,
   CURRENT_SCHEMA_VERSION,
 } from "@errlookup/schema";
-import { ruleFold } from "./tag-classify.js";
+import { ruleDecision } from "./tag-classify.js";
 import type { DiscoveredErrorJson, EnrichedErrorJson, DefenseStrategyJson } from "./prompts.js";
 import {
   computeErrorId,
@@ -39,14 +39,13 @@ export interface AssembleInput {
    */
   existingSlugOwners?: Map<string, string>;
   /**
-   * Decisions already made about proposed family names: proposal → canonical
-   * family, or → null where the classifier found no family that fits. A
-   * proposal the map does not answer for is stored as a proposal and left
-   * untagged until `errlookup tags classify` rules on it. The write path never
-   * publishes a family the taxonomy has not declared, which is what bounds how
-   * many family pages can exist.
+   * Published families of pages that already have a decision, by record id.
+   * A re-analysed page keeps the family it was given instead of losing it
+   * until the next classify run. A page with no decision gets a family only
+   * from a precise rule; everything else waits for `errlookup tags classify`,
+   * because the write path never invents a family of its own.
    */
-  decisions?: Map<string, string | null>;
+  pageFamilies?: Map<string, string | null>;
 }
 
 export interface AssembleOutput {
@@ -59,20 +58,28 @@ export interface AssembleOutput {
  * validated ErrorEntry records (§3.1). GitHub permalinks pinned to the analyzed
  * SHA (never branch-relative — fixes v1 bug). messagePattern derived per §4.3.
  */
-const NO_DECISIONS = new Map<string, string | null>();
+const NO_PAGE_FAMILIES = new Map<string, string | null>();
 
-/** The proposal as stored, and the family it is published under (if any). */
+/** The proposal as stored, and the family the page is published under (if any). */
 function resolveFamily(
+  id: string,
   raw: string | null | undefined,
-  decisions: Map<string, string | null>
+  signals: { errorMessage: string; errorClass: string | null; errorCode: string | null; httpStatus: number | null },
+  pageFamilies: Map<string, string | null>
 ): { proposal: string | null; family: string | null } {
   const proposal = normalizeTagShape(raw);
-  if (!proposal) return { proposal: null, family: null };
-  // The spelling fold is exact and free, so it runs before the decision cache
-  // and covers every proposal that is a listed family under another spelling.
-  const folded = ruleFold(proposal);
-  if (folded) return { proposal, family: folded };
-  return { proposal, family: decisions.get(proposal) ?? null };
+  if (pageFamilies.has(id)) return { proposal, family: pageFamilies.get(id) ?? null };
+  const rule = ruleDecision({
+    id,
+    repo: "",
+    errorType: "",
+    documentation: null,
+    triggerScenarios: null,
+    commonSituations: null,
+    proposal,
+    ...signals,
+  });
+  return { proposal, family: rule?.choice ?? null };
 }
 
 export function assemble(input: AssembleInput): AssembleOutput {
@@ -137,7 +144,12 @@ export function assemble(input: AssembleInput): AssembleOutput {
     }
     usedSlugs.add(slug);
 
-    const family = resolveFamily(e?.backgroundTag, input.decisions ?? NO_DECISIONS);
+    const family = resolveFamily(
+      id,
+      e?.backgroundTag,
+      { errorMessage: d.message, errorClass: d.errorClass ?? null, errorCode: code, httpStatus: d.httpStatus ?? null },
+      input.pageFamilies ?? NO_PAGE_FAMILIES
+    );
 
     const record = {
       id,

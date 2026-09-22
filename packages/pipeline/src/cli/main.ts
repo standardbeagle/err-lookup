@@ -16,7 +16,7 @@ import { runReviewOne, parseReviewTarget } from "../phase/review.js";
 import { collectInfoPages } from "../info/collector.js";
 import { tagVocabulary } from "../phase/tag-vocabulary.js";
 import { planTagBackfill, applyTagBackfill } from "../phase/tag-backfill.js";
-import { classifyPending, candidateProposals } from "../phase/tag-classify.js";
+import { classifyPendingPages, unplacedPages } from "../phase/tag-classify.js";
 import { proposeTaxonomy } from "../phase/tag-propose.js";
 import { TypeSafeClient, JEV_MODEL, jevCostUsd } from "../provider/typesafe.js";
 import { CANONICAL_FAMILIES } from "@errlookup/schema";
@@ -188,8 +188,8 @@ async function main(): Promise<void> {
       options: {
         apply: { type: "boolean", default: false },
         limit: { type: "string", default: "40" },
-        "min-errors": { type: "string", default: "1" },
-        "max-proposals": { type: "string" },
+        "max-pages": { type: "string" },
+        gate: { type: "string" },
         out: { type: "string", default: "data/tag-proposal" },
         "cell-min": { type: "string" },
         "max-cells": { type: "string" },
@@ -207,22 +207,21 @@ async function main(): Promise<void> {
         // so it is its own verb: it writes decisions and touches no record.
         const client = new TypeSafeClient();
         const started = Date.now();
-        const res = await classifyPending(db, client, {
-          minErrors: Number.parseInt(String(values["min-errors"]), 10),
-          ...(values["max-proposals"] ? { limit: Number.parseInt(String(values["max-proposals"]), 10) } : {}),
+        let lastReport = 0;
+        const res = await classifyPendingPages(db, client, {
+          ...(values["max-pages"] ? { limit: Number.parseInt(String(values["max-pages"]), 10) } : {}),
           onProgress: (p) => {
-            if (p.decided % 250 === 0 || p.decided === p.pending) {
-              console.log(`  classified ${p.decided}/${p.pending} (${p.proposal} → ${p.canonical ?? "—"})`);
+            if (p.decided - lastReport >= 5000 || p.decided === p.pending) {
+              lastReport = p.decided;
+              console.log(`  decided ${p.decided}/${p.pending} pages`);
             }
           },
         });
         const mins = ((Date.now() - started) / 60000).toFixed(1);
         console.log(
-          `classified: ${res.byRule} by spelling, ${res.byModel} by ${JEV_MODEL}, ${res.unmatched} left as candidates`
+          `classified: ${res.byRule} pages by rule, ${res.byModel} by ${JEV_MODEL} (${res.unplaced} of those below the gate or placed nowhere)`
         );
-        console.log(
-          `${res.recordsDecided} records now have a family; ${res.calls} calls, ${res.inputTokens} input tokens, $${jevCostUsd(res.inputTokens).toFixed(2)}, ${mins} min`
-        );
+        console.log(`${res.calls} calls, ${res.inputTokens} input tokens, $${jevCostUsd(res.inputTokens).toFixed(2)}, ${mins} min`);
         console.log("run `errlookup tags` to see what applying the decisions would do");
         return;
       }
@@ -258,15 +257,14 @@ async function main(): Promise<void> {
       }
 
       if (sub === "candidates") {
-        const rows = candidateProposals(db, limit);
-        console.log(`proposals no declared family covers (${rows.length} shown, largest first):`);
-        for (const c of rows) {
-          const conf = c.confidence === null ? "rule" : c.confidence.toFixed(2);
+        const rows = unplacedPages(db, limit);
+        console.log(`pages that publish no family, by the name their model proposed (${rows.length} groups, largest first):`);
+        for (const g of rows) {
           console.log(
-            `  ${c.errorCount.toString().padStart(6)} records ${c.repoCount.toString().padStart(4)} repos  ${c.proposal}  (confidence ${conf}, nearest ${c.runnerUp ?? "—"})`
+            `  ${g.pages.toString().padStart(6)} pages ${g.repos.toString().padStart(4)} repos  ${g.proposal ?? "(no proposal)"}  (nearest: ${g.nearest ?? "—"})`
           );
         }
-        console.log("promote one by adding it to CANONICAL_FAMILIES, then re-run classify");
+        console.log("promote a name by adding it to tag-taxonomy.json with a rubric, then run classify again");
         return;
       }
 
@@ -277,27 +275,29 @@ async function main(): Promise<void> {
 
       const vocabulary = tagVocabulary(db);
       const covered = vocabulary.filter((f) => f.infoSlug !== null).length;
-      const plan = planTagBackfill(db);
+      const plan = planTagBackfill(db, values.gate ? Number(values.gate) : undefined);
       console.log(
-        `taxonomy: ${CANONICAL_FAMILIES.length} declared families; corpus carries ${plan.familiesBefore} (${covered} with an article) → ${plan.familiesAfter} after applying decisions`
+        `taxonomy ${plan.taxonomyVersion}: ${CANONICAL_FAMILIES.length} declared families; corpus publishes ${plan.familiesBefore} (${covered} with an article) → ${plan.familiesAfter} after applying decisions at gate ${plan.gate}`
       );
       console.log(
-        `records that would change family: ${plan.recordsAffected} (${plan.recordsUnassigned} of them losing a family no taxonomy entry covers)`
+        `pages that would change family: ${plan.recordsAffected} (${plan.recordsUnassigned} of them to no family)`
       );
-      if (plan.undecidedProposals > 0) {
-        console.log(
-          `undecided: ${plan.undecidedProposals} proposals / ${plan.undecidedRecords} records — run \`errlookup tags classify\``
-        );
+      if (plan.undecided > 0) console.log(`undecided: ${plan.undecided} pages — run \`errlookup tags classify\``);
+      for (const t of plan.transitions.slice(0, limit)) {
+        console.log(`  ${t.pages.toString().padStart(6)}  ${t.from ?? "(none)"} → ${t.to ?? "(none)"}`);
       }
-      for (const m of plan.merges.slice(0, limit)) {
-        console.log(`  ${m.errorCount.toString().padStart(6)}  ${m.from} → ${m.to ?? "(no family)"}`);
-      }
-      if (plan.merges.length > limit) console.log(`  … ${plan.merges.length - limit} more`);
+      if (plan.transitions.length > limit) console.log(`  … ${plan.transitions.length - limit} more`);
       if (plan.infoPageMoves.length > 0) {
         console.log(`articles following their family: ${plan.infoPageMoves.length}`);
         for (const m of plan.infoPageMoves) {
-          console.log(`  /info/${m.slug}/  ${m.from} → ${m.to}${m.conflictsWith ? `  (conflict: ${m.conflictsWith} already covers it)` : ""}`);
+          console.log(
+            `  /info/${m.slug}/  ${m.from} → ${m.to} (${(m.share * 100).toFixed(0)}% of its pages)${m.conflictsWith ? `  conflict: /info/${m.conflictsWith}/ already covers it` : ""}`
+          );
         }
+      }
+      if (plan.infoPageHolds.length > 0) {
+        console.log(`articles staying put: ${plan.infoPageHolds.length}`);
+        for (const h of plan.infoPageHolds) console.log(`  /info/${h.slug}/  ${h.family} — ${h.reason}`);
       }
       if (values.apply) {
         const res = applyTagBackfill(db, plan);
@@ -305,7 +305,7 @@ async function main(): Promise<void> {
         for (const c of res.conflicts) {
           console.log(`  unresolved: /info/${c.slug}/ and /info/${c.conflictsWith}/ now describe ${c.to} — retire one by hand`);
         }
-      } else if (plan.merges.length > 0) {
+      } else if (plan.recordsAffected > 0 || plan.infoPageMoves.length > 0) {
         console.log("dry run — pass --apply to rewrite");
       }
     } finally {
@@ -626,10 +626,9 @@ async function main(): Promise<void> {
   console.error("  errlookup reverify <owner/repo>...   # verify pass over published records");
   console.error("  errlookup ping [--provider <name>]    # does the provider answer right now?");
   console.error("  errlookup collect-info [--max-pages 5] [--min-errors 5] [--min-repos 2]");
-  console.error("  errlookup tags [--apply] [--limit 40]   report or apply the background-family decisions");
-  console.error("  errlookup tags classify [--min-errors 1] [--max-proposals N]");
-  console.error("      # map proposed family names onto the taxonomy (needs TYPESAFE_API_KEY)");
-  console.error("  errlookup tags candidates [--limit 40]  # proposals no declared family covers");
+  console.error("  errlookup tags [--apply] [--gate 0.55] [--limit 40]   report or apply the page family decisions");
+  console.error("  errlookup tags classify [--max-pages N]  # decide pending pages (needs TYPESAFE_API_KEY)");
+  console.error("  errlookup tags candidates [--limit 40]  # pages that publish no family, by proposed name");
   console.error("  errlookup tags propose [--out data/tag-proposal] [--cell-min 100] [--max-cells N] [--fresh]");
   console.error("      # model-checked taxonomy proposal from the corpus's own names; writes a file, adopts nothing");
   console.error("  errlookup reset [--failed] [--dry-run] [owner/repo ...]");

@@ -1,113 +1,63 @@
+import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { CANONICAL_FAMILIES, CANONICAL_TAGS, normalizeTag, tagKey } from "@errlookup/schema";
+import { CANONICAL_FAMILIES, CANONICAL_TAGS, normalizeTag, tagKey, type CanonicalFamily } from "@errlookup/schema";
 import type { Db } from "../db/client.js";
-import { tagDecisions } from "../db/schema.js";
-import { TypeSafeClient, type ChoiceQuestion } from "../provider/typesafe.js";
+import { pageTagDecisions } from "../db/schema.js";
+import type { TypeSafeClient } from "../provider/typesafe.js";
+import { mapPool } from "../util/pool.js";
+import { contentFamily } from "./tag-shape.js";
+import {
+  classifyPagesFlat,
+  rowToPage,
+  PAGES_PER_REQUEST,
+  type Page,
+  type PageDecision,
+  type StateField,
+} from "./tag-page.js";
 
 /**
- * Map every proposed background-family name onto the canonical taxonomy.
+ * The production family pass: every page gets a decision against the
+ * current taxonomy, by rule where a rule is precise and by the typed
+ * classifier otherwise.
  *
- * The enrichment model still coins a name — it is reading the errors and has
- * an opinion worth keeping — but the name is a proposal, not a family. This
- * is where a proposal becomes one of the declared families or nothing at all.
+ * Decisions are stored per page with the classifier's top choice and its
+ * confidence (`page_tag_decisions`); what gets published is decided later,
+ * by `publishedFamily`, against the gate below. The pass is resumable — a
+ * page with a decision at the current taxonomy version is never asked about
+ * again — and a changed taxonomy makes every page pending once more.
  *
- * Two mechanisms, in order:
- *
- *   1. The spelling fold from `tags.ts`, free and exact. A proposal whose key
- *      matches a canonical family's key IS that family, whatever the word
- *      order or abbreviation.
- *   2. A typed classification for everything else. The model is given the
- *      whole taxonomy as the option set plus a no-match option, so its answer
- *      is a family name by construction, and the probability it carries is
- *      what decides whether the answer is applied or parked.
- *
- * Decisions are per distinct proposal, never per record: 496,100 records carry
- * 56,960 distinct names, so this is the difference between half a million
- * classifications and fifty thousand, and it makes the mapping consistent by
- * construction — one name cannot resolve two ways in one corpus.
- *
- * The constants below are the reviewable surface of this file. The question
- * text, the no-match option and the confidence gate decide what the corpus
- * looks like; everything else is plumbing.
+ * The constants below are the reviewable surface of this file. They were
+ * set from the ablation in docs/tag-consolidation-2026-09-22.md; re-measure
+ * with scripts/tag-ablation.ts when the taxonomy or the pinned model moves.
  */
 
-/**
- * The option offered when no declared family fits. Without it the model must
- * pick a family for every proposal, and the ones that genuinely name a family
- * the taxonomy lacks — the only signal that the taxonomy should grow — would
- * be buried in a confident-looking wrong answer.
- */
-export const NO_FAMILY = "none-of-these";
+/** Sections of a page the classifier reads. */
+export const CLASSIFY_STATE: readonly StateField[] = ["message", "signals", "documentation"];
 
 /**
- * Minimum confidence to store a family. Below it the proposal is parked as a
- * candidate rather than guessed at: a wrong fold is worse than no fold,
- * because it puts a record under an article that does not describe it and
- * nothing downstream ever questions it again.
- *
- * Calibrated against jev-1.13.0 on the 84 families that already have an
- * article (see docs/tag-consolidation-2026-09-22.md). Re-measure when the
- * pinned model moves.
+ * Minimum confidence to publish a model's choice. Below it the page carries
+ * no family: a wrong family files the page under an article that does not
+ * describe it, and nothing downstream ever questions it again.
  */
 export const CONFIDENCE_THRESHOLD = 0.55;
 
 /**
- * Error messages shown per proposal, each from a different repository.
- *
- * The name alone is often ambiguous, and a proposal can span hundreds of
- * repos, so the sample is the whole basis for the judgment. Raising it from
- * four costs about 4% more tokens — the 112 rubrics dominate every request —
- * and it is the only defence against a family being judged on an unlucky
- * handful of messages.
+ * Whether a proposed name that folds by spelling onto a declared family
+ * settles the page without a model call.
  */
-export const SAMPLES_PER_PROPOSAL = 8;
+export const TRUST_NAME_RULE = false;
 
-/** Concurrent classifications. Jev allows 1,200 requests/minute. */
+/** Requests in flight. Jev allows 1,200 a minute; eight pages ride in each. */
 export const CLASSIFY_CONCURRENCY = 8;
 
-const INSTRUCTIONS =
-  "Software errors from open-source libraries are grouped below. `proposed_family_name` is the name an earlier model coined for the group — a hint, not an answer, and frequently a near-synonym of a listed family. Pick the one family whose criteria describe what actually went wrong in `example_errors`. Judge the fault itself, not the wording of the message or the library it came from. Choose " +
-  NO_FAMILY +
-  " only when the errors describe a distinct kind of fault that no listed family covers.";
+/** Pages read from the database per round of classification. */
+const PAGE_CHUNK = PAGES_PER_REQUEST * CLASSIFY_CONCURRENCY * 8;
 
-const NO_FAMILY_CRITERIA =
-  "No family above describes these errors. They share a real fault that the taxonomy has no name for yet. Do not choose this because several families fit; choose the closest one instead.";
-
-/** How a decision was reached. */
-export type DecisionMethod = "rule" | "model" | "manual";
-
-export interface TagDecision {
-  proposal: string;
-  /** Canonical family, or null when nothing in the taxonomy fits. */
-  canonical: string | null;
-  method: DecisionMethod;
-  confidence: number | null;
-  runnerUp: string | null;
-  model: string | null;
-}
-
-/** A distinct proposal and the evidence for deciding where it belongs. */
-export interface ProposalCluster {
-  proposal: string;
-  errorCount: number;
-  repoCount: number;
-  samples: { message: string; repo: string }[];
-  /** Title and summary of the background article written for this proposal, when one exists. */
-  article?: { slug: string; title: string; summary: string };
-}
+const CANONICAL_BY_KEY: Map<string, string> = new Map(CANONICAL_FAMILIES.map((f) => [tagKey(f.tag), f.tag]));
 
 /**
- * Canonical family per spelling key. Built from the taxonomy rather than from
- * the corpus: the old index took whichever coined name had the most records,
- * which let the biggest accident name the family.
- */
-const CANONICAL_BY_KEY: Map<string, string> = new Map(
-  CANONICAL_FAMILIES.map((f) => [tagKey(f.tag), f.tag])
-);
-
-/**
- * The family a proposal folds onto by spelling alone, or null when the fold
- * lands outside the taxonomy and a judgment is needed.
+ * The family a proposed name folds onto by spelling alone, or null when the
+ * fold lands outside the taxonomy.
  */
 export function ruleFold(proposal: string): string | null {
   const tag = normalizeTag(proposal);
@@ -118,278 +68,219 @@ export function ruleFold(proposal: string): string | null {
   return CANONICAL_BY_KEY.get(key) ?? null;
 }
 
-/** The whole taxonomy as one question, plus the way out of it. */
-export function familyQuestion(): ChoiceQuestion {
-  const criteria: Record<string, string> = {};
-  for (const f of CANONICAL_FAMILIES) criteria[f.tag] = f.criteria;
-  criteria[NO_FAMILY] = NO_FAMILY_CRITERIA;
-  return { type: "choice", instructions: INSTRUCTIONS, criteria };
+/**
+ * Identity of a taxonomy: a hash of its families and rubrics. A rubric edit
+ * changes what the classifier would say, so it changes the version too.
+ */
+export function taxonomyVersion(families: readonly CanonicalFamily[] = CANONICAL_FAMILIES): string {
+  const canonical = families.map((f) => [f.tag, f.criteria]);
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex").slice(0, 12);
 }
 
-/** The evidence the classifier reads. Kept small — it is billed per token. */
-export function clusterState(cluster: ProposalCluster): Record<string, unknown> {
-  const state: Record<string, unknown> = {
-    proposed_family_name: cluster.proposal,
-    example_errors: cluster.samples.map((s) => `${s.repo}: ${s.message}`),
-  };
-  if (cluster.article) {
-    // An article was written about this group by a model that read far more of
-    // it than four messages. Where one exists it is the better evidence.
-    state.existing_article = { title: cluster.article.title, summary: cluster.article.summary };
+/** A stored decision, as the publication rule needs it. */
+export interface StoredDecision {
+  choice: string | null;
+  method: "rule-content" | "rule-name" | "model" | "manual";
+  confidence: number | null;
+}
+
+/** The family a decision publishes: rules and hand decisions as made, model choices above the gate. */
+export function publishedFamily(d: StoredDecision, gate = CONFIDENCE_THRESHOLD): string | null {
+  if (d.choice === null) return null;
+  if (d.method !== "model") return d.choice;
+  return (d.confidence ?? 0) >= gate ? d.choice : null;
+}
+
+/** A rule that settles a page without a model, or null. */
+export function ruleDecision(page: Page): { choice: string; method: "rule-content" | "rule-name" } | null {
+  const byContent = contentFamily(page);
+  if (byContent) return { choice: byContent.family, method: "rule-content" };
+  if (TRUST_NAME_RULE && page.proposal) {
+    const byName = ruleFold(page.proposal);
+    if (byName) return { choice: byName, method: "rule-name" };
   }
-  return state;
-}
-
-/** Classify one proposal. Throws on a transport or API failure — never guesses. */
-export async function classifyCluster(
-  client: TypeSafeClient,
-  cluster: ProposalCluster
-): Promise<TagDecision> {
-  const res = await client.evaluate(clusterState(cluster), { family: familyQuestion() });
-  const answer = res.answers.family;
-  if (!answer) throw new Error(`no answer for proposal "${cluster.proposal}"`);
-
-  // Only a contender counts as a runner-up. Every option carries a
-  // probability, so the second entry of a distribution that put everything on
-  // one family is an arbitrary zero — recording it would make a certain
-  // answer look like a close call in every report that reads this column.
-  const ranked = Object.entries(answer.probabilities).sort((a, b) => b[1] - a[1]);
-  const runnerUp = (ranked[1]?.[1] ?? 0) > 0 ? ranked[1]![0] : null;
-  const accepted =
-    answer.choice !== NO_FAMILY &&
-    answer.confidence >= CONFIDENCE_THRESHOLD &&
-    CANONICAL_TAGS.has(answer.choice);
-
-  return {
-    proposal: cluster.proposal,
-    canonical: accepted ? answer.choice : null,
-    method: "model",
-    confidence: answer.confidence,
-    runnerUp,
-    model: res.model,
-  };
-}
-
-interface ProposalRow {
-  proposal: string;
-  n: number;
-  r: number;
+  return null;
 }
 
 /**
- * Proposals the corpus carries that have no decision yet, largest first.
- *
- * Reads `background_tag_raw`, which holds what the model proposed. Records
- * written before the column existed were seeded from `background_tag` by
- * migration 0012, so the whole corpus is visible here.
+ * Pages with no decision at this taxonomy version, in id order after `after`.
+ * Keyset rather than offset, so reading the next chunk does not re-walk every
+ * page decided so far.
  */
-export function pendingProposals(
-  db: Db,
-  opts: { minErrors?: number; limit?: number } = {}
-): ProposalCluster[] {
-  const minErrors = opts.minErrors ?? 1;
-  const limit = opts.limit ?? 1_000_000;
-  const rows = db.all<ProposalRow>(sql`
-    SELECT e.background_tag_raw AS proposal,
-           count(*) AS n,
-           count(DISTINCT e.repo) AS r
-    FROM errors e
-    LEFT JOIN tag_decisions d ON d.proposal = e.background_tag_raw
-    WHERE e.background_tag_raw IS NOT NULL
-      AND e.background_tag_raw != ''
-      AND d.proposal IS NULL
-    GROUP BY e.background_tag_raw
-    HAVING n >= ${minErrors}
-    ORDER BY n DESC, proposal ASC
-    LIMIT ${limit}
-  `);
-  return rows.map((row) => withEvidence(db, row));
+export function pendingPages(db: Db, version: string, limit: number, after = ""): Page[] {
+  return db
+    .all<Parameters<typeof rowToPage>[0]>(sql`
+      SELECT e.id, e.repo, e.error_message, e.error_class, e.error_code, e.http_status, e.error_type,
+             e.documentation, e.trigger_scenarios, e.common_situations, e.background_tag_raw
+      FROM errors e
+      LEFT JOIN page_tag_decisions d ON d.error_id = e.id AND d.taxonomy_version = ${version}
+      WHERE d.error_id IS NULL AND e.id > ${after}
+      ORDER BY e.id
+      LIMIT ${limit}
+    `)
+    .map(rowToPage);
 }
 
-/** One proposal by name, with its evidence, whether or not it has a decision. */
-export function proposalCluster(db: Db, proposal: string): ProposalCluster | null {
-  const row = db.all<ProposalRow>(sql`
-    SELECT background_tag_raw AS proposal, count(*) AS n, count(DISTINCT repo) AS r
-    FROM errors WHERE background_tag_raw = ${proposal}
-  `)[0];
-  if (!row || row.n === 0) return null;
-  return withEvidence(db, row);
+export function pendingCount(db: Db, version: string): number {
+  return (
+    db.all<{ n: number }>(sql`
+      SELECT count(*) AS n FROM errors e
+      LEFT JOIN page_tag_decisions d ON d.error_id = e.id AND d.taxonomy_version = ${version}
+      WHERE d.error_id IS NULL
+    `)[0]?.n ?? 0
+  );
 }
 
-function withEvidence(db: Db, row: ProposalRow): ProposalCluster {
-  // One repo per sample where possible: four messages from one library
-  // describe that library, not the family.
-  const samples = db.all<{ message: string; repo: string }>(sql`
-    SELECT error_message AS message, repo FROM errors
-    WHERE background_tag_raw = ${row.proposal}
-    GROUP BY repo
-    ORDER BY length(error_message) DESC
-    LIMIT ${SAMPLES_PER_PROPOSAL}
-  `);
-  const article = db.all<{ slug: string; title: string; summary: string }>(sql`
-    SELECT slug, title, summary FROM info_pages WHERE cluster_key = ${`tag:${row.proposal}`}
-  `)[0];
-  return {
-    proposal: row.proposal,
-    errorCount: row.n,
-    repoCount: row.r,
-    samples: samples.map((s) => ({ message: s.message.slice(0, 300), repo: s.repo })),
-    ...(article
-      ? { article: { slug: article.slug, title: article.title, summary: article.summary.slice(0, 800) } }
-      : {}),
-  };
+interface NewDecision {
+  errorId: string;
+  choice: string | null;
+  method: StoredDecision["method"];
+  confidence: number | null;
+  runnerUp: string | null;
+  model: string | null;
 }
 
-export function storeDecision(db: Db, decision: TagDecision): void {
-  db.insert(tagDecisions)
-    .values({
-      proposal: decision.proposal,
-      canonical: decision.canonical,
-      method: decision.method,
-      confidence: decision.confidence,
-      runnerUp: decision.runnerUp,
-      model: decision.model,
-      decidedAt: new Date().toISOString(),
-    })
-    .onConflictDoUpdate({
-      target: tagDecisions.proposal,
-      set: {
-        canonical: decision.canonical,
-        method: decision.method,
-        confidence: decision.confidence,
-        runnerUp: decision.runnerUp,
-        model: decision.model,
-        decidedAt: new Date().toISOString(),
-      },
-    })
-    .run();
+/** Write one batch of decisions in one small transaction. */
+export function storePageDecisions(db: Db, version: string, rows: NewDecision[]): void {
+  if (rows.length === 0) return;
+  const decidedAt = new Date().toISOString();
+  db.transaction((tx) => {
+    for (const r of rows) {
+      const values = { ...r, taxonomyVersion: version, decidedAt };
+      tx.insert(pageTagDecisions)
+        .values(values)
+        .onConflictDoUpdate({ target: pageTagDecisions.errorId, set: values })
+        .run();
+    }
+  });
 }
 
 export interface ClassifyProgress {
   decided: number;
   pending: number;
-  proposal: string;
-  canonical: string | null;
 }
 
 export interface ClassifyResult {
   byRule: number;
   byModel: number;
-  unmatched: number;
-  recordsDecided: number;
+  /** Model decisions below the gate or "none of these": pages that will publish no family. */
+  unplaced: number;
   calls: number;
   inputTokens: number;
 }
 
 /**
- * Decide every pending proposal, rule first and model for the rest.
- *
- * A classification failure stops the run rather than being swallowed: the
- * decisions already written are durable (each is its own row), so a stopped
- * run resumes where it died on the next invocation, and a run that quietly
- * skipped its failures would look complete while leaving records untagged.
+ * Decide every pending page. A classification failure stops the run: every
+ * batch already written is durable, so the rerun resumes where this one died,
+ * and a run that skipped its failures would look complete while leaving
+ * pages undecided.
  */
-export async function classifyPending(
+export async function classifyPendingPages(
   db: Db,
   client: TypeSafeClient,
-  opts: { minErrors?: number; limit?: number; onProgress?: (p: ClassifyProgress) => void } = {}
+  opts: { limit?: number; onProgress?: (p: ClassifyProgress) => void } = {}
 ): Promise<ClassifyResult> {
-  const clusters = pendingProposals(db, opts);
-  const result: ClassifyResult = {
-    byRule: 0,
-    byModel: 0,
-    unmatched: 0,
-    recordsDecided: 0,
-    calls: 0,
-    inputTokens: 0,
-  };
-
-  const needModel: ProposalCluster[] = [];
-  for (const cluster of clusters) {
-    const folded = ruleFold(cluster.proposal);
-    if (folded) {
-      storeDecision(db, {
-        proposal: cluster.proposal,
-        canonical: folded,
-        method: "rule",
-        confidence: null,
-        runnerUp: null,
-        model: null,
-      });
-      result.byRule++;
-      result.recordsDecided += cluster.errorCount;
-      continue;
-    }
-    needModel.push(cluster);
-  }
-
-  let next = 0;
+  const version = taxonomyVersion();
+  const total = Math.min(pendingCount(db, version), opts.limit ?? Number.POSITIVE_INFINITY);
+  const result: ClassifyResult = { byRule: 0, byModel: 0, unplaced: 0, calls: 0, inputTokens: 0 };
+  const startCalls = client.calls;
+  const startTokens = client.inputTokens;
   let decided = 0;
-  const worker = async (): Promise<void> => {
-    for (;;) {
-      const i = next++;
-      const cluster = needModel[i];
-      if (!cluster) return;
-      const decision = await classifyCluster(client, cluster);
-      storeDecision(db, decision);
-      decided++;
-      if (decision.canonical) {
-        result.byModel++;
-        result.recordsDecided += cluster.errorCount;
-      } else {
-        result.unmatched++;
-      }
-      opts.onProgress?.({
-        decided,
-        pending: needModel.length,
-        proposal: cluster.proposal,
-        canonical: decision.canonical,
-      });
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(CLASSIFY_CONCURRENCY, needModel.length) }, worker)
-  );
+  let after = "";
 
-  result.calls = client.calls;
-  result.inputTokens = client.inputTokens;
+  while (decided < total) {
+    const chunk = pendingPages(db, version, Math.min(PAGE_CHUNK, total - decided), after);
+    if (chunk.length === 0) break;
+    after = chunk[chunk.length - 1]!.id;
+
+    const forModel: Page[] = [];
+    const ruled: NewDecision[] = [];
+    for (const page of chunk) {
+      const rule = ruleDecision(page);
+      if (rule) ruled.push({ errorId: page.id, choice: rule.choice, method: rule.method, confidence: null, runnerUp: null, model: null });
+      else forModel.push(page);
+    }
+    storePageDecisions(db, version, ruled);
+    result.byRule += ruled.length;
+
+    const batches: Page[][] = [];
+    for (let i = 0; i < forModel.length; i += PAGES_PER_REQUEST) batches.push(forModel.slice(i, i + PAGES_PER_REQUEST));
+    await mapPool(batches, CLASSIFY_CONCURRENCY, async (batch) => {
+      const decisions: PageDecision[] = await classifyPagesFlat(client, batch, CLASSIFY_STATE);
+      storePageDecisions(
+        db,
+        version,
+        decisions.map((d) => ({
+          errorId: d.id,
+          choice: d.choice,
+          method: "model" as const,
+          confidence: d.confidence,
+          runnerUp: d.runnerUp,
+          model: d.model,
+        }))
+      );
+      result.byModel += decisions.length;
+      result.unplaced += decisions.filter((d) => publishedFamily({ ...d, method: "model" }) === null).length;
+    });
+
+    decided += chunk.length;
+    opts.onProgress?.({ decided, pending: total });
+  }
+  result.calls = client.calls - startCalls;
+  result.inputTokens = client.inputTokens - startTokens;
   return result;
 }
 
-export interface CandidateProposal {
-  proposal: string;
-  errorCount: number;
-  repoCount: number;
-  confidence: number | null;
-  runnerUp: string | null;
+/**
+ * Published families of already-decided pages, by record id. The write path
+ * reads this so re-analysing a repo keeps the families its pages were given
+ * instead of blanking them until the next classify run.
+ */
+export function pageFamiliesFor(db: Db, ids: readonly string[]): Map<string, string | null> {
+  if (ids.length === 0) return new Map();
+  const version = taxonomyVersion();
+  const out = new Map<string, string | null>();
+  for (let i = 0; i < ids.length; i += 500) {
+    const slice = ids.slice(i, i + 500);
+    const rows = db.all<{ error_id: string; choice: string | null; method: StoredDecision["method"]; confidence: number | null }>(sql`
+      SELECT error_id, choice, method, confidence FROM page_tag_decisions
+      WHERE taxonomy_version = ${version} AND error_id IN (${sql.join(slice.map((id) => sql`${id}`), sql`, `)})
+    `);
+    for (const r of rows) out.set(r.error_id, publishedFamily(r));
+  }
+  return out;
+}
+
+export interface UnplacedGroup {
+  proposal: string | null;
+  pages: number;
+  repos: number;
+  /** The classifier's most common top choice for these pages, below the gate. */
+  nearest: string | null;
 }
 
 /**
- * Proposals the classifier could not place, by weight. This is the taxonomy's
- * growth queue: a name that keeps arriving with thousands of records behind it
- * is the evidence for adding a family, and the confidence and runner-up columns
- * say whether it was a genuine miss or a gate set too high.
+ * Pages that publish no family, grouped by the name their enrichment model
+ * proposed. This is the taxonomy's growth queue: a name with thousands of
+ * unplaced pages behind it is the evidence for a new family, and a group
+ * whose nearest choice is consistent says the gate or a rubric is the
+ * problem rather than the taxonomy.
  */
-export function candidateProposals(db: Db, limit = 40): CandidateProposal[] {
-  return db.all<CandidateProposal>(sql`
-    SELECT d.proposal AS proposal,
-           count(e.id) AS errorCount,
-           count(DISTINCT e.repo) AS repoCount,
-           d.confidence AS confidence,
-           d.runner_up AS runnerUp
-    FROM tag_decisions d
-    JOIN errors e ON e.background_tag_raw = d.proposal
-    WHERE d.canonical IS NULL
-    GROUP BY d.proposal
-    ORDER BY errorCount DESC, d.proposal ASC
+export function unplacedPages(db: Db, limit = 40, gate = CONFIDENCE_THRESHOLD): UnplacedGroup[] {
+  const version = taxonomyVersion();
+  return db.all<UnplacedGroup>(sql`
+    SELECT e.background_tag_raw AS proposal,
+           count(*) AS pages,
+           count(DISTINCT e.repo) AS repos,
+           (SELECT d2.choice FROM page_tag_decisions d2 JOIN errors e2 ON e2.id = d2.error_id
+            WHERE d2.taxonomy_version = ${version} AND e2.background_tag_raw IS e.background_tag_raw AND d2.choice IS NOT NULL
+            GROUP BY d2.choice ORDER BY count(*) DESC LIMIT 1) AS nearest
+    FROM page_tag_decisions d
+    JOIN errors e ON e.id = d.error_id
+    WHERE d.taxonomy_version = ${version}
+      AND (d.choice IS NULL OR (d.method = 'model' AND coalesce(d.confidence, 0) < ${gate}))
+    GROUP BY e.background_tag_raw
+    ORDER BY pages DESC
     LIMIT ${limit}
   `);
-}
-
-/** Every decision, for reporting and for the write path's resolution map. */
-export function decisionMap(db: Db): Map<string, string | null> {
-  const rows = db.all<{ proposal: string; canonical: string | null }>(sql`
-    SELECT proposal, canonical FROM tag_decisions
-  `);
-  return new Map(rows.map((r) => [r.proposal, r.canonical]));
 }
