@@ -37,6 +37,10 @@ describe("canonical taxonomy", () => {
     }
   });
 
+  it("files every family under a domain", () => {
+    for (const f of CANONICAL_FAMILIES) expect(f.domain, f.tag).toMatch(/^[a-z]+(?:-[a-z]+)*$/);
+  });
+
   it("lists each family once", () => {
     expect(new Set(CANONICAL_FAMILIES.map((f) => f.tag)).size).toBe(CANONICAL_FAMILIES.length);
   });
