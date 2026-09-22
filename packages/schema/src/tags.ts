@@ -161,13 +161,26 @@ function singular(token: string): string {
  * reject the whole record.
  */
 export function normalizeTag(raw: string | null | undefined): string | null {
+  const tag = normalizeTagShape(raw);
+  return tag === null ? null : (TAG_ALIASES[tag] ?? tag);
+}
+
+/**
+ * Kebab shape and nothing else: no alias, no fold.
+ *
+ * This is what a proposal is stored as. Recording the aliased name instead
+ * would erase which name the model actually reached for, and that record is
+ * the only evidence available when deciding whether a hand-written merge was
+ * the right call.
+ */
+export function normalizeTagShape(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const tag = String(raw)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
   if (!TAG_RE.test(tag) || GENERIC_FAMILIES.has(tag)) return null;
-  return TAG_ALIASES[tag] ?? tag;
+  return tag;
 }
 
 /** Spelling identity before any hand-maintained merge is considered. */

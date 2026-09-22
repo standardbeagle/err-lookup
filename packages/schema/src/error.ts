@@ -138,6 +138,12 @@ export const ErrorEntry = z
      *  info-page collector clusters on and error pages link through. Defaulted
      *  so records analyzed before the field existed keep validating. */
     backgroundTag: Tag.nullable().default(null),
+    /** The family name the enrichment model proposed, before the taxonomy was
+     *  consulted. Pipeline working state that travels with the record so a
+     *  resumed phase does not lose it; optional rather than defaulted because
+     *  the published dataset omits the key entirely — it is what links a
+     *  record back to its proposal, and only the pipeline has proposals. */
+    backgroundTagRaw: Tag.nullable().optional(),
     analyzedSha: GitSha,
     analyzedAt: IsoUtc,
     /** When the user-facing content of this record last actually changed.

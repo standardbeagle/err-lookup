@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex, index, primaryKey } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, uniqueIndex, index, primaryKey } from "drizzle-orm/sqlite-core";
 
 /**
  * SQLite schema — pipeline working state only (§3.2). Never shipped.
@@ -66,8 +66,21 @@ export const errors = sqliteTable(
     preventionTips: text("prevention_tips", { mode: "json" }).$type<string[]>(),
 
     tags: text("tags", { mode: "json" }).$type<string[]>(),
-    /** Kebab-case cross-library family tag — the collector's third cluster key. */
+    /**
+     * Kebab-case cross-library family tag — the collector's third cluster key.
+     * Only ever a name from the canonical taxonomy, or null when nothing in it
+     * fits. A record is never published under a family the taxonomy does not
+     * declare; that is what bounds how many family pages can exist.
+     */
     backgroundTag: text("background_tag"),
+    /**
+     * The family name the enrichment model actually proposed, before the
+     * taxonomy was consulted. Kept because it is the only link back from a
+     * record to the proposal that produced it: when a candidate proposal is
+     * later promoted to a family of its own, this is how its records are found
+     * and re-tagged. Null on rows written before the column existed.
+     */
+    backgroundTagRaw: text("background_tag_raw"),
     analyzedSha: text("analyzed_sha").notNull(),
     analyzedAt: text("analyzed_at").notNull(),
     /**
@@ -97,6 +110,9 @@ export const errors = sqliteTable(
     index("idx_errors_repo").on(table.repo),
     index("idx_errors_code").on(table.errorCode),
     index("idx_errors_background_tag").on(table.backgroundTag),
+    // The classifier groups proposals and the apply step rewrites by proposal;
+    // both scan this column over the whole corpus.
+    index("idx_errors_background_tag_raw").on(table.backgroundTagRaw),
   ]
 );
 
@@ -216,6 +232,43 @@ export const publishedRepos = sqliteTable("published_repos", {
   sitemapShard: integer("sitemap_shard"),
 });
 
+/**
+ * One decision per distinct proposed family name: where it lands in the
+ * canonical taxonomy, or that it lands nowhere.
+ *
+ * Keyed by the proposal rather than by the record, because proposals repeat —
+ * 496,100 records carry 56,960 distinct names — so deciding per proposal is
+ * the difference between half a million classifications and fifty thousand,
+ * and it means the same name can never be resolved two ways in one corpus.
+ *
+ * A row with `canonical` null is a candidate: the classifier read the errors
+ * and said no declared family describes them. Those are the queue that
+ * `errlookup tags candidates` reports, and the only way the taxonomy grows.
+ */
+export const tagDecisions = sqliteTable(
+  "tag_decisions",
+  {
+    /** Normalized proposal, exactly as `background_tag_raw` stores it. */
+    proposal: text("proposal").primaryKey(),
+    /** Canonical family, or null when nothing in the taxonomy fits. */
+    canonical: text("canonical"),
+    /** rule = folded by spelling/alias; model = classified; manual = decided by hand. */
+    method: text("method", { enum: ["rule", "model", "manual"] }).notNull(),
+    /** Classifier confidence, null for rule and manual decisions. */
+    confidence: real("confidence"),
+    /**
+     * The option that came second. A gate set too low shows up here as a
+     * runner-up that is obviously the better answer, which is not visible
+     * from the accepted choice alone.
+     */
+    runnerUp: text("runner_up"),
+    /** Versioned model id that answered, so a recalibration can find its decisions. */
+    model: text("model"),
+    decidedAt: text("decided_at").notNull(),
+  },
+  (table) => [index("idx_tag_decisions_canonical").on(table.canonical)]
+);
+
 export type RepositoryRow = typeof repositories.$inferSelect;
 export type NewRepositoryRow = typeof repositories.$inferInsert;
 export type ErrorRow = typeof errors.$inferSelect;
@@ -226,3 +279,5 @@ export type QueueRow = typeof queue.$inferSelect;
 export type NewQueueRow = typeof queue.$inferInsert;
 export type InfoPageRow = typeof infoPages.$inferSelect;
 export type NewInfoPageRow = typeof infoPages.$inferInsert;
+export type TagDecisionRow = typeof tagDecisions.$inferSelect;
+export type NewTagDecisionRow = typeof tagDecisions.$inferInsert;
