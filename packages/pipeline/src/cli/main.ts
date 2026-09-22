@@ -17,6 +17,7 @@ import { collectInfoPages } from "../info/collector.js";
 import { tagVocabulary } from "../phase/tag-vocabulary.js";
 import { planTagBackfill, applyTagBackfill } from "../phase/tag-backfill.js";
 import { classifyPending, candidateProposals } from "../phase/tag-classify.js";
+import { proposeTaxonomy } from "../phase/tag-propose.js";
 import { TypeSafeClient, JEV_MODEL, jevCostUsd } from "../provider/typesafe.js";
 import { CANONICAL_FAMILIES } from "@errlookup/schema";
 import { printStatus } from "./status.js";
@@ -189,6 +190,10 @@ async function main(): Promise<void> {
         limit: { type: "string", default: "40" },
         "min-errors": { type: "string", default: "1" },
         "max-proposals": { type: "string" },
+        out: { type: "string", default: "data/tag-proposal" },
+        "cell-min": { type: "string" },
+        "max-cells": { type: "string" },
+        fresh: { type: "boolean", default: false },
       },
       allowPositionals: true,
       args: rest,
@@ -222,6 +227,36 @@ async function main(): Promise<void> {
         return;
       }
 
+      if (sub === "propose") {
+        // Model-checked candidates in, a proposed taxonomy file out. It never
+        // touches tag-taxonomy.json: adopting a proposal is a reviewed copy.
+        const cfg = loadConfig();
+        const res = await proposeTaxonomy(db, buildProviders(cfg), cfg, {
+          outDir: resolve(String(values.out)),
+          ...(values["cell-min"] ? { minErrors: Number.parseInt(String(values["cell-min"]), 10) } : {}),
+          ...(values["max-cells"] ? { maxCells: Number.parseInt(String(values["max-cells"]), 10) } : {}),
+          fresh: Boolean(values.fresh),
+          onLog: (m) => console.log(`  ${m}`),
+        });
+        if ("trial" in res) {
+          console.log(`trial: ${res.trial.length} cells answered — read their checkpoints, then run without --max-cells`);
+          return;
+        }
+        if (!("report" in res)) {
+          console.error(`propose stopped: ${res.failedCells.length} cells failed validation twice — ${res.failedCells.join(", ")}`);
+          console.error("rerun to retry them; validated cells are checkpointed and will not be asked again");
+          process.exit(1);
+        }
+        const r = res.report;
+        console.log(`proposal: ${r.currentFamilies} current families → ${r.proposedFamilies} proposed`);
+        console.log(`  added ${r.added.length}, removed ${r.removed.length}, rubrics rewritten ${r.criteriaChanged.length}`);
+        const orphans = r.articles.filter((a) => a.lands === null);
+        console.log(`  articles: ${r.articles.length} family-keyed, ${orphans.length} land nowhere`);
+        if (r.contentRuleGaps.length) console.log(`  content rules name families the proposal dropped: ${r.contentRuleGaps.join(", ")}`);
+        console.log(`  ${res.taxonomyFile}\n  ${res.reportFile}`);
+        return;
+      }
+
       if (sub === "candidates") {
         const rows = candidateProposals(db, limit);
         console.log(`proposals no declared family covers (${rows.length} shown, largest first):`);
@@ -236,7 +271,7 @@ async function main(): Promise<void> {
       }
 
       if (sub !== "report") {
-        console.error(`unknown tags subcommand "${sub}" — expected report, classify or candidates`);
+        console.error(`unknown tags subcommand "${sub}" — expected report, classify, candidates or propose`);
         process.exit(1);
       }
 
@@ -595,6 +630,8 @@ async function main(): Promise<void> {
   console.error("  errlookup tags classify [--min-errors 1] [--max-proposals N]");
   console.error("      # map proposed family names onto the taxonomy (needs TYPESAFE_API_KEY)");
   console.error("  errlookup tags candidates [--limit 40]  # proposals no declared family covers");
+  console.error("  errlookup tags propose [--out data/tag-proposal] [--cell-min 100] [--max-cells N] [--fresh]");
+  console.error("      # model-checked taxonomy proposal from the corpus's own names; writes a file, adopts nothing");
   console.error("  errlookup reset [--failed] [--dry-run] [owner/repo ...]");
   console.error("  errlookup export [--out-dir <path>]");
   console.error("  errlookup quality [--flag thin|short-doc|no-solutions|generic-slug|opaque-slug|duplicate|no-source] [--limit N] [--summary]");

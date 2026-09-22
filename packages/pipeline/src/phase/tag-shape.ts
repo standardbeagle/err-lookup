@@ -6,9 +6,9 @@
  * Proposed names are regular. 57k of them reduce to a handful of failure
  * modes (`invalid`, `missing`, `not-found`, `unsupported`, `mismatch`, ...)
  * wrapped around an object (argument, config, file, json, http, ...). Parsed
- * that way, 78% of the corpus's records land in 246 (mode × object) cells and
- * the largest 80 cells hold 85% of them — a workable candidate set produced
- * without a single model call. `tag-propose.ts` builds on these cells.
+ * that way, 81% of the corpus's proposed records land in about 230
+ * (mode × object) cells — a workable candidate set produced without a single
+ * model call. `tag-cells.ts` pools them and `tag-propose.ts` has them checked.
  *
  * Everything here is deterministic and cheap enough to run over the whole
  * corpus. None of it decides a family by itself except `contentFamily`, which
@@ -187,6 +187,7 @@ const OBJECT_TOKENS: Record<ObjectClass, string[]> = {
     "url", "uri", "date", "time", "timestamp", "duration", "version", "semver", "identifier", "name",
     "syntax", "parse", "encoding", "utf8", "base64", "cron", "glob", "expression", "escape", "eof",
     "uuid", "email", "number", "serialization", "deserialization", "unmarshal", "marshal", "decode",
+    "schema",
   ],
   remote: [
     "http", "api", "request", "response", "upstream", "endpoint", "rpc", "grpc", "graphql", "webhook",
@@ -198,7 +199,9 @@ const OBJECT_TOKENS: Record<ObjectClass, string[]> = {
     "password", "permission", "permissions", "key", "secret", "login", "signature", "certificate",
     "cert", "decryption", "encryption", "checksum",
   ],
-  storage: ["database", "db", "sql", "table", "column", "row", "transaction", "migration", "index", "query", "schema"],
+  // "schema" is a data-format word here — schema-validation-failed is about a
+  // document failing its declared shape, not about a database.
+  storage: ["database", "db", "sql", "table", "column", "row", "transaction", "migration", "index", "query"],
   entity: [
     "resource", "entity", "object", "user", "item", "model", "record", "collection", "plugin", "node",
     "element", "selector", "account", "project", "document", "session",
