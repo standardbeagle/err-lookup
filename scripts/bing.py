@@ -13,7 +13,7 @@ Usage (always under devkey):
 
   bing.py sites                 sites the key's account holds
   bing.py traffic [days]        clicks/impressions by day (default 28)
-  bing.py crawl [days]          pages crawled + status mix by day (default 14)
+  bing.py crawl [days]          pages crawled by day + a cumulative snapshot (default 14)
   bing.py queries [limit]       top search queries, summed over Bing's window (default 25)
   bing.py pages [limit]         top pages, summed over Bing's window (default 25)
   bing.py quota                 URL submission quota left
@@ -21,6 +21,24 @@ Usage (always under devkey):
 Stats stay empty for a few days after a site is added: errors.standardbeagle.com
 was imported from Search Console on 2026-09-16 and still returned [] on
 2026-09-19 while older properties on the same key returned full history.
+
+GetCrawlStats mixes two time bases in one row, and `crawl` splits them apart.
+CrawledPages and Code4xx move from row to row. Code2xx, Code301, Code5xx,
+AllOtherCodes and InIndex do not: they are one cumulative site-wide figure
+stamped onto every daily row, and it refreshes lazily — standardbeagle.com read
+2xx=77038 / 5xx=423 unchanged across 2026-09-18, -19 and -20 while CrawledPages
+went 4,436 → 4,772 → 7,597. Printing them per day cost a session: `5xx=423` on
+one row read as 423 server errors that day, when Analytics Engine had no 5xx at
+all in 90 days and the real cause was the retired-slug 500s fixed in ac60875,
+six weeks earlier. The remaining fields (CrawlErrors, BlockedByRobotsTxt,
+DnsFailures, ConnectionTimeout, InLinks) are grouped with the snapshot because
+they have not been observed to vary either — not because that is confirmed.
+
+A property for a subdomain and one for its parent domain report nearly the same
+crawl figures: on 2026-09-20 errors.standardbeagle.com read 2xx=76,388 /
+inIndex=52,671 against standardbeagle.com's 77,038 / 53,167. The parent is
+domain-wide and swallows the subdomain, so the delta is the parent's own
+content. Do not read the parent's numbers as that site's alone.
 """
 import datetime
 import json
@@ -78,10 +96,18 @@ def main() -> None:
         rows = recent(call("GetCrawlStats", siteUrl=SITE), arg or 14)
         if not rows:
             print("  no rows — Bing has no crawl data for this site in the window")
+        # Only CrawledPages and Code4xx have been observed to move between rows;
+        # see the module docstring. The rest repeats one cumulative site-wide
+        # snapshot on every row, so print it once, after the daily series.
         for r in rows:
-            print(f"  {day(r['Date'])}  crawled={r['CrawledPages']:6}  2xx={r['Code2xx']:6}  301={r['Code301']:5}  "
-                  f"4xx={r['Code4xx']:4}  5xx={r['Code5xx']:4}  errors={r['CrawlErrors']:4}  "
-                  f"inIndex={r.get('InIndex', '?')}")
+            print(f"  {day(r['Date'])}  crawled={r['CrawledPages']:6}  4xx={r['Code4xx']:4}")
+        if rows:
+            r = max(rows, key=lambda row: row["Date"])
+            print(f"  cumulative snapshot — site-wide, NOT per-day, refreshes lazily (row {day(r['Date'])}):")
+            print(f"    2xx={r['Code2xx']}  301={r['Code301']}  302={r['Code302']}  5xx={r['Code5xx']}  "
+                  f"other={r['AllOtherCodes']}  inIndex={r.get('InIndex', '?')}")
+            print(f"    crawlErrors={r['CrawlErrors']}  blockedByRobots={r['BlockedByRobotsTxt']}  "
+                  f"dnsFailures={r['DnsFailures']}  timeouts={r['ConnectionTimeout']}  inLinks={r['InLinks']}")
     elif cmd in ("queries", "pages"):
         # One row per (query or page, week); `Query` holds the URL for pages.
         # Sum across weeks; position is impression-weighted.
