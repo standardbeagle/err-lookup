@@ -1,17 +1,21 @@
 ---
 import Base from "../../layouts/Base.astro";
 import RepoTable from "../../components/RepoTable.astro";
-import { getRepos } from "../../data/load.js";
-import { paginateRepos, totalRepoPages, REPOS_PER_PAGE } from "../../data/paging.js";
+import { getPublishedRepoEntries } from "../../data/load.js";
+import { getRepoPage, totalRepoPages, REPOS_PER_PAGE } from "../../data/paging.js";
 
 /**
  * Pages 2..N of the analyzed-repos list. Page 1 is the home page, so it is not
  * generated here — a second URL serving the same table would be duplicate
  * content competing with "/" for the same query.
+ *
+ * Same population as page 1 and the sitemap: admitted repos, via getRepoPage.
+ * This route used to paginate every exported repo, so page 2 continued a
+ * different list than page 1 began, and the pages past the sitemap's count
+ * linked repos that render noindex.
  */
 export function getStaticPaths() {
-  const repos = getRepos();
-  const total = totalRepoPages(repos.length);
+  const total = totalRepoPages(getPublishedRepoEntries().length);
   return Array.from({ length: Math.max(0, total - 1) }, (_, i) => ({
     params: { page: String(i + 2) },
     props: { pageNumber: i + 2 },
@@ -19,7 +23,7 @@ export function getStaticPaths() {
 }
 
 const { pageNumber } = Astro.props as { pageNumber: number };
-const page = paginateRepos(getRepos(), pageNumber);
+const page = getRepoPage(pageNumber);
 const first = (page.page - 1) * REPOS_PER_PAGE + 1;
 const last = first + page.repos.length - 1;
 ---
