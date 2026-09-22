@@ -279,8 +279,10 @@ const infoPage = {
   slug: "err-bad-response",
   clusterKey: "code:ERR_BAD_RESPONSE",
   title: "ERR_BAD_RESPONSE: when the server's answer fails validation",
+  // Longer than a meta description so the build has to cut it; the cut must
+  // land on a word boundary, and a summary that fits proves nothing.
   summary:
-    "HTTP clients raise ERR_BAD_RESPONSE when the server replies, but with a status the request was not configured to accept.",
+    "HTTP clients raise ERR_BAD_RESPONSE when the server replies, but with a status the request was not configured to accept, which distinguishes it from transport failures.",
   background:
     "The request completed at the transport layer — this family is about policy, not connectivity.\n\nClients ship a default acceptance window (usually 2xx) and surface everything else as an error carrying the full response.",
   commonCauses: [

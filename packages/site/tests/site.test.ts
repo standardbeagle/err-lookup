@@ -3,6 +3,8 @@ import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GUIDES, guidesFor } from "../src/data/guides.js";
+import { posts } from "../src/data/blog.js";
+import { truncateAtWord } from "../src/data/seo.js";
 import { indexableSlugs, canonicalBySlug } from "@errlookup/schema";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -269,6 +271,41 @@ describe("site build (§8.3)", () => {
     expect(schema.definitions?.ErrorEntry).toBeDefined();
   });
 
+
+  it("dates the articles and posts in the static-pages sitemap", () => {
+    // Every article carries generatedAt and every post a date, but pages.xml
+    // listed them undated, so a crawler had to fetch all ~190 to learn that
+    // none had changed. Undated entries are honest only for pages with no
+    // tracked change date (the hubs, about, the guides).
+    const xml = readFileSync(resolve(dist, "sitemaps", "pages.xml"), "utf8");
+    const dated = new Map(
+      [...xml.matchAll(/<url><loc>([^<]+)<\/loc><lastmod>([^<]+)<\/lastmod><\/url>/g)].map((m) => [m[1]!, m[2]!])
+    );
+    const infoIndex = resolve(publicData, "info", "index.json");
+    const articles = existsSync(infoIndex)
+      ? (JSON.parse(readFileSync(infoIndex, "utf8")) as { slug: string; generatedAt: string }[])
+      : [];
+    expect(articles.length).toBeGreaterThan(0);
+    for (const a of articles) {
+      expect(dated.get(`https://errors.standardbeagle.com/info/${a.slug}/`), a.slug).toBe(a.generatedAt.slice(0, 10));
+    }
+    for (const p of posts) {
+      expect(dated.get(`https://errors.standardbeagle.com/blog/${p.slug}/`), p.slug).toBe(p.date);
+    }
+  });
+
+  it("cuts article descriptions on a word boundary", () => {
+    // Error pages already do; the article template used summary.slice(0, 155),
+    // which ends mid-word whenever a summary runs long — machine-looking
+    // output in the one line a searcher reads.
+    const infoIndex = resolve(publicData, "info", "index.json");
+    const articles = JSON.parse(readFileSync(infoIndex, "utf8")) as { slug: string; summary: string }[];
+    for (const a of articles) {
+      const html = readFileSync(resolve(dist, "info", a.slug, "index.html"), "utf8");
+      const description = html.match(/<meta name="description" content="([^"]*)"/)?.[1];
+      expect(description, a.slug).toBe(truncateAtWord(a.summary, 160));
+    }
+  });
 
   it("serves the sitemap index at the conventional /sitemap.xml", () => {
     const canonical = resolve(dist, "sitemap.xml");
