@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Hand-authored: the adapter's generated file enumerates every prerendered path and static asset, which breaks Cloudflare's 100-rule cap as the corpus grows. Everything matching an exclude is served static; the rest (the API and the on-demand error pages) hits the worker, which falls back to the ASSETS binding for prerendered paths it doesn't own. An excluded path never reaches the worker, so it writes no Analytics Engine row and is invisible: on 2026-09-14 a 3-day query for /sitemaps/*, /repos/* and /sitemap-index.xml returned exactly 0 rows, which meant there was no way to tell whether Google had fetched the new sitemap shards at all. The crawl-facing paths are now worker-routed so they are measurable. What stays excluded is deliberate: /_astro/*, /og/* and /favicon.svg are assets with no diagnostic value, and /data/* is the dataset the MCP pulls \u2014 the highest -volume unknown here, and the worker budget has roughly 130k invocations/day of headroom (200k used against 333k included). Adding /data/* is a separate decision that should be made with a day of monitoring behind it.",
+  "description": "Hand-authored: the adapter's generated file enumerates every prerendered path and static asset, which breaks Cloudflare's 100-rule cap as the corpus grows. Everything matching an exclude is served static; the rest hits the worker. An on-demand route (the API, error pages, the retired per-repo sitemap 410 under /sitemaps/<owner>/<repo>.xml) needs the worker, so /sitemaps/* must stay included. A prerendered path that reaches the worker is served straight from the ASSETS binding by the adapter, BEFORE Astro middleware runs: it writes no Analytics Engine row and pays an invocation for nothing. Routing robots.txt, the sitemap index, the shards and /repos/* to the worker (2026-09-14) was done to make Google's sitemap fetches measurable; it never did (3-day AE query 2026-09-22: 0 rows for any of them while Search Console showed shard downloads), so the prerendered crawl-facing paths are excluded again. Sitemap fetch evidence lives in Search Console (scripts/gsc.py sitemaps) and Bing Webmaster Tools (scripts/bing.py), not here. /data/* stays excluded as the dataset the MCP pulls; adding it would need a day of invocation monitoring first.",
   "include": [
     "/*"
   ],
@@ -8,6 +8,12 @@
     "/_astro/*",
     "/data/*",
     "/og/*",
-    "/favicon.svg"
+    "/favicon.svg",
+    "/robots.txt",
+    "/sitemap.xml",
+    "/sitemap-index.xml",
+    "/sitemaps/urls-*",
+    "/sitemaps/pages.xml",
+    "/repos/*"
   ]
 }
