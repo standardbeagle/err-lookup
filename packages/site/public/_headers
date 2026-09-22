@@ -1,3 +1,13 @@
+# The bare Pages hostname is a full mirror of the site: the Cloudflare adapter
+# serves prerendered pages from the ASSETS binding before Astro middleware
+# runs, so the middleware's 301 to the canonical host only ever fires for
+# on-demand routes (error pages, /api). Every repo page, the sitemap index and
+# robots.txt answer 200 on errlookup.pages.dev (verified 2026-09-22). A
+# domain-level rule in _redirects is unsupported; a host-matched header is.
+# Absolute-URL rules match the hostname only — port and protocol are ignored.
+https://errlookup.pages.dev/*
+  X-Robots-Tag: noindex
+
 /manifest.json
   Cache-Control: public, max-age=300
 /data/*

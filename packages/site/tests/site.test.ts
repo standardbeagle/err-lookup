@@ -248,6 +248,17 @@ describe("site build (§8.3)", () => {
     expect(existsSync(resolve(dist, "_headers"))).toBe(true);
   });
 
+  it("keeps the bare pages.dev mirror out of the index", () => {
+    // Prerendered pages never pass through the middleware's canonical-host
+    // redirect (the adapter serves them from ASSETS first), so every repo
+    // page, the sitemap index and robots.txt answer 200 on errlookup.pages.dev.
+    // _redirects cannot match a hostname; a host-matched _headers rule can.
+    const headers = readFileSync(resolve(dist, "_headers"), "utf8");
+    const rule = headers.match(/^https:\/\/errlookup\.pages\.dev\/\*\n((?:[ \t]+.*\n)+)/m);
+    expect(rule, "no rule for https://errlookup.pages.dev/*").not.toBeNull();
+    expect(rule![1]).toMatch(/X-Robots-Tag:\s*noindex/);
+  });
+
 
   it("serves the sitemap index at the conventional /sitemap.xml", () => {
     const canonical = resolve(dist, "sitemap.xml");
