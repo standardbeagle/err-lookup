@@ -10,6 +10,8 @@ import type { LlmProvider, InvokeOptions, ProviderResult } from "../src/provider
 import type { Cell } from "../src/phase/tag-cells.js";
 import {
   validateCellDraft,
+  tidyCellMembers,
+  CELL_ROUNDS,
   poolDrafts,
   validateConsolidation,
   applyConsolidation,
@@ -87,6 +89,29 @@ describe("validateCellDraft", () => {
     const issues = validateCellDraft(d, envCell).join("\n");
     expect(issues).toContain("criteria must be one line of 60-450");
     expect(issues).toContain('"error" is too generic');
+  });
+});
+
+describe("tidyCellMembers", () => {
+  it("drops names that are not listed and keeps a doubly-placed name in its family", () => {
+    const d = good();
+    d.families[0]!.members.push("file-size-limit-failed");
+    d.notFamily.push("missing-env-var");
+    const notes = tidyCellMembers(d, envCell);
+    expect(d.families[0]!.members).toEqual(["missing-env-var", "environment-variable-missing"]);
+    expect(d.notFamily).toEqual(["missing-config-key"]);
+    expect(notes).toEqual([
+      'unknown member "file-size-limit-failed" dropped',
+      '"missing-env-var" kept in its family, dropped from notFamily',
+    ]);
+    expect(validateCellDraft(d, envCell)).toEqual([]);
+  });
+
+  it("leaves everything that shapes the taxonomy to validation", () => {
+    const d = good();
+    d.families[0]!.domain = "vibes";
+    tidyCellMembers(d, envCell);
+    expect(validateCellDraft(d, envCell).join()).toContain('domain "vibes"');
   });
 });
 
@@ -304,7 +329,7 @@ describe("proposeTaxonomy", () => {
     }
   });
 
-  it("repairs a rejected answer once, then stops before consolidating without it", async () => {
+  it("repairs a rejected answer, then stops before consolidating without it", async () => {
     const { db, raw } = corpus();
     const outDir = mkdtempSync(join(tmpdir(), "propose-out-"));
     try {
@@ -312,7 +337,7 @@ describe("proposeTaxonomy", () => {
       const run = scripted(() => bad, noChanges);
       const res = await proposeTaxonomy(db, run.providers, cfg(), { outDir, minErrors: 50 });
       expect(res).toEqual({ failedCells: ["absent×config"] });
-      expect(run.calls).toEqual({ cell: 2, consolidation: 0 });
+      expect(run.calls).toEqual({ cell: CELL_ROUNDS, consolidation: 0 });
       expect(existsSync(join(outDir, "tag-taxonomy.proposed.json"))).toBe(false);
     } finally {
       raw.close();

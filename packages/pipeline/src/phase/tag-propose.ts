@@ -52,6 +52,13 @@ export const MEMBERS_SHOWN = 30;
 /** Pages shown per cell, one per library. */
 export const SAMPLES_SHOWN = 12;
 
+/**
+ * Attempts per cell: the first answer and two repairs. One repair was
+ * measured too few on the widest cells, where the model splits a group into
+ * eight families and a single slip in any of them fails the whole answer.
+ */
+export const CELL_ROUNDS = 3;
+
 /** One family as a model proposes it for a cell. */
 export interface ProposedFamily {
   tag: string;
@@ -168,6 +175,51 @@ function checkFamilyShape(f: ProposedFamily, where: string, issues: string[]): v
   } else if (/\n/.test(f.criteria)) {
     issues.push(`${where}: criteria must be a single line`);
   }
+}
+
+/**
+ * Repair the member lists, which only weigh families and place articles in
+ * the report; nothing about a family's name or rubric depends on them. A
+ * member that is not in the NAMES list names nothing and is dropped; a name
+ * put both in a family and in notFamily stays with the family, the positive
+ * assignment. Everything that shapes the taxonomy is still validated
+ * strictly by validateCellDraft. Returns what was changed, for the log.
+ */
+export function tidyCellMembers(draft: unknown, cell: Cell): string[] {
+  if (!draft || typeof draft !== "object") return [];
+  const d = draft as Partial<CellDraft>;
+  if (!Array.isArray(d.families)) return [];
+  const listed = new Set(cell.members.slice(0, MEMBERS_SHOWN).map((m) => m.proposal));
+  const notes: string[] = [];
+  const inFamily = new Set<string>();
+  for (const f of d.families as Partial<ProposedFamily>[]) {
+    const members = asStringArray(f.members);
+    if (!members) continue;
+    const kept = members.filter((m) => {
+      if (listed.has(m) && !inFamily.has(m)) {
+        inFamily.add(m);
+        return true;
+      }
+      notes.push(listed.has(m) ? `"${m}" listed twice` : `unknown member "${m}" dropped`);
+      return false;
+    });
+    f.members = kept;
+  }
+  const notFamily = asStringArray(d.notFamily);
+  if (notFamily) {
+    d.notFamily = notFamily.filter((m) => {
+      if (!listed.has(m)) {
+        notes.push(`unknown notFamily name "${m}" dropped`);
+        return false;
+      }
+      if (inFamily.has(m)) {
+        notes.push(`"${m}" kept in its family, dropped from notFamily`);
+        return false;
+      }
+      return true;
+    });
+  }
+  return notes;
 }
 
 /** Every reason a cell answer cannot be used, or none. */
@@ -581,8 +633,8 @@ export interface ProposeResult {
 }
 
 /**
- * Run the proposal end to end. A cell whose answer fails validation twice
- * stops the run before consolidation: consolidating without it would publish
+ * Run the proposal end to end. A cell whose answer still fails validation
+ * after its repairs stops the run before consolidation: consolidating without it would publish
  * a taxonomy missing whatever that cell holds, and the checkpoints make the
  * rerun pay only for what failed.
  */
@@ -612,12 +664,14 @@ export async function proposeTaxonomy(
       const samples = sampleCell(db, cell, SAMPLES_SHOWN);
       const evidence = cellEvidence(db, cell);
       let issues: string[] = [];
-      for (let round = 0; round < 2; round++) {
+      for (let round = 0; round < CELL_ROUNDS; round++) {
         try {
           const res = await withTimeout(
             runProvider(cellPrompt(cell, samples, evidence, issues), { cwd }, providers, cfg, "enrichment"),
             draftBudget
           );
+          const tidied = tidyCellMembers(res.parsed, cell);
+          if (tidied.length) log(`propose: ${cell.key} members tidied — ${tidied.slice(0, 3).join("; ")}`);
           issues = validateCellDraft(res.parsed, cell);
           if (issues.length === 0) {
             const draft = res.parsed as CellDraft;

@@ -242,7 +242,7 @@ async function main(): Promise<void> {
           return;
         }
         if (!("report" in res)) {
-          console.error(`propose stopped: ${res.failedCells.length} cells failed validation twice — ${res.failedCells.join(", ")}`);
+          console.error(`propose stopped: ${res.failedCells.length} cells still failed validation after their repairs — ${res.failedCells.join(", ")}`);
           console.error("rerun to retry them; validated cells are checkpointed and will not be asked again");
           process.exit(1);
         }
