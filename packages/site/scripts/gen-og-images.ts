@@ -2,8 +2,10 @@
  * Generate Open Graph social cards as PNGs into public/og/.
  *
  * Social platforms will not render SVG for og:image, so the cards are
- * rasterised here and committed as static assets rather than built on deploy —
- * they change only when a post or repo is added.
+ * rasterised here. `package.json` runs this on every build and the output is
+ * gitignored: the repo card set is derived from public/data/repos.json, which
+ * grows on every publish, so a committed copy goes stale immediately — it once
+ * covered 114 of 2,245 repos while leaving the publish host permanently dirty.
  *
  * Card inventory:
  *   default.png            every page without a more specific card
