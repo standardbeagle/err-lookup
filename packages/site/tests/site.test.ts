@@ -259,6 +259,16 @@ describe("site build (§8.3)", () => {
     expect(rule![1]).toMatch(/X-Robots-Tag:\s*noindex/);
   });
 
+  it("ships the dataset's JSON Schema at the URL its $id declares", () => {
+    // /api-docs/ and llms.txt have linked /schema.json since launch; it 404ed
+    // for as long as the link existed because nothing emitted it.
+    const file = resolve(dist, "schema.json");
+    expect(existsSync(file), "dist/schema.json missing").toBe(true);
+    const schema = JSON.parse(readFileSync(file, "utf8"));
+    expect(schema.$id).toBe("https://errors.standardbeagle.com/schema.json");
+    expect(schema.definitions?.ErrorEntry).toBeDefined();
+  });
+
 
   it("serves the sitemap index at the conventional /sitemap.xml", () => {
     const canonical = resolve(dist, "sitemap.xml");
