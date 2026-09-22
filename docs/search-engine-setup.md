@@ -117,29 +117,30 @@ WordPress root is outside anything core or plugin updates replace.
 
 ## Bing Webmaster Tools
 
-Not yet claimed. Without it there is no impressions, ranking, or index-coverage
-signal from the crawler doing nearly all the work — `scripts/gsc.py` covers
-Google only.
+Claimed on 2026-09-16 by **Import from Google Search Console**, so no
+`BingSiteAuth.xml` token is in use and that route stays 404. The sitemap index
+was submitted the same day; `scripts/bing.py sitemaps` shows it with its last
+crawl date and URL count.
 
-To claim it:
+If the property ever has to be re-verified without GSC access: add
+`errors.standardbeagle.com` manually, pick **XML file** verification, set the
+offered token as `BING_SITE_AUTH_TOKEN` in `packages/site/src/data/webmaster.ts`,
+deploy, then press Verify. The route at `src/pages/BingSiteAuth.xml.ts` returns
+404 while the token is empty, so a half-configured property fails visibly
+instead of serving an empty `<user>` element. The token is committed rather
+than kept in the environment for the same reason as the IndexNow key: it is
+public by design, and a build that silently lost it would un-verify the
+property without failing anything.
 
-1. Sign in at <https://www.bing.com/webmasters> with the account that should own
-   the property.
-2. Choose **Import from Google Search Console** if that account can reach the
-   GSC property — it verifies without touching the site. Otherwise add
-   `errors.standardbeagle.com` manually and pick **XML file** verification.
-3. For manual verification, take the token from the `BingSiteAuth.xml` Bing
-   offers and set `BING_SITE_AUTH_TOKEN` in
-   `packages/site/src/data/webmaster.ts`. The route at
-   `src/pages/BingSiteAuth.xml.ts` serves it; it returns 404 while the token is
-   empty, so that a half-configured property fails visibly instead of serving an
-   empty `<user>` element that Bing rejects with the plumbing apparently in place.
-4. Deploy, then press Verify.
-5. Submit `https://errors.standardbeagle.com/sitemap-index.xml` under Sitemaps.
-
-The token is committed rather than kept in the environment for the same reason
-as the IndexNow key: it is public by design, and a build that silently lost it
-would un-verify the property without failing anything.
+**"URL is not in any sitemap" in Bing's URL inspection is Bing's copy, not the
+site's.** On 2026-09-22 it said that of
+`/ultraworkers/claw-code/old-string-not-found-in-file/`, which was in
+`/sitemaps/urls-23.xml` and had been accepted by IndexNow on 2026-08-18; the
+feed list showed the index last crawled on 2026-09-19. Check the URL against
+the live shard first (`sitemap-shards.json` names the repo's shard), then
+`bing.py submit-sitemap` to ask for a fresh read and `bing.py submit-url <url>`
+to pull the one page. URL submission is 100 a day per property, not the 10,000
+the UI advertises for the account.
 
 ## Measuring each engine
 
