@@ -77,7 +77,19 @@ export interface ProxyConfig {
  * `phase-fallbacks`. One list, so a new role is added in one place and the
  * parser, the config type and runProvider cannot disagree about it.
  */
-export const PROVIDER_PHASES = ["scope", "discovery", "enrichment", "defense", "verify", "verify-escalate", "review"] as const;
+export const PROVIDER_PHASES = [
+  "scope",
+  "discovery",
+  "enrichment",
+  "defense",
+  "verify",
+  "verify-escalate",
+  "review",
+  // Taxonomy curation: the one judgment made over the whole family list at
+  // once. Rare and consequential, so it is worth routing to the strongest
+  // model even where review runs cheap.
+  "curate",
+] as const;
 export type ProviderPhase = (typeof PROVIDER_PHASES)[number];
 
 export interface ErrlookupConfig {

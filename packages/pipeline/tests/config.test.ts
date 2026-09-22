@@ -153,3 +153,28 @@ describe("loadConfig", () => {
     expect(cfg.proxy.enabled).toBe(false);
   });
 });
+
+describe("curate routing", () => {
+  it("routes taxonomy curation separately from review", () => {
+    const cfg = mapConfig(
+      parseKdl(
+        [
+          'provider "bulk" { command "bulk" }',
+          'provider "strong" { command "strong" }',
+          'defaults { primary "bulk" }',
+          "phase-providers {",
+          '  review "bulk"',
+          '  curate "strong"',
+          "}",
+        ].join("\n")
+      )
+    );
+    expect(cfg.phaseProviders).toEqual({ review: "bulk", curate: "strong" });
+  });
+
+  it("parses the production config's curate route", () => {
+    const cfg = loadConfig(new URL("../../../configs/blitz-glm-k3.kdl", import.meta.url).pathname);
+    expect(cfg.phaseProviders?.curate).toBe("glm53");
+    expect(cfg.providers.glm53).toBeDefined();
+  });
+});

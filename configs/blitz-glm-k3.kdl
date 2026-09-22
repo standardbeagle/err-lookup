@@ -139,6 +139,9 @@ defaults {
 phase-providers {
     scope "flash-scope"
     review "flash-review"
+    // One call over the whole family list when a taxonomy is proposed: rare,
+    // and the most consequential judgment the taxonomy gets.
+    curate "glm53"
     // Second opinion for records flash left without documentation or
     // solutions after the verify rounds: full glm-5.3 gets one pass before
     // the record is raised as a data bug (runner verify section).
