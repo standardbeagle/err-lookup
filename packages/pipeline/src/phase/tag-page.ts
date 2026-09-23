@@ -139,12 +139,30 @@ function decode(id: string, answer: { choice: string; confidence: number; probab
 }
 
 /**
- * Pages per request. Packing is billed linearly — every question carries the
- * whole rubric set, measured at ~5.3k tokens per page packed or not — so it
- * saves requests against the 1,200/minute limit, not money. Eight keeps a
- * request well inside the 64k budget.
+ * Most pages packed into one request. Packing is billed linearly — every
+ * question carries the whole rubric set, measured at ~5.3k tokens per page
+ * packed or not — so it saves requests against the 1,200/minute limit, not
+ * money.
  */
 export const PAGES_PER_REQUEST = 8;
+
+/** Tokens a request may use, under Jev's 64k with room for the pages themselves. */
+const REQUEST_TOKEN_BUDGET = 52_000;
+
+/** Upper bound on tokens per page of state: sections are capped at SECTION_CHARS each. */
+const STATE_TOKENS_PER_PAGE = 1_200;
+
+/**
+ * Pages that fit one request against this taxonomy. A fixed count broke the
+ * first time the rubrics grew: a proposal that doubled their length pushed
+ * eight pages past the 64k budget. Characters over three is a deliberately
+ * high token estimate, so the answer errs toward smaller requests.
+ */
+export function pagesPerRequest(families: readonly CanonicalFamily[]): number {
+  const questionChars = families.reduce((s, f) => s + f.tag.length + f.criteria.length + 8, 0) + 400;
+  const perPage = Math.ceil(questionChars / 3) + STATE_TOKENS_PER_PAGE;
+  return Math.max(1, Math.min(PAGES_PER_REQUEST, Math.floor(REQUEST_TOKEN_BUDGET / perPage)));
+}
 
 /** Classify pages in one request against the whole taxonomy. */
 export async function classifyPagesFlat(

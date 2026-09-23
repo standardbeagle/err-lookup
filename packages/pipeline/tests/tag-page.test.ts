@@ -10,6 +10,8 @@ import {
   classifyPagesFlat,
   classifyPagesTwoStage,
   samplePages,
+  pagesPerRequest,
+  PAGES_PER_REQUEST,
   NO_FAMILY,
   type Page,
 } from "../src/phase/tag-page.js";
@@ -126,5 +128,18 @@ describe("samplePages", () => {
     } finally {
       raw.close();
     }
+  });
+});
+
+describe("pagesPerRequest", () => {
+  it("packs fewer pages as the rubrics grow, never none and never past the cap", () => {
+    const rubric = (chars: number) => Array.from({ length: 119 }, (_, i) => ({ tag: `f-${i}`, domain: "d", criteria: "x".repeat(chars) }));
+    expect(pagesPerRequest(rubric(20))).toBe(PAGES_PER_REQUEST);
+    const current = pagesPerRequest(rubric(160));
+    const doubled = pagesPerRequest(rubric(310));
+    expect(doubled).toBeLessThan(current);
+    // The measured failure: eight pages of ~9.3k-token questions went past 64k.
+    expect(doubled * (Math.ceil((119 * 330) / 3) + 1200)).toBeLessThanOrEqual(52_000);
+    expect(pagesPerRequest(rubric(100_000))).toBe(1);
   });
 });

@@ -28,7 +28,7 @@ import {
   samplePages,
   classifyPagesFlat,
   classifyPagesTwoStage,
-  PAGES_PER_REQUEST,
+  pagesPerRequest,
   type Page,
   type PageDecision,
   type StateField,
@@ -153,7 +153,8 @@ async function runArm(
   if (!client) throw new Error(`arm ${arm.name} needs TYPESAFE_API_KEY`);
   const before = client.inputTokens;
   const batches: Page[][] = [];
-  for (let i = 0; i < pages.length; i += PAGES_PER_REQUEST) batches.push(pages.slice(i, i + PAGES_PER_REQUEST));
+  const perRequest = pagesPerRequest(families);
+  for (let i = 0; i < pages.length; i += perRequest) batches.push(pages.slice(i, i + perRequest));
   const decisions = (
     await mapPool(batches, 4, (b) =>
       arm.kind === "flat" ? classifyPagesFlat(client, b, arm.fields!, families) : classifyPagesTwoStage(client, b, arm.fields!, families)

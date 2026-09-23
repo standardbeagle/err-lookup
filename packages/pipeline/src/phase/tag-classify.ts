@@ -9,6 +9,7 @@ import { contentFamily } from "./tag-shape.js";
 import {
   classifyPagesFlat,
   rowToPage,
+  pagesPerRequest,
   PAGES_PER_REQUEST,
   type Page,
   type PageDecision,
@@ -203,8 +204,9 @@ export async function classifyPendingPages(
     storePageDecisions(db, version, ruled);
     result.byRule += ruled.length;
 
+    const perRequest = pagesPerRequest(CANONICAL_FAMILIES);
     const batches: Page[][] = [];
-    for (let i = 0; i < forModel.length; i += PAGES_PER_REQUEST) batches.push(forModel.slice(i, i + PAGES_PER_REQUEST));
+    for (let i = 0; i < forModel.length; i += perRequest) batches.push(forModel.slice(i, i + perRequest));
     await mapPool(batches, CLASSIFY_CONCURRENCY, async (batch) => {
       const decisions: PageDecision[] = await classifyPagesFlat(client, batch, CLASSIFY_STATE);
       storePageDecisions(
