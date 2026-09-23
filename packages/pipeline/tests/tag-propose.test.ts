@@ -20,6 +20,7 @@ import {
   type PooledFamily,
 } from "../src/phase/tag-propose.js";
 import { errorRow } from "./error-row.js";
+import { CANONICAL_FAMILIES } from "@errlookup/schema";
 import { tmpDbPath } from "./setup.js";
 
 const RUBRIC = "A required environment variable is unset or empty when it is read. For a variable that is set but unusable use invalid-env-var-value.";
@@ -87,7 +88,7 @@ describe("validateCellDraft", () => {
     d.families.push({ tag: "error", domain: "configuration", criteria: RUBRIC, members: [], reuses: null });
     d.families[0]!.criteria = "Missing env var: the env var is missing.";
     const issues = validateCellDraft(d, envCell).join("\n");
-    expect(issues).toContain("criteria must be one line of 60-450");
+    expect(issues).toContain("criteria must be one line of 60-300");
     expect(issues).toContain('"error" is too generic');
   });
 });
@@ -134,7 +135,23 @@ describe("poolDrafts", () => {
     const f = pooled.get("missing-env-var")!;
     expect(f.errorCount).toBe(290);
     expect(f.cells).toEqual(["absent×config", "absent×config:env"]);
-    expect(f.criteria).toBe(`${RUBRIC} Heavier.`);
+    // A reused family keeps the rubric it has; cell drafts do not rewrite it.
+    expect(f.criteria).toBe(CANONICAL_FAMILIES.find((c) => c.tag === "missing-env-var")!.criteria);
+  });
+
+  it("gives a new family the rubric written against its heavier cell", () => {
+    const fresh = (weightCell: Cell, criteria: string): { cell: Cell; draft: CellDraft } => ({
+      cell: weightCell,
+      draft: {
+        families: [{ tag: "env-var-shadowed", domain: "configuration", criteria, members: weightCell.members.map((m) => m.proposal), reuses: null }],
+        notFamily: [],
+        reasoning: "",
+      },
+    });
+    const light = cell("a×b", [["env-var-shadowed", 10]]);
+    const heavy = cell("a×c", [["env-shadow", 200]]);
+    const pooled = poolDrafts([fresh(light, `${RUBRIC} Light.`), fresh(heavy, `${RUBRIC} Heavy.`)]);
+    expect(pooled.get("env-var-shadowed")!.criteria).toBe(`${RUBRIC} Heavy.`);
   });
 });
 

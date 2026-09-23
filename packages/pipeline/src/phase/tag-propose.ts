@@ -46,6 +46,15 @@ import { CONTENT_RULE_FAMILIES } from "./tag-shape.js";
 /** The domains families are filed under. Closed, so the list stays scannable. */
 export const DOMAINS: readonly string[] = [...new Set(CANONICAL_FAMILIES.map((f) => f.domain))];
 
+/**
+ * Longest rubric a model may write. The first full proposal wrote rubrics
+ * twice the length of the hand-written ones (median 302 characters against
+ * 140); the ablation measured them less accurate and 78% more expensive per
+ * classified page, since every page's question carries every rubric. The
+ * current list's 90th percentile is 203.
+ */
+export const RUBRIC_MAX_CHARS = 300;
+
 /** Proposed names shown per cell; the model assigns only these. */
 export const MEMBERS_SHOWN = 30;
 
@@ -140,8 +149,10 @@ what went wrong in the pages rather than by the names. Then write JSON:
 - families: one entry per family the group contains; usually one.
   - tag: kebab-case, the words a developer would search. The current tag when "reuses" is set.
   - domain: exactly one of: ${DOMAINS.join(", ")}.
-  - criteria: ONE line a classifier will read with nothing else: what belongs, then the
-    neighbouring family it is NOT ("... For X use other-tag."). Never just restate the tag.
+  - criteria: for a NEW family only (a reused family keeps its current criteria, so copy
+    them unchanged): ONE line of at most ${RUBRIC_MAX_CHARS} characters that a classifier will
+    read with nothing else: what belongs, then the neighbouring family it is NOT
+    ("... For X use other-tag."). Never just restate the tag.
   - members: names from the NAMES list above that belong to this family.
   - reuses: the current family's tag this continues, or null for a new family.
 - notFamily: names from the NAMES list whose errors do not share the group's fault.
@@ -168,8 +179,11 @@ function checkFamilyShape(f: ProposedFamily, where: string, issues: string[]): v
   if (!DOMAINS.includes(f.domain)) {
     issues.push(`${where}: domain "${String(f.domain)}" is not one of the listed domains`);
   }
-  if (typeof f.criteria !== "string" || f.criteria.length < 60 || f.criteria.length > 450) {
-    issues.push(`${where}: criteria must be one line of 60-450 characters`);
+  // A reused family keeps its current rubric, so only a new family's is held
+  // to the length a model may write.
+  const maxChars = f.reuses ? Number.POSITIVE_INFINITY : RUBRIC_MAX_CHARS;
+  if (typeof f.criteria !== "string" || f.criteria.length < 60 || f.criteria.length > maxChars) {
+    issues.push(`${where}: criteria must be one line of 60-${RUBRIC_MAX_CHARS} characters`);
   } else if (restatesName(f.tag, f.criteria)) {
     issues.push(`${where}: criteria only restates the tag — say what belongs and what does not`);
   } else if (/\n/.test(f.criteria)) {
@@ -300,11 +314,16 @@ export function poolDrafts(drafts: { cell: Cell; draft: CellDraft }[]): Map<stri
     for (const f of draft.families) {
       const weight = f.members.reduce((s, m) => s + (weightOf.get(m) ?? 0), 0);
       const cur = pooled.get(f.tag);
+      // A reused family keeps its current rubric and domain. Cell drafts
+      // rewrote 108 of them in the first full run, and the rewritten list
+      // classified worse than the one it replaced; a rubric changes only
+      // through a targeted consolidation rewrite.
+      const current = f.reuses ? CANONICAL_FAMILIES.find((c) => c.tag === f.reuses) : undefined;
       if (!cur) {
         pooled.set(f.tag, {
           tag: f.tag,
-          domain: f.domain,
-          criteria: f.criteria,
+          domain: current?.domain ?? f.domain,
+          criteria: current?.criteria ?? f.criteria,
           errorCount: weight,
           members: [...f.members],
           cells: [cell.key],
@@ -319,7 +338,7 @@ export function poolDrafts(drafts: { cell: Cell; draft: CellDraft }[]): Map<stri
       cur.members.push(...f.members);
       cur.cells.push(cell.key);
       cur.articles.push(...articlesFor(cell, f.members));
-      if (weight > cur.rubricWeight) {
+      if (!current && weight > cur.rubricWeight) {
         cur.criteria = f.criteria;
         cur.domain = f.domain;
         cur.rubricWeight = weight;
@@ -402,7 +421,9 @@ Find three things, and only where you are sure:
    articles is welcome when they really are one fault — it resolves a duplicate — but merging
    away a family with an article only because it is small loses a page readers already find.
 2. criteria — pairs whose rubrics overlap so that a classifier would split its vote. Rewrite
-   the criteria of one or both so each names the other as what it is NOT. One line each.
+   the criteria of one or both so each names the other as what it is NOT. One line each, at
+   most ${RUBRIC_MAX_CHARS} characters: every rubric is read for every page classified, so a
+   longer rubric costs on every page and was measured to classify worse, not better.
 3. drops — families too vague to be one article. Size alone is not a reason: a small family
    with a precise rubric costs nothing, and its pages would otherwise land somewhere that does
    not describe them.
@@ -460,8 +481,8 @@ export function validateConsolidation(c: unknown, families: Map<string, PooledFa
   x.criteria!.forEach((r, i) => {
     const where = `criteria[${i}]`;
     if (!known(r.tag, where)) return;
-    if (typeof r.criteria !== "string" || r.criteria.length < 60 || r.criteria.length > 450 || /\n/.test(r.criteria)) {
-      issues.push(`${where}: criteria must be one line of 60-450 characters`);
+    if (typeof r.criteria !== "string" || r.criteria.length < 60 || r.criteria.length > RUBRIC_MAX_CHARS || /\n/.test(r.criteria)) {
+      issues.push(`${where}: criteria must be one line of 60-${RUBRIC_MAX_CHARS} characters`);
     } else if (restatesName(r.tag, r.criteria)) {
       issues.push(`${where}: criteria only restates the tag`);
     }
@@ -676,8 +697,15 @@ export async function proposeTaxonomy(
     await mapPool(cells, cfg.defaults.batchConcurrency, async (cell) => {
       const file = cellFile(opts.outDir, cell.key);
       if (!opts.fresh && existsSync(file)) {
-        results.push({ cell, draft: JSON.parse(readFileSync(file, "utf8")) as CellDraft });
-        return;
+        // A checkpoint is held to today's rules, not the rules it was written
+        // under: one that fails them is asked again rather than trusted.
+        const cached = JSON.parse(readFileSync(file, "utf8")) as CellDraft;
+        tidyCellMembers(cached, cell);
+        if (validateCellDraft(cached, cell).length === 0) {
+          results.push({ cell, draft: cached });
+          return;
+        }
+        log(`propose: ${cell.key} checkpoint fails the current rules — asking again`);
       }
       const samples = sampleCell(db, cell, SAMPLES_SHOWN);
       const evidence = cellEvidence(db, cell);
