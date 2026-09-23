@@ -183,7 +183,10 @@ function checkFamilyShape(f: ProposedFamily, where: string, issues: string[]): v
   // to the length a model may write.
   const maxChars = f.reuses ? Number.POSITIVE_INFINITY : RUBRIC_MAX_CHARS;
   if (typeof f.criteria !== "string" || f.criteria.length < 60 || f.criteria.length > maxChars) {
-    issues.push(`${where}: criteria must be one line of 60-${RUBRIC_MAX_CHARS} characters`);
+    // The length is stated because a model told only "too long" cannot tell
+    // by how much, and the measured repair rounds kept missing the limit.
+    const got = typeof f.criteria === "string" ? ` (it is ${f.criteria.length})` : "";
+    issues.push(`${where}: criteria must be one line of 60-${RUBRIC_MAX_CHARS} characters${got}`);
   } else if (restatesName(f.tag, f.criteria)) {
     issues.push(`${where}: criteria only restates the tag — say what belongs and what does not`);
   } else if (/\n/.test(f.criteria)) {
@@ -482,7 +485,8 @@ export function validateConsolidation(c: unknown, families: Map<string, PooledFa
     const where = `criteria[${i}]`;
     if (!known(r.tag, where)) return;
     if (typeof r.criteria !== "string" || r.criteria.length < 60 || r.criteria.length > RUBRIC_MAX_CHARS || /\n/.test(r.criteria)) {
-      issues.push(`${where}: criteria must be one line of 60-${RUBRIC_MAX_CHARS} characters`);
+      const got = typeof r.criteria === "string" ? ` (it is ${r.criteria.length})` : "";
+      issues.push(`${where}: criteria must be one line of 60-${RUBRIC_MAX_CHARS} characters${got}`);
     } else if (restatesName(r.tag, r.criteria)) {
       issues.push(`${where}: criteria only restates the tag`);
     }
