@@ -34,6 +34,7 @@ import {
   type StateField,
 } from "../src/phase/tag-page.js";
 import { labelPages, type Label } from "../src/phase/tag-audit.js";
+import { CONFIDENCE_THRESHOLD } from "../src/phase/tag-classify.js";
 
 /** An arm: how a page gets a family. */
 interface Arm {
@@ -64,8 +65,8 @@ const ARMS: Arm[] = [
   { name: "two-stage", what: "domain then family, on message + signals + explanation", kind: "two-stage", fields: ["message", "signals", "documentation"] },
 ];
 
-/** Gate the production classifier uses; the calibration table below tests it. */
-const GATE = 0.55;
+/** Scored at the production gate, so the table describes what would publish. */
+const GATE = CONFIDENCE_THRESHOLD;
 
 interface ArmResult {
   arm: string;

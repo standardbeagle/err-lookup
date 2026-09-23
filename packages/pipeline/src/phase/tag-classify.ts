@@ -32,19 +32,33 @@ import {
  * with scripts/tag-ablation.ts when the taxonomy or the pinned model moves.
  */
 
-/** Sections of a page the classifier reads. */
+/**
+ * Sections of a page the classifier reads. Measured on 400 random pages
+ * against the 112-family taxonomy: the message alone places 50.4% correctly;
+ * exception class, code and status add under a point; the explanation takes
+ * it to 70.6% (95.1% on clearly-labelled pages) — the one section that
+ * matters. Triggers and situations add nothing measurable, and the proposed
+ * name costs eight points of precision. The rubrics dominate the bill, so the
+ * sections chosen barely move the cost (5.2k tokens a page either way).
+ */
 export const CLASSIFY_STATE: readonly StateField[] = ["message", "signals", "documentation"];
 
 /**
- * Minimum confidence to publish a model's choice. Below it the page carries
- * no family: a wrong family files the page under an article that does not
- * describe it, and nothing downstream ever questions it again.
+ * Minimum confidence to publish a model's choice. Jev is well calibrated on
+ * this taxonomy: choices at 0.9+ were right 98.5% of the time, 0.75-0.9 92.3%,
+ * but 0.55-0.75 only 65.6%. At 0.75 published families are ~96% precise on
+ * ~61% of pages; at 0.55, 89% on 80%. A wrong family files a page under an
+ * article that does not describe it and nothing downstream questions it
+ * again, while a missing one only withholds a link, so precision wins. The
+ * gate is applied at plan time — `errlookup tags --gate` re-reads the stored
+ * decisions at another value without classifying anything again.
  */
-export const CONFIDENCE_THRESHOLD = 0.55;
+export const CONFIDENCE_THRESHOLD = 0.75;
 
 /**
  * Whether a proposed name that folds by spelling onto a declared family
- * settles the page without a model call.
+ * settles the page without a model call. It does not: the fold is right on
+ * 60% of the pages it places, against 89% for the classifier.
  */
 export const TRUST_NAME_RULE = false;
 
