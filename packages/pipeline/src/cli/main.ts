@@ -251,7 +251,7 @@ async function main(): Promise<void> {
         }
         const r = res.report;
         console.log(`proposal: ${r.currentFamilies} current families → ${r.proposedFamilies} proposed`);
-        console.log(`  added ${r.added.length}, removed ${r.removed.length}, rubrics rewritten ${r.criteriaChanged.length}`);
+        console.log(`  added ${r.added.length}, removed ${r.removed.length}, rubrics rewritten ${r.criteriaChanged.length}, ${r.belowFloor.length} new families under the floor left out`);
         const orphans = r.articles.filter((a) => a.lands === null);
         console.log(`  articles: ${r.articles.length} family-keyed, ${orphans.length} land nowhere`);
         if (r.contentRuleGaps.length) console.log(`  content rules name families the proposal dropped: ${r.contentRuleGaps.join(", ")}`);

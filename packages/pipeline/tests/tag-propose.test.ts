@@ -186,6 +186,17 @@ describe("consolidation", () => {
       ["missing-environment-variable", "key-clash"],
     ]);
   });
+
+  it("adds a new family only when it carries enough records for an article", () => {
+    const pooled = new Map(
+      [pooledFamily("duplicate-data-rows", 2), pooledFamily("type-not-found", 988), pooledFamily("file-not-found", 3)].map((f) => [f.tag, f])
+    );
+    const { families, changes } = applyConsolidation(pooled, { merges: [], criteria: [], drops: [] }, 100);
+    // A thin current family stays: it may have an article, and dropping it is
+    // the reviewer's call to make with a reason, not a count's.
+    expect(families.map((f) => f.tag).sort()).toEqual(["file-not-found", "type-not-found"]);
+    expect(changes).toEqual([{ tag: "duplicate-data-rows", change: "below-floor", reason: "2 records, under the 100 a new family needs" }]);
+  });
 });
 
 // ---- end to end, with a scripted model ----------------------------------

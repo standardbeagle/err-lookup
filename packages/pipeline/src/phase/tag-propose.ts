@@ -17,7 +17,7 @@ import type { LlmProvider } from "../provider/types.js";
 import { runProvider, watchdogBudgetMs } from "../provider/run.js";
 import { withTimeout } from "../util/watchdog.js";
 import { mapPool } from "../util/pool.js";
-import { buildCells, sampleCell, cellEvidence, type Cell, type CellSample, type CellEvidence } from "./tag-cells.js";
+import { buildCells, sampleCell, cellEvidence, CELL_MIN_ERRORS, type Cell, type CellSample, type CellEvidence } from "./tag-cells.js";
 import { CONTENT_RULE_FAMILIES } from "./tag-shape.js";
 
 /**
@@ -472,7 +472,7 @@ export function validateConsolidation(c: unknown, families: Map<string, PooledFa
 /** What happened to a family on its way into the proposal. */
 export interface FamilyChange {
   tag: string;
-  change: "merged" | "dropped" | "criteria" | "key-clash";
+  change: "merged" | "dropped" | "criteria" | "key-clash" | "below-floor";
   into?: string;
   reason: string;
 }
@@ -484,7 +484,8 @@ export interface FamilyChange {
  */
 export function applyConsolidation(
   pooled: Map<string, PooledFamily>,
-  c: Consolidation
+  c: Consolidation,
+  minNewErrors = CELL_MIN_ERRORS
 ): { families: PooledFamily[]; changes: FamilyChange[] } {
   const families = new Map(
     [...pooled].map(([k, f]) => [k, { ...f, members: [...f.members], cells: [...f.cells], articles: [...f.articles] }])
@@ -531,6 +532,20 @@ export function applyConsolidation(
     byKey.set(key, f);
   }
 
+  // After the spelling fold, so a thin name that spells an existing family
+  // lands its records there instead of losing them to the floor.
+  // A new family has to carry as many records as a candidate cell must, or it
+  // cannot carry an article and only splits the classifier's vote. The first
+  // full run proposed 32 new families, 24 of them under this floor (one with
+  // 2 records); the reviewer kept them because size alone is no reason to drop
+  // a CURRENT family, which may have an article. That rule is right for current
+  // families and wrong for new ones, so the floor is enforced here, in code.
+  for (const f of [...families.values()]) {
+    if (CANONICAL_TAGS.has(f.tag) || f.errorCount >= minNewErrors) continue;
+    families.delete(f.tag);
+    changes.push({ tag: f.tag, change: "below-floor", reason: `${f.errorCount} records, under the ${minNewErrors} a new family needs` });
+  }
+
   const out = [...families.values()].sort((a, b) => a.domain.localeCompare(b.domain) || b.errorCount - a.errorCount);
   if (out.length > FAMILY_CHOICE_LIMIT) {
     throw new Error(
@@ -550,6 +565,8 @@ export interface ProposalReport {
   kept: string[];
   added: { tag: string; errorCount: number; cells: string[] }[];
   removed: FamilyChange[];
+  /** New families the model proposed that carried too few records to add. */
+  belowFloor: FamilyChange[];
   criteriaChanged: string[];
   /** Where each family-keyed article lands; null means it would be orphaned. */
   articles: { slug: string; family: string; lands: string | null }[];
@@ -594,6 +611,7 @@ export function buildReport(
       .filter((f) => !CANONICAL_TAGS.has(f.tag))
       .map((f) => ({ tag: f.tag, errorCount: f.errorCount, cells: f.cells })),
     removed: changes.filter((c) => c.change !== "criteria" && CANONICAL_TAGS.has(c.tag)),
+    belowFloor: changes.filter((c) => c.change === "below-floor"),
     criteriaChanged: families
       .filter((f) => CANONICAL_TAGS.has(f.tag) && CANONICAL_FAMILIES.find((c) => c.tag === f.tag)!.criteria !== f.criteria)
       .map((f) => f.tag),
@@ -728,7 +746,7 @@ export async function proposeTaxonomy(
     }
     if (!consolidation) throw new Error(`consolidation still invalid after a repair round: ${issues.slice(0, 5).join("; ")}`);
 
-    const { families, changes } = applyConsolidation(pooled, consolidation);
+    const { families, changes } = applyConsolidation(pooled, consolidation, opts.minErrors ?? CELL_MIN_ERRORS);
     const report = buildReport(db, build, results, families, changes);
     const taxonomyFile = join(opts.outDir, "tag-taxonomy.proposed.json");
     const reportFile = join(opts.outDir, "report.json");
