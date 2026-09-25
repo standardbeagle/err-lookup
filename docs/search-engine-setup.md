@@ -142,6 +142,35 @@ the live shard first (`sitemap-shards.json` names the repo's shard), then
 to pull the one page. URL submission is 100 a day per property, not the 10,000
 the UI advertises for the account.
 
+## Google-only removal (2026-09-25)
+
+Six weeks after the withdrawal, GSC showed the freeze was permanent, not slow
+recovery: the homepage read "Crawled - currently not indexed" with a last crawl
+of 2026-08-14, deep URLs read "URL is unknown to Google" despite daily sitemap
+downloads, and impressions decayed from ~2,350 to ~300/day while position held
+at 3-4 on the shrinking residue. dev.standardbeagle.com froze on the same day
+and standardbeagle.com itself stepped down ~60% over the following month, so
+the assessment sits on the whole domain, and this property — an experiment —
+is the bulk of the crawl surface feeding it.
+
+The site now disowns itself from Google only, two ways because the two serving
+paths never meet:
+
+- **On-demand routes** (every error page) get `X-Robots-Tag: googlebot:
+  noindex, follow` from the middleware (`src/server/google-noindex.ts`). It is
+  applied at serve time, not written into the edge cache, so entries stored
+  before the deploy still leave with it; non-HTML responses (sitemaps, API)
+  pass through untouched.
+- **Prerendered pages** never enter the worker, so `Base.astro` emits
+  `<meta name="googlebot" content="noindex, follow">` instead.
+
+Bing is unaffected by design: Bingbot ignores the `googlebot:` prefix and
+indexes normally. robots.txt deliberately stays as it was — disallowing
+Googlebot would stop it fetching pages, so it would never see the noindex and
+contentless URLs could linger in the index; crawl stays open so every fetch
+carries the removal instruction. Reversal is slow (reindexing 313k pages takes
+months), which is why this is a header and a meta, not a 410.
+
 ## Measuring each engine
 
 `scripts/gsc.py` (Search Console: sitemaps, search analytics, URL inspection)

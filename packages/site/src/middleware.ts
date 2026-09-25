@@ -1,5 +1,6 @@
 import { defineMiddleware } from "astro:middleware";
 import { recordTraffic, type AnalyticsEngineDataset } from "./analytics.js";
+import { withGoogleNoindex } from "./server/google-noindex.js";
 
 /**
  * Read-through edge cache for on-demand routes (error pages, /api/*). No zone
@@ -58,7 +59,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   try {
     const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default;
     if (!cache || context.request.method !== "GET") {
-      const res = await next();
+      const res = withGoogleNoindex(await next());
       recordTraffic(traffic, url, ua, res.status, "-");
       return res;
     }
@@ -66,7 +67,9 @@ export const onRequest = defineMiddleware(async (context, next) => {
     const key = context.request.url;
     const hit = await cache.match(key);
     if (hit) {
-      const res = new Response(hit.body, hit);
+      // The noindex goes on at serve time, not into the stored copy: entries
+      // written before it existed still leave with it.
+      const res = withGoogleNoindex(new Response(hit.body, hit));
       res.headers.set("x-errlookup-cache", "hit");
       recordTraffic(traffic, url, ua, res.status, "hit");
       return res;
@@ -89,7 +92,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     // workerd — rewrap to a mutable response before touching headers (the
     // 2026-09-03 retired-slug incident; Astro's own pipeline has the same
     // constraint, so routes must also use Astro.redirect()).
-    const out = new Response(res.body, res);
+    const out = withGoogleNoindex(new Response(res.body, res));
     out.headers.set("x-errlookup-cache", "miss");
     recordTraffic(traffic, url, ua, out.status, "miss");
     return out;

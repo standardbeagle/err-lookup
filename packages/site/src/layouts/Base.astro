@@ -20,6 +20,12 @@ const ogImageUrl = new URL(ogImage ?? "/og/default.png", SITE).href;
         but stays out of the index — thin records, pattern variants, and repos
         not yet admitted by the scheduled publisher. */}
     {noindex && <meta name="robots" content="noindex, follow" />}
+    {/* Google-only removal, site-wide: this host is an experiment disowned
+        from Google (frozen since 2026-08-18) so it cannot drag
+        standardbeagle.com. Bing ignores the googlebot name and indexes
+        normally. On-demand routes carry the matching X-Robots-Tag header
+        from the middleware — prerendered pages never enter the worker. */}
+    <meta name="googlebot" content="noindex, follow" />
     {description && <meta name="description" content={description} />}
     {canonicalUrl && <link rel="canonical" href={canonicalUrl} />}
     <meta property="og:site_name" content="ErrLookup" />
