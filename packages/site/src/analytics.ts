@@ -16,15 +16,20 @@ export interface AnalyticsEngineDataset {
  * crawlers (measured 2026-08-13: Googlebot 43%, GoogleOther 31%, AI bots ~8%),
  * so the classes separate the crawlers we care about instead of lumping them
  * into "bot".
+ *
+ * Rows written before the deploy that carried 2026-10-01's change count
+ * Reflectionbot and the SEO crawlers (SemrushBot, DotBot, PetalBot) as
+ * "other-bot", so compare those classes across that date with care.
  */
 export function classifyUa(ua: string | null): string {
   if (!ua) return "unknown";
   if (/Googlebot/i.test(ua)) return "googlebot";
   if (/GoogleOther/i.test(ua)) return "google-other";
   if (/bingbot/i.test(ua)) return "bingbot";
-  if (/GPTBot|OAI-SearchBot|ChatGPT-User|ClaudeBot|Claude-Web|anthropic|PerplexityBot|Amazonbot|CCBot|Bytespider|meta-externalagent|cohere|Applebot/i.test(ua)) {
+  if (/GPTBot|OAI-SearchBot|ChatGPT-User|ClaudeBot|Claude-Web|anthropic|PerplexityBot|Amazonbot|CCBot|Bytespider|meta-externalagent|cohere|Applebot|Reflectionbot/i.test(ua)) {
     return "ai-bot";
   }
+  if (/SemrushBot|DotBot|PetalBot/i.test(ua)) return "seo-bot";
   if (/bot|crawler|spider|slurp|crawl/i.test(ua)) return "other-bot";
   return "human";
 }

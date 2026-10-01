@@ -9,6 +9,10 @@ describe("classifyUa", () => {
     expect(classifyUa("GPTBot/1.0")).toBe("ai-bot");
     expect(classifyUa("Mozilla/5.0 (compatible; ClaudeBot/1.0)")).toBe("ai-bot");
     expect(classifyUa("PerplexityBot/1.0")).toBe("ai-bot");
+    expect(classifyUa("Mozilla/5.0 (compatible; Reflectionbot/1.0)")).toBe("ai-bot");
+    expect(classifyUa("Mozilla/5.0 (compatible; SemrushBot/7~bl; +http://www.semrush.com/bot.html)")).toBe("seo-bot");
+    expect(classifyUa("Mozilla/5.0 (compatible; DotBot/1.2; +https://opensiteexplorer.org/dotbot)")).toBe("seo-bot");
+    expect(classifyUa("Mozilla/5.0 (compatible; PetalBot;+https://webmaster.petalsearch.com/site/petalbot)")).toBe("seo-bot");
     expect(classifyUa("SomeRandomCrawler/3.0")).toBe("other-bot");
     expect(classifyUa("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")).toBe("human");
     expect(classifyUa(null)).toBe("unknown");
