@@ -1,10 +1,19 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterAll } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runVerify, missingCore, applyPatches } from "../src/phase/verify.js";
 import { clearProviderDownMarks } from "../src/provider/run.js";
 import { mapConfig } from "../src/config/index.js";
 import { parseKdl } from "../src/config/kdl.js";
 import type { ErrorEntry } from "@errlookup/schema";
 import type { LlmProvider, InvokeOptions, ProviderResult } from "../src/provider/types.js";
+
+// runProvider writes its output file into the repo dir, so it must be a real
+// directory this run owns: a fixed REPO broke the suite when an unrelated
+// file of that name existed.
+const REPO = mkdtempSync(join(tmpdir(), "verify-test-"));
+afterAll(() => rmSync(REPO, { recursive: true, force: true }));
 
 function record(overrides: Partial<ErrorEntry> = {}): ErrorEntry {
   return {
@@ -65,7 +74,7 @@ const cfg = mapConfig(
 describe("runVerify gap gate", () => {
   it("skips the provider entirely when every record is complete", async () => {
     const p = new CountingProvider("p");
-    const res = await runVerify("/tmp/x", [record(), record({ id: "fedcba9876543210", slug: "boom-2" })], { p }, cfg);
+    const res = await runVerify(REPO, [record(), record({ id: "fedcba9876543210", slug: "boom-2" })], { p }, cfg);
     expect(res.patches).toEqual([]);
     expect(res.providerUsed).toBe("none");
     expect(p.calls).toBe(0);
@@ -73,7 +82,7 @@ describe("runVerify gap gate", () => {
 
   it("still calls the provider when a record has a gap", async () => {
     const p = new CountingProvider("p");
-    await runVerify("/tmp/x", [record({ solutions: [] })], { p }, cfg);
+    await runVerify(REPO, [record({ solutions: [] })], { p }, cfg);
     // ≥1, not ==1: the provider runner may retry within the call
     expect(p.calls).toBeGreaterThanOrEqual(1);
   });
@@ -83,7 +92,7 @@ describe("runVerify gap gate", () => {
     // chars because the old bar was "non-empty" — those records never re-earned
     // a verify line and stayed thin forever.
     const p = new CountingProvider("p");
-    await runVerify("/tmp/x", [record({ documentation: "It booms." })], { p }, cfg);
+    await runVerify(REPO, [record({ documentation: "It booms." })], { p }, cfg);
     expect(p.calls).toBeGreaterThanOrEqual(1);
   });
 });
@@ -134,7 +143,7 @@ describe("verify prompt content", () => {
   it("ships the stored throwing region for meaning/handling gaps and names the enum", async () => {
     const p = new PromptCapture("p");
     await runVerify(
-      "/tmp/x",
+      REPO,
       [record({ documentation: "", sourceCode: "var errEmptyKey = errors.New(\"key must not be empty\")" })],
       { p },
       cfg
@@ -161,7 +170,7 @@ describe("verify prompt content", () => {
         },
       ],
     ]);
-    await runVerify("/tmp/x", [record({ documentation: "" })], { p }, cfg, undefined, "verify", facts);
+    await runVerify(REPO, [record({ documentation: "" })], { p }, cfg, undefined, "verify", facts);
     expect(p.prompt).toContain("USED AT store/kv.go:41:");
     expect(p.prompt).toContain("return errEmptyKey");
   });
@@ -169,7 +178,7 @@ describe("verify prompt content", () => {
   it("omits the source block when only defense fields are missing", async () => {
     const p = new PromptCapture("p");
     await runVerify(
-      "/tmp/x",
+      REPO,
       [record({ handlingStrategy: null, preventionTips: [] })],
       { p },
       cfg
@@ -199,7 +208,7 @@ describe("verify escalation plumbing", () => {
     );
     const p = new CountingProvider("p");
     const e = new CountingProvider("e");
-    await runVerify("/tmp/x", [record({ solutions: [] })], { p, e }, escalateCfg, undefined, "verify-escalate");
+    await runVerify(REPO, [record({ solutions: [] })], { p, e }, escalateCfg, undefined, "verify-escalate");
     expect(e.calls).toBeGreaterThanOrEqual(1);
     expect(p.calls).toBe(0);
   });
