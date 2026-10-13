@@ -3,12 +3,12 @@ import { recordTraffic, type AnalyticsEngineDataset } from "./analytics.js";
 import { withGoogleNoindex } from "./server/google-noindex.js";
 
 /**
- * Read-through edge cache for on-demand routes (error pages, /api/*). No zone
- * fronts this site (the custom domain CNAMEs straight to errlookup.pages.dev),
- * so zone Cache Rules can't exist — the Cache API is the only edge cache
- * available. A hit returns before any render/search CPU is spent; the
- * invocation itself is billed either way, but CPU-ms is the metered resource
- * that was blowing the free-tier cap.
+ * Read-through edge cache for on-demand routes (error pages, /api/*). Since
+ * 2026-10-13 the standardbeagle.com zone proxies this host and a zone Cache
+ * Rule holds every GET for 7 days (purged by scripts/deploy-site.sh), so this
+ * layer only sees zone misses; it still saves render CPU on a per-colo repeat
+ * the zone tier missed. A hit returns before any render/search CPU is spent;
+ * the invocation itself is billed either way.
  *
  * TTL comes from each response's own Cache-Control (s-maxage, else max-age) —
  * the routes already declare their staleness policy against the hourly

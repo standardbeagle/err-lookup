@@ -12,6 +12,8 @@
 #
 # Blind spot: static-excluded paths never enter the worker, so they never write
 # a data point. Error pages are worker-routed, which is what this report is for.
+# Since 2026-10-13 the zone edge cache answers repeats before the worker runs,
+# so counts here are zone MISSES — a ranking of demand, not a request total.
 #
 # Credentials: CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN (or
 # CLOUDFLARE_API_KEY + CLOUDFLARE_EMAIL), from the environment or

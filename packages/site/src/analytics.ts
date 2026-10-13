@@ -4,7 +4,9 @@
  * Pure helpers, kept out of middleware.ts so they are unit-testable without an
  * Astro runtime. One data point per worker-routed request; static-excluded
  * paths never enter the worker and are invisible here — that blind spot is
- * documented in scripts/report-top-pages.sh.
+ * documented in scripts/report-top-pages.sh. Since 2026-10-13 zone cache hits
+ * never enter the worker either, so AE counts zone MISSES only; whole-host
+ * request totals live in the zone's HTTP analytics.
  */
 
 export interface AnalyticsEngineDataset {
