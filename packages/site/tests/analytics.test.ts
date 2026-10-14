@@ -24,17 +24,16 @@ describe("trafficDataPoint", () => {
     const p = trafficDataPoint(
       new URL("https://errors.standardbeagle.com/docker/cli/some-error-abc/"),
       "GPTBot/1.0",
-      200,
-      "hit"
+      200
     );
-    expect(p.blobs).toEqual(["/docker/cli/some-error-abc/", "ai-bot", "hit", "errors.standardbeagle.com"]);
+    expect(p.blobs).toEqual(["/docker/cli/some-error-abc/", "ai-bot", "-", "errors.standardbeagle.com"]);
     expect(p.doubles).toEqual([200]);
     expect(p.indexes).toEqual(["/docker/cli/some-error-abc/"]);
   });
 
   it("caps the index at 96 bytes (AE hard limit)", () => {
     const long = "/x/" + "a".repeat(300);
-    const p = trafficDataPoint(new URL(`https://h.test${long}`), null, 404, "-");
+    const p = trafficDataPoint(new URL(`https://h.test${long}`), null, 404);
     expect(p.indexes[0]!.length).toBe(96);
     expect(p.blobs[0]!.length).toBe(256);
   });
@@ -43,17 +42,16 @@ describe("trafficDataPoint", () => {
 describe("recordTraffic", () => {
   it("writes one point and survives a throwing dataset", () => {
     const points: unknown[] = [];
-    recordTraffic({ writeDataPoint: (p) => void points.push(p) }, new URL("https://h.test/a"), "GPTBot", 200, "miss");
+    recordTraffic({ writeDataPoint: (p) => void points.push(p) }, new URL("https://h.test/a"), "GPTBot", 200);
     expect(points).toHaveLength(1);
     expect(() =>
       recordTraffic(
         { writeDataPoint: () => { throw new Error("quota"); } },
         new URL("https://h.test/a"),
         null,
-        200,
-        "-"
+        200
       )
     ).not.toThrow();
-    expect(() => recordTraffic(undefined, new URL("https://h.test/a"), null, 200, "-")).not.toThrow();
+    expect(() => recordTraffic(undefined, new URL("https://h.test/a"), null, 200)).not.toThrow();
   });
 });

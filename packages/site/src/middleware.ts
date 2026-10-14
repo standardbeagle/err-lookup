@@ -3,39 +3,27 @@ import { recordTraffic, type AnalyticsEngineDataset } from "./analytics.js";
 import { withGoogleNoindex } from "./server/google-noindex.js";
 
 /**
- * Read-through edge cache for on-demand routes (error pages, /api/*). Since
- * 2026-10-13 the standardbeagle.com zone proxies this host and a zone Cache
- * Rule holds every GET for 7 days (purged by scripts/deploy-site.sh), so this
- * layer only sees zone misses; it still saves render CPU on a per-colo repeat
- * the zone tier missed. A hit returns before any render/search CPU is spent;
- * the invocation itself is billed either way.
+ * Request middleware for on-demand routes (error pages, /api/*): canonical-host
+ * redirect, the Google-only noindex, and one Analytics Engine row per request.
  *
- * TTL comes from each response's own Cache-Control (s-maxage, else max-age) —
- * the routes already declare their staleness policy against the hourly
- * publish. Only 200s without Set-Cookie are stored. Under `astro dev` and the
- * prerender build there is no `caches` global, so this is a pass-through.
+ * Edge caching lives in the standardbeagle.com zone, not here: since 2026-10-13
+ * a zone Cache Rule holds every GET for 7 days and scripts/deploy-site.sh
+ * purges the host on deploy. The Cache API read-through that used to sit here
+ * served 2 hits in 2,570 worker requests once the zone cache fronted it — a
+ * lookup and a put on every miss for nothing — so it was removed.
  */
 
-interface WaitUntilLocals {
+interface RuntimeLocals {
   runtime?: {
-    ctx?: { waitUntil?: (p: Promise<unknown>) => void };
     env?: { TRAFFIC?: AnalyticsEngineDataset };
   };
 }
 
-function ttlOf(res: Response): number {
-  if (res.status !== 200 || res.headers.has("set-cookie")) return 0;
-  const cc = res.headers.get("cache-control") ?? "";
-  if (/\bno-(store|cache)\b/.test(cc)) return 0;
-  const edge = cc.match(/\bs-maxage=(\d+)/)?.[1] ?? cc.match(/\bmax-age=(\d+)/)?.[1];
-  return edge ? Number.parseInt(edge, 10) : 0;
-}
-
 export const onRequest = defineMiddleware(async (context, next) => {
   // Prerendering runs this middleware too, with a synthetic request. There is
-  // no visitor to log, no edge cache to consult, and reading the headers of
-  // that request emits an Astro warning on every page — ~1,500 lines of noise
-  // per build, which is how a warning that matters gets missed.
+  // no visitor to log, and reading the headers of that request emits an Astro
+  // warning on every page — ~1,500 lines of noise per build, which is how a
+  // warning that matters gets missed.
   if (context.isPrerendered) return next();
 
   // Canonical host: crawlers reached the production mirror via errlookup.pages.dev
@@ -48,7 +36,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return Response.redirect(`https://errors.standardbeagle.com${url.pathname}${url.search}`, 301);
   }
 
-  const traffic = (context.locals as WaitUntilLocals).runtime?.env?.TRAFFIC;
+  const traffic = (context.locals as RuntimeLocals).runtime?.env?.TRAFFIC;
   const ua = context.request.headers.get("user-agent");
 
   // Robust-logging contract: whatever escapes this middleware still gets an
@@ -57,47 +45,13 @@ export const onRequest = defineMiddleware(async (context, next) => {
   // retired-slug 500s hid for a month precisely because the traffic write sat
   // below the crash — the failure path must log FIRST and fail second.
   try {
-    const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default;
-    if (!cache || context.request.method !== "GET") {
-      const res = withGoogleNoindex(await next());
-      recordTraffic(traffic, url, ua, res.status, "-");
-      return res;
-    }
-
-    const key = context.request.url;
-    const hit = await cache.match(key);
-    if (hit) {
-      // The noindex goes on at serve time, not into the stored copy: entries
-      // written before it existed still leave with it.
-      const res = withGoogleNoindex(new Response(hit.body, hit));
-      res.headers.set("x-errlookup-cache", "hit");
-      recordTraffic(traffic, url, ua, res.status, "hit");
-      return res;
-    }
-
-    const res = await next();
-    // The edge cache is an optimization: a broken clone/put must never turn a
-    // good response into a 500. Log and serve.
-    try {
-      if (ttlOf(res) > 0) {
-        const put = cache.put(key, res.clone());
-        const waitUntil = (context.locals as WaitUntilLocals).runtime?.ctx?.waitUntil;
-        if (waitUntil) waitUntil(put);
-        else await put;
-      }
-    } catch (e) {
-      console.error("edge-cache put failed:", url.pathname, e);
-    }
-    // A route may return Response.redirect(), whose headers are IMMUTABLE in
-    // workerd — rewrap to a mutable response before touching headers (the
-    // 2026-09-03 retired-slug incident; Astro's own pipeline has the same
-    // constraint, so routes must also use Astro.redirect()).
-    const out = withGoogleNoindex(new Response(res.body, res));
-    out.headers.set("x-errlookup-cache", "miss");
-    recordTraffic(traffic, url, ua, out.status, "miss");
-    return out;
+    // withGoogleNoindex rewraps HTML before setting its header, so route
+    // responses with immutable headers (Response.redirect) stay safe here.
+    const res = withGoogleNoindex(await next());
+    recordTraffic(traffic, url, ua, res.status);
+    return res;
   } catch (e) {
-    recordTraffic(traffic, url, ua, 500, "-");
+    recordTraffic(traffic, url, ua, 500);
     console.error("middleware failure:", url.pathname, e);
     throw e;
   }

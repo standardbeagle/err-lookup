@@ -42,19 +42,22 @@ const BLOB_MAX = 256;
 
 /**
  * Build the data point for one request. Layout (stable — queries depend on it):
- *   blob1 path, blob2 UA class, blob3 cache hit|miss|-, blob4 hostname
+ *   blob1 path, blob2 UA class, blob3 "-" (retired slot), blob4 hostname
  *   double1 status
  *   index1 path (sampling key: per-path sampling keeps top-page counts honest)
+ *
+ * blob3 held the worker Cache API's hit|miss until that layer was removed on
+ * 2026-10-13 (the zone cache fronts the site now). The slot stays, always "-",
+ * so blob4 and every saved query keep their positions.
  */
 export function trafficDataPoint(
   url: URL,
   ua: string | null,
-  status: number,
-  cache: "hit" | "miss" | "-"
+  status: number
 ): { blobs: string[]; doubles: number[]; indexes: string[] } {
   const path = url.pathname.slice(0, BLOB_MAX);
   return {
-    blobs: [path, classifyUa(ua), cache, url.hostname.slice(0, BLOB_MAX)],
+    blobs: [path, classifyUa(ua), "-", url.hostname.slice(0, BLOB_MAX)],
     doubles: [status],
     indexes: [url.pathname.slice(0, INDEX_MAX)],
   };
@@ -65,12 +68,11 @@ export function recordTraffic(
   dataset: AnalyticsEngineDataset | undefined,
   url: URL,
   ua: string | null,
-  status: number,
-  cache: "hit" | "miss" | "-"
+  status: number
 ): void {
   if (!dataset) return;
   try {
-    dataset.writeDataPoint(trafficDataPoint(url, ua, status, cache));
+    dataset.writeDataPoint(trafficDataPoint(url, ua, status));
   } catch {
     // analytics is best-effort by definition
   }
