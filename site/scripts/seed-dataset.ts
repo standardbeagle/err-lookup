@@ -1,12 +1,12 @@
 /**
- * Seed a fixture dataset into packages/site/public/data for local dev + the
+ * Seed a fixture dataset into site/public/data for local dev + the
  * site build test. In production the pipeline's `errlookup export` produces
  * these files; this script stands in so the site can build without the DB.
  */
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { gzipSync } from "node:zlib";
-import { buildSearchIndex } from "../../schema/src/search-core.js";
-import { indexableLastmod } from "../../schema/src/indexing.js";
+import { buildSearchIndex } from "../../packages/schema/src/search-core.js";
+import { indexableLastmod } from "../../packages/schema/src/indexing.js";
 import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

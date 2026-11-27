@@ -18,7 +18,7 @@ import {
 } from "../src/tools.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const siteRoot = resolve(__dirname, "..", "..", "site");
+const siteRoot = resolve(__dirname, "..", "..", "..", "site");
 const sitePublicData = resolve(siteRoot, "public", "data");
 if (!existsSync(resolve(sitePublicData, "manifest.json"))) {
   execFileSync("pnpm", ["exec", "tsx", "scripts/seed-dataset.ts"], { cwd: siteRoot, stdio: "pipe" });

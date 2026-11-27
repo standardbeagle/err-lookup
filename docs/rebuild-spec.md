@@ -44,8 +44,8 @@ err-lookup/
 ├── packages/
 │   ├── schema/               # @errlookup/schema — shared types + JSON Schema + zod validators
 │   ├── pipeline/             # @errlookup/pipeline — repo analysis CLI (LLM-driven)
-│   ├── site/                 # @errlookup/site — static site generator (Astro)
 │   └── mcp/                  # @errlookup/mcp — published npm package, stdio MCP server
+├── site/                     # @errlookup/site — static site generator (Astro)
 └── docs/
     └── rebuild-spec.md       # this file
 ```
@@ -212,7 +212,7 @@ Each phase writes its outputs transactionally and marks `job_history`. Re-runnin
 
 ## 5. Static Dataset (the MCP/site contract)
 
-`errlookup export` writes to `packages/site/public/data/`. These files deploy verbatim with the site and are the **only** interface the MCP server uses.
+`errlookup export` writes to `site/public/data/`. These files deploy verbatim with the site and are the **only** interface the MCP server uses.
 
 ```
 /data/manifest.json                  # dataset version, counts, file inventory
@@ -306,7 +306,7 @@ Exports are atomic: write to `data.tmp/`, validate every file against the schema
 
 ### 6.3 Hosting & deploy
 
-Cloudflare Pages, single project, production branch `main`. Build command `pnpm --filter @errlookup/site build`, output `packages/site/dist`. Custom domain + automatic HTTPS. Cache headers via `_headers` file:
+Cloudflare Pages, single project, production branch `main`. Build command `pnpm --filter @errlookup/site build`, output `site/dist`. Custom domain + automatic HTTPS. Cache headers via `_headers` file:
 
 ```
 /data/manifest.json
@@ -402,7 +402,7 @@ Ordered; each ends with green tests + a commit. No time estimates.
 3. **M3 — pipeline complete**: phases 3–5, batch command, pattern derivation, `export` with atomic publish + validation. Optional: v1 Postgres import.
 4. **M4 — site**: Astro site over exported dataset, all routes, SEO/AEO items, `_headers`, deploy to Cloudflare Pages on a placeholder domain.
 5. **M5 — mcp**: full server per §7, e2e suite, `npx` smoke test against the deployed dataset, publish `0.1.0` to npm.
-6. **M6 — smoke corpus**: analyze the 20-repo starter list (`docs/projects-to-analyze.md` from v1) as a pipeline shakedown. Deploy, submit sitemap, publish MCP.
+6. **M6 — smoke corpus**: analyze the 20-repo starter list (`docs/starter-corpus.txt`) as a pipeline shakedown. Deploy, submit sitemap, publish MCP.
 7. **M7 — corpus blitz**: multi-day token-maxed batch run per §11. Incremental daily exports + deploys throughout.
 
 ## 11. Corpus Blitz (multi-day token-maxed run)

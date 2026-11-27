@@ -13,9 +13,9 @@
  *   GET /api/repos
  *   GET /api/tags[?uncovered=1][&minErrors=n][&limit=n]
  */
-import { shardedSearch, lookupById, type ShardJsonFetcher } from "../../../schema/src/search-core";
-import type { TagFamily } from "../../../schema/src/tags";
-import { siteErrorUrl, siteBaseUrl } from "../../../mcp/src/base-url";
+import { shardedSearch, lookupById, type ShardJsonFetcher } from "../../../packages/schema/src/search-core";
+import type { TagFamily } from "../../../packages/schema/src/tags";
+import { siteErrorUrl, siteBaseUrl } from "../../../packages/mcp/src/base-url";
 
 interface Env {
   ASSETS: { fetch: (req: Request | string) => Promise<Response> };
