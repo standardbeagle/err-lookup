@@ -385,7 +385,8 @@ describe("default out dir", () => {
   it("resolves against the pnpm workspace root, not the package cwd", async () => {
     const { resolveDefaultOutDir } = await import("../src/exporter/index.js");
     const p = resolveDefaultOutDir();
-    expect(p.endsWith("packages/site/public/data")).toBe(true);
+    expect(p.endsWith("site/public/data")).toBe(true);
     expect(p).not.toContain("packages/pipeline/packages");
+    expect(p).not.toContain("packages/site");
   });
 });

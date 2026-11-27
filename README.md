@@ -51,7 +51,7 @@ The pipeline is a local CLI and the dataset is static files — analyze private 
 |---|---|
 | `packages/schema` | zod schemas + generated JSON Schema — the single source of truth |
 | `packages/pipeline` | analysis CLI: extraction, LLM phases, SQLite state, atomic export |
-| `packages/site` | Astro static site + Pages Functions API |
+| `site` | Astro static site + Pages Functions API |
 | `packages/mcp` | `@standardbeagle/errlookup-mcp` — stdio MCP server |
 
 ```sh

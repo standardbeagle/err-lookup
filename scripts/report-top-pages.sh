@@ -1,6 +1,6 @@
 #!/bin/bash
 # Top error pages by request count from the Analytics Engine dataset
-# `errlookup_traffic` (written by packages/site/src/middleware.ts).
+# `errlookup_traffic` (written by site/src/middleware.ts).
 #
 # Usage: report-top-pages.sh [DAYS] [LIMIT]
 #   DAYS   lookback window, default 7 (AE retains ~90 days)

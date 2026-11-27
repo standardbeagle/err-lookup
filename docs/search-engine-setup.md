@@ -28,7 +28,7 @@ of waiting to rediscover it. Google does not participate.
 
 Set up here:
 
-- **Key** — `INDEXNOW_KEY` in `packages/site/src/data/indexnow.ts`, served as a
+- **Key** — `INDEXNOW_KEY` in `site/src/data/indexnow.ts`, served as a
   static asset at `/<key>.txt`. The key is public by design: hosting it at that
   path IS the proof that we control the origin. `tests/indexnow.test.ts` pins the
   constant and the file together, because a rename on one side alone fails every
@@ -73,7 +73,7 @@ indexes, because no two of these sites lay theirs out the same way.
 
 | host | key file | sitemap | status |
 | --- | --- | --- | --- |
-| errors.standardbeagle.com | `packages/site/public/` | `/sitemap-index.xml` | 313,881 URLs submitted |
+| errors.standardbeagle.com | `site/public/` | `/sitemap-index.xml` | 313,881 URLs submitted |
 | dev.standardbeagle.com | `standardbeagle.github.io` repo root | nested `/sitemap.xml` | 507 URLs submitted |
 | curvatureofthemind.com | `andylbrummer/cotm-site` `astro-site/public/` | `/sitemap.xml` | 196 URLs submitted |
 | standardbeagle.com | Nexcess WordPress root (via beagle-ab2) | `/sitemap_index.xml` | 281 URLs submitted |
@@ -124,7 +124,7 @@ crawl date and URL count.
 
 If the property ever has to be re-verified without GSC access: add
 `errors.standardbeagle.com` manually, pick **XML file** verification, set the
-offered token as `BING_SITE_AUTH_TOKEN` in `packages/site/src/data/webmaster.ts`,
+offered token as `BING_SITE_AUTH_TOKEN` in `site/src/data/webmaster.ts`,
 deploy, then press Verify. The route at `src/pages/BingSiteAuth.xml.ts` returns
 404 while the token is empty, so a half-configured property fails visibly
 instead of serving an empty `<user>` element. The token is committed rather

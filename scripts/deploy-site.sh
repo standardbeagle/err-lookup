@@ -23,9 +23,9 @@ fi
 
 cd "$REPO_ROOT"
 pnpm --filter @errlookup/site build
-# run from packages/site so wrangler reads wrangler.toml (nodejs_compat flag);
+# run from site so wrangler reads wrangler.toml (nodejs_compat flag);
 # the API + on-demand pages ship inside dist/_worker.js built by Astro
-cd "$REPO_ROOT/packages/site"
+cd "$REPO_ROOT/site"
 
 # Content-loss guard. A Pages deploy replaces the whole asset set, so building
 # against the 2-repo fixture in public/data (the checked-in default) publishes a

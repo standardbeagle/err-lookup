@@ -31,7 +31,7 @@ import {
 } from "@errlookup/schema";
 
 export interface ExportOptions {
-  /** Target dir for the published dataset (default packages/site/public/data). */
+  /** Target dir for the published dataset (default site/public/data). */
   outDir?: string;
   /** Override the datasetVersion (defaults to now, monotonic). */
   datasetVersion?: string;
@@ -476,8 +476,8 @@ function workspaceRoot(): string {
 }
 
 function defaultOutDir(): string {
-  // §5: packages/site/public/data (from repo root). Created on first export.
-  return resolve(workspaceRoot(), "packages", "site", "public", "data");
+  // §5: site/public/data (from repo root). Created on first export.
+  return resolve(workspaceRoot(), "site", "public", "data");
 }
 
 // re-export for tests / CLI

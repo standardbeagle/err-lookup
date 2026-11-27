@@ -9,7 +9,7 @@
  * Which URLs: every advertised (URL, lastmod) pair the per-host ledger does
  * not hold yet — new pages, pages whose lastmod moved, and a capped run's
  * remainder — newest first. The ledger records only accepted batches; see
- * ledgerLine in packages/site/src/data/indexnow.ts for why it is not a date.
+ * ledgerLine in site/src/data/indexnow.ts for why it is not a date.
  *
  * Usage:
  *   indexnow-submit.mjs [--all] [--record-only] [--dry-run]
@@ -38,7 +38,7 @@ import {
   nextLedger,
   offHostUrls,
   pendingEntries,
-} from "../packages/site/src/data/indexnow.ts";
+} from "../site/src/data/indexnow.ts";
 
 const argv = process.argv.slice(2);
 const flag = (name) => argv.includes(name);
